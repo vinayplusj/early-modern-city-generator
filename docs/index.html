@@ -159,85 +159,75 @@
     }
 
     function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
-      const base = [];
-      const rotation = rng() * Math.PI * 2;
-    
-      for (let i = 0; i < bastionCount; i++) {
-        const ang = rotation + (i / bastionCount) * Math.PI * 2;
-        const r = wallR * (0.96 + rng() * 0.08);
-        base.push(polar(cx, cy, ang, r));
-      }
-    
-      // Controls
-      
-      const shoulderFactor = clamp(0.10 - (bastionCount - 5) * (0.03 / 7), 0.07, 0.10);
-      const bastionLen = wallR * 3.0 * shoulderFactor;
-      const shoulder = wallR * shoulderFactor;
-    
-      const cheekAlongFrac = clamp(0.50 - (bastionCount - 5) * (0.30 / 7), 0.20, 0.50);
-      // later, inside the loop (after L is computed):
-      const cheekAlong = L * cheekAlongFrac;
-    
-      const cheekOutFrac = 0.6;
-    
-      const bastions = [];
-    
-      for (let i = 0; i < base.length; i++) {
-        const prev = base[(i - 1 + base.length) % base.length];
-        const curr = base[i];
-        const next = base[(i + 1) % base.length];
-    
-        const uIn  = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
-        const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
-    
-        const out = normalize({ x: curr.x - cx, y: curr.y - cy });
-    
-        const s1 = { x: curr.x - uIn.x  * shoulder, y: curr.y - uIn.y  * shoulder };
-        const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
-    
-        const L = bastionLen * (0.90 + rng() * 0.25);
-        const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
-    
-        const cheekOut = L * cheekOutFrac;
-    
-        const leftFace0 = {
-          x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
-          y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
-        };
-        
-        const rightFace0 = {
-          x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
-          y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
-        };
-        
-        // Safety: keep cheeks at least slightly outside curr along the radial
-        const minOut = wallR * 0.02;
-        
-        function pushOutToMinRadial(p, curr, out, minOut) {
-          const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y; // radial projection
-          if (r >= minOut) return p;
-          const delta = minOut - r;
-          return { x: p.x + out.x * delta, y: p.y + out.y * delta };
-        }
-        
-        let leftFace  = pushOutToMinRadial(leftFace0,  curr, out, minOut);
-        let rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
-        }
-        
-        bastions.push({
-          i,
-          pts: [s1, leftFace, tip, rightFace, s2],
-          shoulders: [s1, s2],
-        });
-      }  
-      
-      // Default wall (full bastions)
-      const wall = bastions.flatMap(b => b.pts);
-    
-      return { base, wall, bastions };
-    }
+  const base = [];
+  const rotation = rng() * Math.PI * 2;
 
+  for (let i = 0; i < bastionCount; i++) {
+    const ang = rotation + (i / bastionCount) * Math.PI * 2;
+    const r = wallR * (0.96 + rng() * 0.08);
+    base.push(polar(cx, cy, ang, r));
+  }
 
+  // Controls
+  const shoulderFactor = clamp(0.10 - (bastionCount - 5) * (0.03 / 7), 0.07, 0.10);
+  const bastionLen = wallR * 3.0 * shoulderFactor;
+  const shoulder = wallR * shoulderFactor;
+
+  // More bastions => smaller tangential spread
+  const cheekAlongFrac = clamp(0.50 - (bastionCount - 5) * (0.30 / 7), 0.20, 0.50);
+  const cheekOutFrac = 0.6;
+
+  const bastions = [];
+
+  function pushOutToMinRadial(p, curr, out, minOut) {
+    const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y; // radial projection
+    if (r >= minOut) return p;
+    const delta = minOut - r;
+    return { x: p.x + out.x * delta, y: p.y + out.y * delta };
+  }
+
+  for (let i = 0; i < base.length; i++) {
+    const prev = base[(i - 1 + base.length) % base.length];
+    const curr = base[i];
+    const next = base[(i + 1) % base.length];
+
+    const uIn  = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
+    const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
+    const out  = normalize({ x: curr.x - cx, y: curr.y - cy });
+
+    const s1 = { x: curr.x - uIn.x  * shoulder, y: curr.y - uIn.y  * shoulder };
+    const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
+
+    const L = bastionLen * (0.90 + rng() * 0.25);
+    const cheekAlong = L * cheekAlongFrac;
+
+    const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
+    const cheekOut = L * cheekOutFrac;
+
+    const leftFace0 = {
+      x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
+      y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
+    };
+
+    const rightFace0 = {
+      x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
+      y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
+    };
+
+    const minOut = wallR * 0.02;
+    const leftFace  = pushOutToMinRadial(leftFace0,  curr, out, minOut);
+    const rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
+
+    bastions.push({
+      i,
+      pts: [s1, leftFace, tip, rightFace, s2],
+      shoulders: [s1, s2],
+    });
+  }
+
+  const wall = bastions.flatMap(b => b.pts);
+  return { base, wall, bastions };
+}
 
     function pickGates(rng, wallBase, gateCount, bastionCount) {
       const n = wallBase.length; // vertices == bastions
