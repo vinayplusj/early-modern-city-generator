@@ -107,6 +107,12 @@
       const l = Math.hypot(v.x, v.y) || 1;
       return { x: v.x / l, y: v.y / l };
     }
+
+    function rotate(v, ang) {
+      const c = Math.cos(ang), s = Math.sin(ang);
+      return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+    }
+
     
     function regularPolygon(cx, cy, r, sides, rotation = 0) {
       const pts = [];
@@ -147,7 +153,6 @@
     }
 
     function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
-      // Base regular polygon
       const base = [];
       const rotation = rng() * Math.PI * 2;
     
@@ -157,71 +162,60 @@
         base.push(polar(cx, cy, ang, r));
       }
     
-      // Pentangular bastions
       const wall = [];
     
-      // Bigger bastions, slightly tighter shoulders
-      const bastionLen = wallR * 0.30;   // was ~0.22
-      const shoulder = wallR * 0.085;    // was ~0.10
+      // Bigger bastions
+      const bastionLen = wallR * 0.32;
+      const shoulder = wallR * 0.09;
     
-      // Controls the “pentangular” look
-      const faceOutFrac = 0.58;          // how far faces push outward (fraction of bastionLen)
-      const faceSideFrac = 0.42;         // how wide the faces spread sideways (fraction of bastionLen)
+      // “Cheek” length along edges (controls pentagon feel)
+      const cheek = wallR * 0.085;
     
       for (let i = 0; i < base.length; i++) {
         const prev = base[(i - 1 + base.length) % base.length];
         const curr = base[i];
         const next = base[(i + 1) % base.length];
     
-        // Edge unit vectors
-        const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
-        const v2 = { x: next.x - curr.x, y: next.y - curr.y };
-        const l1 = Math.hypot(v1.x, v1.y) || 1;
-        const l2 = Math.hypot(v2.x, v2.y) || 1;
-        const u1 = { x: v1.x / l1, y: v1.y / l1 };
-        const u2 = { x: v2.x / l2, y: v2.y / l2 };
+        // Unit vectors along edges
+        const uIn = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
+        const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
     
-        // Shoulder points along the base ring edges
-        const s1 = { x: curr.x - u1.x * shoulder, y: curr.y - u1.y * shoulder };
-        const s2 = { x: curr.x + u2.x * shoulder, y: curr.y + u2.y * shoulder };
+        // Shoulder points along the wall edges
+        const s1 = { x: curr.x - uIn.x * shoulder, y: curr.y - uIn.y * shoulder };
+        const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
     
-        // Outward direction from city centre
-        const fromC = { x: curr.x - cx, y: curr.y - cy };
-        const lc = Math.hypot(fromC.x, fromC.y) || 1;
-        const out = { x: fromC.x / lc, y: fromC.y / lc };
+        // Outward bisector (points out from the corner)
+        const bis = normalize({ x: uIn.x + uOut.x, y: uIn.y + uOut.y });
     
-        // Perpendicular direction for widening the bastion faces
-        const side = { x: -out.y, y: out.x };
+        // Ensure bisector points outward (away from centre)
+        const toC = normalize({ x: curr.x - cx, y: curr.y - cy });
+        if (bis.x * toC.x + bis.y * toC.y < 0) {
+          bis.x *= -1;
+          bis.y *= -1;
+        }
     
-        const lenJitter = (0.92 + rng() * 0.22);
-        const L = bastionLen * lenJitter;
+        // Tip point
+        const L = bastionLen * (0.92 + rng() * 0.22);
+        const tip = { x: curr.x + bis.x * L, y: curr.y + bis.y * L };
     
-        // Tip (furthest point)
-        const tip = {
-          x: curr.x + out.x * L,
-          y: curr.y + out.y * L,
-        };
-    
-        // Two “face” points to create a pentangular look
-        const faceOut = L * faceOutFrac;
-        const faceSide = L * faceSideFrac;
-    
+        // Cheeks: push a bit outward and along each edge direction
+        // This creates the “pentangular” indentation rather than a square look.
         const leftFace = {
-          x: curr.x + out.x * faceOut + side.x * faceSide,
-          y: curr.y + out.y * faceOut + side.y * faceSide,
+          x: curr.x - uIn.x * cheek + bis.x * (L * 0.45),
+          y: curr.y - uIn.y * cheek + bis.y * (L * 0.45),
         };
     
         const rightFace = {
-          x: curr.x + out.x * faceOut - side.x * faceSide,
-          y: curr.y + out.y * faceOut - side.y * faceSide,
+          x: curr.x + uOut.x * cheek + bis.x * (L * 0.45),
+          y: curr.y + uOut.y * cheek + bis.y * (L * 0.45),
         };
     
-        // Build pentangular bastion: 5 points
         wall.push(s1, leftFace, tip, rightFace, s2);
       }
     
       return { base, wall };
     }
+
 
 
     function pickGates(rng, wallBase, gateCount) {
@@ -458,8 +452,6 @@
         drawPoly(ctx, ring, true);
         ctx.stroke();
       }
-
-      // Gates (small breaks/markers)
       
       // Gates (symbols)
       for (const g of gates) {
@@ -605,16 +597,20 @@
     }
 
     function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth) {
-      const out = normalize({ x: gate.x - cx, y: gate.y - cy });
+      const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
+    
+      // Rotate so it is not directly in the bastion line
+      // Deterministic sign based on gate position
+      const sign = ((gate.x + gate.y) % 2) < 1 ? 1 : -1;
+      const out = rotate(out0, sign * (Math.PI / 10)); // ~18 degrees
       const side = normalize(perp(out));
     
-      // Do not shrink: keep the larger size
+      // Do not shrink (keep size)
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
     
       // Push farther out beyond ditch + glacis
-      // Add an extra buffer so it cannot overlap the wall, even with big bastions
-      const forward = ditchWidth + glacisWidth + wallR * 0.22;
+      const forward = ditchWidth + glacisWidth + wallR * 0.30;
     
       const centre = add(gate, mul(out, forward));
     
@@ -624,6 +620,7 @@
     
       return [a, c, b];
     }
+
 
 
     // Add a convex hull
