@@ -305,7 +305,17 @@
       ctx.moveTo(newTown.mainAve[0].x, newTown.mainAve[0].y);
       ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
       ctx.stroke();
-    
+
+      // Connector from the gate to the outside apron point (so the new town does not float)
+      if (newTown.gateOut && primaryGate) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(primaryGate.x, primaryGate.y);
+        ctx.lineTo(newTown.gateOut.x, newTown.gateOut.y);
+        ctx.stroke();
+      }
+      
       // Outline
       ctx.strokeStyle = "#3a3a3a";
       ctx.lineWidth = 2;
@@ -421,22 +431,26 @@
       const wideNear = wallR * 0.28;
       const wideFar = wallR * 0.40;
     
-      const p0 = add(gate, mul(side, -wideNear));
-      const p1 = add(gate, mul(side,  wideNear));
-      const p2 = add(add(gate, mul(out, depth * 0.55)), mul(side,  wideFar));
-      const p3 = add(add(gate, mul(out, depth * 1.00)), mul(side,  wideFar));
-      const p4 = add(add(gate, mul(out, depth * 1.00)), mul(side, -wideFar));
-      const p5 = add(add(gate, mul(out, depth * 0.55)), mul(side, -wideFar));
+      const p0 = add(gateOut, mul(side, -wideNear));
+      const p1 = add(gateOut, mul(side,  wideNear));
+      const p2 = add(add(gateOut, mul(out, depth * 0.55)), mul(side,  wideFar));
+      const p3 = add(add(gateOut, mul(out, depth * 1.00)), mul(side,  wideFar));
+      const p4 = add(add(gateOut, mul(out, depth * 1.00)), mul(side, -wideFar));
+      const p5 = add(add(gateOut, mul(out, depth * 0.55)), mul(side, -wideFar));
     
       const poly = [p0, p1, p2, p3, p4, p5];
     
       // Grid parameters
-      const spacing = baseR * 0.10; // street spacing
+      const spacing = baseR * 0.085; // street spacing
       const cols = 18;
       const rows = 18;
     
-      // Grid origin: start a bit outside the gate
-      const origin = add(gate, mul(out, wallR * 0.10));
+      // Start outside the wall so the expansion is attached to the gate properly
+      const gateOut = add(gate, mul(out, wallR * 0.18));
+      
+      // Grid origin starts at the outside edge of the gate apron
+      const origin = gateOut;
+
     
       // Build grid points in a local coordinate system (out, side)
       const points = [];
@@ -468,9 +482,10 @@
     
       // Add one main avenue from gate to deep centre of new town
       const mainEnd = add(gate, mul(out, depth * 0.85));
-      const mainAve = [gate, mainEnd];
+      const mainAve = [gateOut, mainEnd];
     
-      return { poly, streets, mainAve };
+      return { poly, streets, mainAve, gateOut };
+
     }
 
     // ---------- Model generation ----------
