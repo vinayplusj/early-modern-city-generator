@@ -177,7 +177,7 @@
       const cheekAlongFactor = clamp(1.0 - (bastionCount - 5) * (0.5 / 7), 0.5, 1.0);
       const cheekAlong = wallR * cheekAlongFactor;
     
-      const cheekOutFrac = 2.0 * cheekAlongFactor;
+      const cheekOutFrac = 0.90 * cheekAlongFactor;
     
       const bastions = [];
     
@@ -569,9 +569,9 @@
       const gateOut = add(gate, mul(out, newTownStartOffset));
     
       // New Town footprint as a 6-point polygon (a tapered expansion)
-      const depth = wallR * 0.75;
-      const wideNear = wallR * 0.28;
-      const wideFar = wallR * 0.40;
+      const depth = wallR * 0.70;
+      const wideNear = wallR * 0.30;
+      const wideFar = wallR * 0.50;
     
       const p0 = add(gateOut, mul(side, -wideNear));
       const p1 = add(gateOut, mul(side,  wideNear));
