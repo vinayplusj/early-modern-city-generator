@@ -166,8 +166,8 @@
     
       // Controls
       const bastionLen = wallR * 0.30;     // outward reach (big)
-      const shoulder = wallR * 0.085;      // where bastion starts on each side
-      const cheekAlong = wallR * 0.07;     // cheek pull along edge direction
+      const shoulder = wallR * 0.10;      // where bastion starts on each side
+      const cheekAlong = wallR * 0.10;     // cheek pull along edge direction
       const cheekOutFrac = 0.55;           // cheek push outward (fraction of L)
     
       for (let i = 0; i < base.length; i++) {
@@ -588,29 +588,50 @@
       return best;
     }
 
-    function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth) {
+    function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly) {
       const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
     
-      // Deterministic rotation based on gate index
-      const sign = (gate.idx % 2 === 0) ? 1 : -1;
-      const out = rotate(out0, sign * (Math.PI / 8)); // 22.5 degrees
-      const side = normalize(perp(out));
+      const theta = Math.PI / 10; // 18 degrees (safe)
+      const forward = ditchWidth + glacisWidth + wallR * 0.34;
     
       // Keep size (do not shrink)
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
     
-      // Push farther out beyond ditch + glacis (more than before)
-      const forward = ditchWidth + glacisWidth + wallR * 0.34;
+      function build(sign) {
+        const out = rotate(out0, sign * theta);
+        const side = normalize(perp(out));
     
-      const centre = add(gate, mul(out, forward));
+        const c0 = add(gate, mul(out, forward)); // ravelin centre
     
-      const a = add(centre, mul(side, -baseW));
-      const b = add(centre, mul(side,  baseW));
-      const c = add(centre, mul(out,   depth));
+        const a = add(c0, mul(side, -baseW));
+        const b = add(c0, mul(side,  baseW));
+        const tip = add(c0, mul(out, depth));
     
-      return [a, c, b];
+        return [a, tip, b];
+      }
+    
+      const rvPos = build(+1);
+      const rvNeg = build(-1);
+    
+      // Pick the one that does NOT land in New Town
+      if (newTownPoly && newTownPoly.length >= 3) {
+        const cPos = centroid(rvPos);
+        const cNeg = centroid(rvNeg);
+    
+        const posIn = pointInPoly(cPos, newTownPoly);
+        const negIn = pointInPoly(cNeg, newTownPoly);
+    
+        if (posIn && !negIn) return rvNeg;
+        if (negIn && !posIn) return rvPos;
+    
+        // If both in or both out, fall through to deterministic choice
+      }
+    
+      // Deterministic fallback (stable)
+      return (gate.idx % 2 === 0) ? rvPos : rvNeg;
     }
+
 
     // Add a convex hull
     function convexHull(points) {
@@ -673,7 +694,9 @@
       const primaryGate = gates[0];
     
       // Ravelins (outworks)
-      const ravelins = gates.map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth));
+      const ravelins = gates.map(g =>
+        makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null)
+      );
     
       // New Town starts beyond the glacis
       const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
