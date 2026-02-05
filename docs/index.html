@@ -260,8 +260,8 @@
     function render(ctx, model) {
       const {
         footprint, outerBoundary, wall, wallBase, gates,
-        centre, squareR, roads,
-        ring, citadel, citCentre, avenue,
+        centre, squareR, roads, ditchOuter, ditchInner, glacisOuter,
+        ring, citadel, citCentre, avenue, ravelins,
         newTown, primaryGate
       } = model;
 
@@ -282,6 +282,37 @@
         ctx.lineWidth = 2;
         drawPoly(ctx, outerBoundary, true);
         ctx.stroke();
+      }
+
+      // Glacis belt (no-build zone) – subtle
+      if (glacisOuter) {
+        ctx.strokeStyle = "#242424";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, glacisOuter, true);
+        ctx.stroke();
+      }
+      
+      // Ditch ring – slightly brighter than glacis
+      if (ditchOuter && ditchInner) {
+        ctx.strokeStyle = "#5a5a5a";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, ditchOuter, true);
+        ctx.stroke();
+      
+        ctx.strokeStyle = "#3f3f3f";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, ditchInner, true);
+        ctx.stroke();
+      }
+
+      // Ravelins (outworks) in front of gates
+      if (ravelins) {
+        ctx.strokeStyle = "#8a8a8a";
+        ctx.lineWidth = 2;
+        for (const rv of ravelins) {
+          drawPoly(ctx, rv, true);
+          ctx.stroke();
+        }
       }
 
       // New Town area (planned expansion)
@@ -416,13 +447,13 @@
       ctx.fill();
     }
     
-    function generateNewTownGrid(gate, cx, cy, wallR, baseR) {
+    function generateNewTownGrid(gate, cx, cy, wallR, baseR, newTownStartOffset) {
       // Direction outward from centre through the gate
       const out = normalize({ x: gate.x - cx, y: gate.y - cy });
       const side = normalize(perp(out));
     
       // Start outside the wall so the expansion is attached to the gate properly
-      const gateOut = add(gate, mul(out, wallR * 0.18));
+      const gateOut = add(gate, mul(out, newTownStartOffset));
     
       // New Town footprint as a 6-point polygon (a tapered expansion)
       const depth = wallR * 0.75;
@@ -490,6 +521,23 @@
       return best;
     }
 
+    function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth) {
+      const out = normalize({ x: gate.x - cx, y: gate.y - cy });
+      const side = normalize(perp(out));
+    
+      const baseW = wallR * 0.10;
+      const depth = wallR * 0.12;
+    
+      // Place it between ditch and glacis, slightly forward of the ditch
+      const centre = add(gate, mul(out, ditchWidth + glacisWidth * 0.55));
+    
+      const a = add(centre, mul(side, -baseW));
+      const b = add(centre, mul(side,  baseW));
+      const c = add(centre, mul(out,   depth));
+    
+      return [a, c, b];
+    }
+
     // Add a convex hull
     function convexHull(points) {
       // Monotonic chain convex hull
@@ -534,15 +582,28 @@
       // Wall ring radius smaller than footprint so it stays inside
       const wallR = baseR * 0.78;
       const { base: wallBase, wall } = generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+      const ditchWidth = wallR * 0.035;
+      const glacisWidth = wallR * 0.08;
+      
+      // Ditch (outside the wall)
+      const ditchOuter = offsetRadial(wall, cx, cy, ditchWidth);
+      const ditchInner = offsetRadial(wall, cx, cy, ditchWidth * 0.35);
+      
+      // Glacis (no-build belt) outside the ditch
+      const glacisOuter = offsetRadial(wall, cx, cy, ditchWidth + glacisWidth);
 
       const centre = centroid(footprint);
 
       const gates = pickGates(rng, wallBase, gateCount);
       // Pick the primary gate (first gate) for the New Town expansion
       const primaryGate = gates[0];
+
+      const ravelins = gates.map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth));
+
+      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
       
       // New Town planned grid outside the primary gate
-      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR);
+      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
 
       // Outer boundary that includes both core footprint and New Town
       const outerBoundary = convexHull([
@@ -600,6 +661,12 @@
         primaryGate,
         newTown,
         outerBoundary,
+        ditchOuter,
+        ditchInner,
+        glacisOuter,
+        ditchWidth,
+        glacisWidth,
+        ravelins,
       };
 
     }
