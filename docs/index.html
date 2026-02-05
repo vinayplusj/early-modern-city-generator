@@ -616,11 +616,9 @@
     
       // Pick the one that does NOT land in New Town
       if (newTownPoly && newTownPoly.length >= 3) {
-        const cPos = centroid(rvPos);
-        const cNeg = centroid(rvNeg);
-    
-        const posIn = pointInPoly(cPos, newTownPoly);
-        const negIn = pointInPoly(cNeg, newTownPoly);
+        const posIn = rvPos.some(p => pointInPoly(p, newTownPoly));
+        const negIn = rvNeg.some(p => pointInPoly(p, newTownPoly));
+
     
         if (posIn && !negIn) return rvNeg;
         if (negIn && !posIn) return rvPos;
@@ -693,14 +691,14 @@
       // Pick the primary gate (first gate) for the New Town expansion
       const primaryGate = gates[0];
     
+      // New Town starts beyond the glacis
+      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
+      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
+      
       // Ravelins (outworks)
       const ravelins = gates.map(g =>
         makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null)
       );
-    
-      // New Town starts beyond the glacis
-      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
-      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
     
       // Outer boundary that includes both core footprint and New Town
       const outerBoundary = convexHull([
