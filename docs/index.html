@@ -150,54 +150,79 @@
       // Base regular polygon
       const base = [];
       const rotation = rng() * Math.PI * 2;
-
+    
       for (let i = 0; i < bastionCount; i++) {
         const ang = rotation + (i / bastionCount) * Math.PI * 2;
-        // Small radius jitter so it does not look perfectly regular
         const r = wallR * (0.96 + rng() * 0.08);
         base.push(polar(cx, cy, ang, r));
       }
-
-      // Create outward bastion points at each vertex
+    
+      // Pentangular bastions
       const wall = [];
-      const bastionLen = wallR * 0.22;       // outward spike length
-      const shoulder = wallR * 0.10;         // shoulder offset along edges
-
+    
+      // Bigger bastions, slightly tighter shoulders
+      const bastionLen = wallR * 0.30;   // was ~0.22
+      const shoulder = wallR * 0.085;    // was ~0.10
+    
+      // Controls the “pentangular” look
+      const faceOutFrac = 0.58;          // how far faces push outward (fraction of bastionLen)
+      const faceSideFrac = 0.42;         // how wide the faces spread sideways (fraction of bastionLen)
+    
       for (let i = 0; i < base.length; i++) {
         const prev = base[(i - 1 + base.length) % base.length];
         const curr = base[i];
         const next = base[(i + 1) % base.length];
-
-        // Direction vectors along edges
+    
+        // Edge unit vectors
         const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
         const v2 = { x: next.x - curr.x, y: next.y - curr.y };
-
         const l1 = Math.hypot(v1.x, v1.y) || 1;
         const l2 = Math.hypot(v2.x, v2.y) || 1;
-
         const u1 = { x: v1.x / l1, y: v1.y / l1 };
         const u2 = { x: v2.x / l2, y: v2.y / l2 };
-
-        // Shoulder points on each side of the vertex
+    
+        // Shoulder points along the base ring edges
         const s1 = { x: curr.x - u1.x * shoulder, y: curr.y - u1.y * shoulder };
         const s2 = { x: curr.x + u2.x * shoulder, y: curr.y + u2.y * shoulder };
-
-        // Outward normal direction: from centre to vertex (good enough for our ring)
+    
+        // Outward direction from city centre
         const fromC = { x: curr.x - cx, y: curr.y - cy };
         const lc = Math.hypot(fromC.x, fromC.y) || 1;
-        const outward = { x: fromC.x / lc, y: fromC.y / lc };
-
-        const spike = {
-          x: curr.x + outward.x * (bastionLen * (0.85 + rng() * 0.35)),
-          y: curr.y + outward.y * (bastionLen * (0.85 + rng() * 0.35)),
+        const out = { x: fromC.x / lc, y: fromC.y / lc };
+    
+        // Perpendicular direction for widening the bastion faces
+        const side = { x: -out.y, y: out.x };
+    
+        const lenJitter = (0.92 + rng() * 0.22);
+        const L = bastionLen * lenJitter;
+    
+        // Tip (furthest point)
+        const tip = {
+          x: curr.x + out.x * L,
+          y: curr.y + out.y * L,
         };
-
-        // Add: shoulder -> spike -> shoulder
-        wall.push(s1, spike, s2);
+    
+        // Two “face” points to create a pentangular look
+        const faceOut = L * faceOutFrac;
+        const faceSide = L * faceSideFrac;
+    
+        const leftFace = {
+          x: curr.x + out.x * faceOut + side.x * faceSide,
+          y: curr.y + out.y * faceOut + side.y * faceSide,
+        };
+    
+        const rightFace = {
+          x: curr.x + out.x * faceOut - side.x * faceSide,
+          y: curr.y + out.y * faceOut - side.y * faceSide,
+        };
+    
+        // Build pentangular bastion: 5 points
+        wall.push(s1, leftFace, tip, rightFace, s2);
       }
-
+    
       return { base, wall };
     }
+
 
     function pickGates(rng, wallBase, gateCount) {
       // Choose gate vertices spaced out around the ring.
@@ -237,6 +262,56 @@
 
       return gates;
     }
+
+    function drawGatehouse(ctx, gate, centre, size) {
+      const out = normalize({ x: gate.x - centre.x, y: gate.y - centre.y });
+      const side = normalize(perp(out));
+    
+      const w = size * 1.2;  // width across the wall
+      const d = size * 0.7;  // depth outward
+    
+      // Place gatehouse slightly outward from the wall line
+      const p = add(gate, mul(out, size * 0.35));
+    
+      // Rectangle corners (oriented)
+      const tl = add(add(p, mul(side, -w)), mul(out, -d));
+      const tr = add(add(p, mul(side,  w)), mul(out, -d));
+      const br = add(add(p, mul(side,  w)), mul(out,  d));
+      const bl = add(add(p, mul(side, -w)), mul(out,  d));
+    
+      // Main body
+      ctx.save();
+      ctx.fillStyle = "#0f0f0f";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+    
+      ctx.beginPath();
+      ctx.moveTo(tl.x, tl.y);
+      ctx.lineTo(tr.x, tr.y);
+      ctx.lineTo(br.x, br.y);
+      ctx.lineTo(bl.x, bl.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    
+      // Two small towers (circles) on the corners nearest the wall
+      const towerR = size * 0.28;
+      const towerL = add(p, mul(side, -w));
+      const towerRgt = add(p, mul(side,  w));
+    
+      ctx.beginPath();
+      ctx.arc(towerL.x, towerL.y, towerR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    
+      ctx.beginPath();
+      ctx.arc(towerRgt.x, towerRgt.y, towerR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    
+      ctx.restore();
+    }
+
 
     function generateRoadsToCentre(gates, centre) {
       // Primary roads as straight polylines for now.
@@ -386,21 +461,11 @@
 
       // Gates (small breaks/markers)
       for (const g of gates) {
+        drawGatehouse(ctx, g, centre, squareR * 0.55);
         ctx.fillStyle = "#ffffff";
         drawCircle(ctx, g, 4);
         ctx.fill();
 
-        // Gate notch indicator: draw a short line inward
-        const dx = centre.x - g.x, dy = centre.y - g.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(g.x, g.y);
-        ctx.lineTo(g.x + ux * 18, g.y + uy * 18);
-        ctx.stroke();
-      }
 
       if (primaryGate) {
         ctx.fillStyle = "#ffffff";
@@ -539,11 +604,15 @@
       const out = normalize({ x: gate.x - cx, y: gate.y - cy });
       const side = normalize(perp(out));
     
+      // Do not shrink: keep the larger size
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
     
-      // Place it between ditch and glacis, slightly forward of the ditch
-      const centre = add(gate, mul(out, ditchWidth + glacisWidth * 0.55));
+      // Push farther out beyond ditch + glacis
+      // Add an extra buffer so it cannot overlap the wall, even with big bastions
+      const forward = ditchWidth + glacisWidth + wallR * 0.22;
+    
+      const centre = add(gate, mul(out, forward));
     
       const a = add(centre, mul(side, -baseW));
       const b = add(centre, mul(side,  baseW));
@@ -551,6 +620,7 @@
     
       return [a, c, b];
     }
+
 
     // Add a convex hull
     function convexHull(points) {
