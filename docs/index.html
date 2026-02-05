@@ -75,6 +75,34 @@
       return { x: cx, y: cy };
     }
 
+    function offsetRadial(poly, cx, cy, offset) {
+      // Moves each vertex inward (negative) or outward (positive) along the centre radial.
+      return poly.map(p => {
+        const v = { x: p.x - cx, y: p.y - cy };
+        const l = Math.hypot(v.x, v.y) || 1;
+        const ux = v.x / l, uy = v.y / l;
+        return { x: p.x + ux * offset, y: p.y + uy * offset };
+      });
+    }
+    
+    function pointInPoly(pt, poly) {
+      // Ray casting algorithm
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        const intersect =
+          ((a.y > pt.y) !== (b.y > pt.y)) &&
+          (pt.x < (b.x - a.x) * (pt.y - a.y) / ((b.y - a.y) || 1e-9) + a.x);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+    
+    function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
+    function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+    function mul(a, s) { return { x: a.x * s, y: a.y * s }; }
+    function perp(a) { return { x: -a.y, y: a.x }; }
+
     function normalize(v) {
       const l = Math.hypot(v.x, v.y) || 1;
       return { x: v.x / l, y: v.y / l };
@@ -233,9 +261,9 @@
       const {
         footprint, wall, wallBase, gates,
         centre, squareR, roads,
-        ring, citadel, citCentre, avenue
+        ring, citadel, citCentre, avenue,
+        newTown, primaryGate
       } = model;
-
 
       // Background
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -252,6 +280,39 @@
       ctx.lineWidth = 2;
       drawPoly(ctx, footprint, true);
       ctx.stroke();
+
+      // New Town area (planned expansion)
+    if (newTown) {
+      // Fill zone
+      ctx.fillStyle = "#141414";
+      drawPoly(ctx, newTown.poly, true);
+      ctx.fill();
+    
+      // Grid streets
+      ctx.strokeStyle = "#8f8f8f";
+      ctx.lineWidth = 1.5;
+      for (const s of newTown.streets) {
+        ctx.beginPath();
+        ctx.moveTo(s[0].x, s[0].y);
+        ctx.lineTo(s[1].x, s[1].y);
+        ctx.stroke();
+      }
+    
+      // Main avenue from the gate
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(newTown.mainAve[0].x, newTown.mainAve[0].y);
+      ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
+      ctx.stroke();
+    
+      // Outline
+      ctx.strokeStyle = "#3a3a3a";
+      ctx.lineWidth = 2;
+      drawPoly(ctx, newTown.poly, true);
+      ctx.stroke();
+    }
+
 
       // Bastioned wall
       ctx.strokeStyle = "#d9d9d9";
@@ -289,6 +350,12 @@
         ctx.moveTo(g.x, g.y);
         ctx.lineTo(g.x + ux * 18, g.y + uy * 18);
         ctx.stroke();
+      }
+
+      if (primaryGate) {
+        ctx.fillStyle = "#ffffff";
+        drawCircle(ctx, primaryGate, 6);
+        ctx.fill();
       }
 
       // Primary avenue (square -> citadel)
@@ -343,6 +410,68 @@
       drawCircle(ctx, centre, 2.5);
       ctx.fill();
     }
+    
+    function generateNewTownGrid(gate, cx, cy, wallR, baseR) {
+      // Direction outward from centre through the gate
+      const out = normalize({ x: gate.x - cx, y: gate.y - cy });
+      const side = normalize(perp(out));
+    
+      // New Town footprint as a 6-point polygon (a tapered expansion)
+      const depth = wallR * 0.75;
+      const wideNear = wallR * 0.28;
+      const wideFar = wallR * 0.40;
+    
+      const p0 = add(gate, mul(side, -wideNear));
+      const p1 = add(gate, mul(side,  wideNear));
+      const p2 = add(add(gate, mul(out, depth * 0.55)), mul(side,  wideFar));
+      const p3 = add(add(gate, mul(out, depth * 1.00)), mul(side,  wideFar));
+      const p4 = add(add(gate, mul(out, depth * 1.00)), mul(side, -wideFar));
+      const p5 = add(add(gate, mul(out, depth * 0.55)), mul(side, -wideFar));
+    
+      const poly = [p0, p1, p2, p3, p4, p5];
+    
+      // Grid parameters
+      const spacing = baseR * 0.10; // street spacing
+      const cols = 18;
+      const rows = 18;
+    
+      // Grid origin: start a bit outside the gate
+      const origin = add(gate, mul(out, wallR * 0.10));
+    
+      // Build grid points in a local coordinate system (out, side)
+      const points = [];
+      for (let r = 0; r <= rows; r++) {
+        for (let c = -Math.floor(cols / 2); c <= Math.floor(cols / 2); c++) {
+          const pt = add(add(origin, mul(out, r * spacing)), mul(side, c * spacing));
+          if (pointInPoly(pt, poly)) points.push({ r, c, pt });
+        }
+      }
+    
+      // Index points for adjacency lookup
+      const key = (r, c) => `${r}|${c}`;
+      const map = new Map();
+      for (const p of points) map.set(key(p.r, p.c), p.pt);
+    
+      // Create streets as edges between adjacent grid points
+      const streets = [];
+      for (const p of points) {
+        const a = p.pt;
+    
+        // Connect forward (out direction)
+        const b = map.get(key(p.r + 1, p.c));
+        if (b) streets.push([a, b]);
+    
+        // Connect sideways (side direction)
+        const d = map.get(key(p.r, p.c + 1));
+        if (d) streets.push([a, d]);
+      }
+    
+      // Add one main avenue from gate to deep centre of new town
+      const mainEnd = add(gate, mul(out, depth * 0.85));
+      const mainAve = [gate, mainEnd];
+    
+      return { poly, streets, mainAve };
+    }
 
     // ---------- Model generation ----------
     function generate(seed, bastionCount, gateCount, width, height) {
@@ -361,11 +490,15 @@
       const centre = centroid(footprint);
 
       const gates = pickGates(rng, wallBase, gateCount);
+      // Pick the primary gate (first gate) for the New Town expansion
+      const primaryGate = gates[0];
+      
+      // New Town planned grid outside the primary gate
+      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR);
 
-      // Ring boulevard: use a simple circular loop just inside the walls for now.
-      // (Later we will replace this with an offset of the wall polygon.)
-      const ringR = wallR * 0.92;
-      const ring = regularPolygon(cx, cy, ringR, 64, rng() * Math.PI * 2);
+      // Ring boulevard that follows the wall shape.
+      // We take the bastioned wall polyline and pull it inward a bit.
+      const ring = offsetRadial(wall, cx, cy, -wallR * 0.06);
       
       // Citadel placement: pick an angle, place it near the wall.
       const citAng = rng() * Math.PI * 2;
@@ -392,6 +525,8 @@
         citCentre,
         citadel,
         avenue,
+        primaryGate,
+        newTown,
       };
 
     }
