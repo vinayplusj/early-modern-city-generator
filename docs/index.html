@@ -75,6 +75,21 @@
       return { x: cx, y: cy };
     }
 
+    function normalize(v) {
+      const l = Math.hypot(v.x, v.y) || 1;
+      return { x: v.x / l, y: v.y / l };
+    }
+    
+    function regularPolygon(cx, cy, r, sides, rotation = 0) {
+      const pts = [];
+      for (let i = 0; i < sides; i++) {
+        const ang = rotation + (i / sides) * Math.PI * 2;
+        pts.push(polar(cx, cy, ang, r));
+      }
+      return pts;
+    }
+
+    
     // ---------- Geometry generation ----------
     function generateFootprint(rng, cx, cy, baseR, pointCount = 20) {
       // Make a blobby polygon by sampling radius with noise, then smoothing once.
@@ -215,7 +230,12 @@
     }
 
     function render(ctx, model) {
-      const { footprint, wall, wallBase, gates, centre, squareR, roads } = model;
+      const {
+        footprint, wall, wallBase, gates,
+        centre, squareR, roads,
+        ring, citadel, citCentre, avenue
+      } = model;
+
 
       // Background
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -245,6 +265,14 @@
       drawPoly(ctx, wallBase, true);
       ctx.stroke();
 
+      // Ring boulevard
+      if (ring) {
+        ctx.strokeStyle = "#bdbdbd";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, ring, true);
+        ctx.stroke();
+      }
+
       // Gates (small breaks/markers)
       for (const g of gates) {
         ctx.fillStyle = "#ffffff";
@@ -263,6 +291,16 @@
         ctx.stroke();
       }
 
+      // Primary avenue (square -> citadel)
+      if (avenue) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(avenue[0].x, avenue[0].y);
+        for (let i = 1; i < avenue.length; i++) ctx.lineTo(avenue[i].x, avenue[i].y);
+        ctx.stroke();
+      }
+      
       // Roads
       ctx.strokeStyle = "#cfcfcf";
       ctx.lineWidth = 2;
@@ -273,6 +311,24 @@
         ctx.stroke();
       }
 
+      // Citadel
+      if (citadel) {
+        ctx.fillStyle = "#101010";
+        drawPoly(ctx, citadel, true);
+        ctx.fill();
+      
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, citadel, true);
+        ctx.stroke();
+      
+        if (citCentre) {
+          ctx.fillStyle = "#ffffff";
+          drawCircle(ctx, citCentre, 2.5);
+          ctx.fill();
+        }
+      }
+      
       // Central square
       ctx.fillStyle = "#1f1f1f";
       drawCircle(ctx, centre, squareR);
@@ -306,8 +362,24 @@
 
       const gates = pickGates(rng, wallBase, gateCount);
 
+      // Ring boulevard: use a simple circular loop just inside the walls for now.
+      // (Later we will replace this with an offset of the wall polygon.)
+      const ringR = wallR * 0.92;
+      const ring = regularPolygon(cx, cy, ringR, 64, rng() * Math.PI * 2);
+      
+      // Citadel placement: pick an angle, place it near the wall.
+      const citAng = rng() * Math.PI * 2;
+      const citCentre = polar(cx, cy, citAng, wallR * 0.88);
+      
+      // Citadel shape: a small bastioned polygon (5 sides looks good).
+      const citRotation = rng() * Math.PI * 2;
+      const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, baseR * 0.12, 5).wall;
+      
+      // Avenue: straight line from square to citadel centre.
+      const avenue = [centre, citCentre];
+      
       const roads = generateRoadsToCentre(gates, centre);
-
+      
       return {
         footprint,
         wallBase,
@@ -316,7 +388,12 @@
         centre,
         squareR: baseR * 0.055,
         roads,
+        ring,
+        citCentre,
+        citadel,
+        avenue,
       };
+
     }
 
     // ---------- App wiring ----------
