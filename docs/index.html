@@ -283,17 +283,60 @@
         drawPoly(ctx, outerBoundary, true);
         ctx.stroke();
       }
-
-      // Glacis belt (no-build zone) – subtle
+      
+      // New Town area (planned expansion) – draw first (behind the military belts)
+      if (newTown) {
+        // Fill zone
+        ctx.fillStyle = "#131313";
+        drawPoly(ctx, newTown.poly, true);
+        ctx.fill();
+      
+        // Grid streets
+        ctx.save();
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = "#8f8f8f";
+        ctx.lineWidth = 1.5;
+        for (const s of newTown.streets) {
+          ctx.beginPath();
+          ctx.moveTo(s[0].x, s[0].y);
+          ctx.lineTo(s[1].x, s[1].y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      
+        // Main connection (gate -> deep into New Town)
+        if (newTown.gateOut && primaryGate) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(primaryGate.x, primaryGate.y);
+          ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
+          ctx.stroke();
+        }
+      
+        // Outline
+        ctx.strokeStyle = "#3a3a3a";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, newTown.poly, true);
+        ctx.stroke();
+      }
+      
+      // Glacis belt (no-build zone) – above New Town
       if (glacisOuter) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
         ctx.strokeStyle = "#242424";
         ctx.lineWidth = 2;
         drawPoly(ctx, glacisOuter, true);
         ctx.stroke();
+        ctx.restore();
       }
       
-      // Ditch ring – slightly brighter than glacis
+      // Ditch ring – above glacis
       if (ditchOuter && ditchInner) {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+      
         ctx.strokeStyle = "#5a5a5a";
         ctx.lineWidth = 2;
         drawPoly(ctx, ditchOuter, true);
@@ -303,51 +346,22 @@
         ctx.lineWidth = 2;
         drawPoly(ctx, ditchInner, true);
         ctx.stroke();
+      
+        ctx.restore();
       }
-
-      // Ravelins (outworks) in front of gates
-      if (ravelins) {
+      
+      // Ravelins (outworks) – above ditch
+      if (ravelins && ravelins.length) {
+        ctx.save();
+        ctx.globalAlpha = 0.65;
         ctx.strokeStyle = "#8a8a8a";
         ctx.lineWidth = 2;
         for (const rv of ravelins) {
           drawPoly(ctx, rv, true);
           ctx.stroke();
         }
+        ctx.restore();
       }
-
-      // New Town area (planned expansion)
-    if (newTown) {
-      // Fill zone
-      ctx.fillStyle = "#141414";
-      drawPoly(ctx, newTown.poly, true);
-      ctx.fill();
-    
-      // Grid streets
-      ctx.strokeStyle = "#8f8f8f";
-      ctx.lineWidth = 1.5;
-      for (const s of newTown.streets) {
-        ctx.beginPath();
-        ctx.moveTo(s[0].x, s[0].y);
-        ctx.lineTo(s[1].x, s[1].y);
-        ctx.stroke();
-      }
-
-      // Connector from the gate to the outside apron point (so the new town does not float)
-      if (newTown.gateOut && primaryGate) {
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(primaryGate.x, primaryGate.y);
-        ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
-        ctx.stroke();
-      }
-      
-      // Outline
-      ctx.strokeStyle = "#3a3a3a";
-      ctx.lineWidth = 2;
-      drawPoly(ctx, newTown.poly, true);
-      ctx.stroke();
-    }
 
 
       // Bastioned wall
@@ -572,80 +586,75 @@
     // ---------- Model generation ----------
     function generate(seed, bastionCount, gateCount, width, height) {
       const rng = mulberry32(seed);
-
+    
       const cx = width * 0.5;
       const cy = height * 0.55; // slightly lower to leave UI breathing room
       const baseR = Math.min(width, height) * 0.33;
-
+    
       const footprint = generateFootprint(rng, cx, cy, baseR, 22);
-
+    
       // Wall ring radius smaller than footprint so it stays inside
       const wallR = baseR * 0.78;
       const { base: wallBase, wall } = generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+    
+      // --- Ditch + glacis (use wallBase for clean offsets) ---
       const ditchWidth = wallR * 0.035;
       const glacisWidth = wallR * 0.08;
-      
-      // Ditch (outside the wall)
-      const ditchOuter = offsetRadial(wall, cx, cy, ditchWidth);
-      const ditchInner = offsetRadial(wall, cx, cy, ditchWidth * 0.35);
-      
-      // Glacis (no-build belt) outside the ditch
-      const glacisOuter = offsetRadial(wall, cx, cy, ditchWidth + glacisWidth);
-
+    
+      const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
+      const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
+      const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+    
       const centre = centroid(footprint);
-
+    
       const gates = pickGates(rng, wallBase, gateCount);
+    
       // Pick the primary gate (first gate) for the New Town expansion
       const primaryGate = gates[0];
-
+    
+      // Ravelins (outworks)
       const ravelins = gates.map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth));
-
+    
+      // New Town starts beyond the glacis
       const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
-      
-      // New Town planned grid outside the primary gate
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
-
+    
       // Outer boundary that includes both core footprint and New Town
       const outerBoundary = convexHull([
         ...footprint,
         ...(newTown ? newTown.poly : []),
       ]);
-
-      // Ring boulevard that follows the wall shape.
-      // We take the bastioned wall polyline and pull it inward a bit.
-      const ring = offsetRadial(wall, cx, cy, -wallR * 0.06);
-      
-     // Citadel placement with collision avoidance against the main wall
-      const citSize = baseR * 0.10; // slightly smaller than before
+    
+      // Ring boulevard just inside the walls (use wallBase for cleaner shape)
+      const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
+    
+      // --- Citadel placement with collision avoidance against the main wall ---
+      const citSize = baseR * 0.10;
       let citCentre = null;
       let citadel = null;
-      
+    
       for (let tries = 0; tries < 40; tries++) {
         const citAng = rng() * Math.PI * 2;
-      
-        // Pull it inward so it is less likely to hit the wall
         const candidate = polar(cx, cy, citAng, wallR * 0.72);
-      
-        // Keep a safety gap from the wall vertices
+    
         const gap = minDistPointToPoly(candidate, wall);
         if (gap < citSize * 1.8) continue;
-      
+    
         citCentre = candidate;
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
         break;
       }
-      
-      // Fallback if all tries fail
+    
       if (!citCentre) {
         citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
       }
-      
-      // Avenue: straight line from square to citadel centre.
+    
+      // Avenue: straight line from square to citadel centre
       const avenue = [centre, citCentre];
-      
+    
       const roads = generateRoadsToCentre(gates, centre);
-      
+    
       return {
         footprint,
         wallBase,
@@ -668,8 +677,8 @@
         glacisWidth,
         ravelins,
       };
-
     }
+
 
     // ---------- App wiring ----------
     const canvas = document.getElementById("c");
