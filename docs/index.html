@@ -113,6 +113,12 @@
       return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
     }
 
+    function bastionAngularOffset(bastionCount) {
+      // More bastions => smaller offset.
+      // 5  -> ~0.22 rad (12.6°)
+      // 12 -> ~0.09 rad (5.1°)
+      return clamp(0.22 - (bastionCount - 5) * (0.13 / 7), 0.09, 0.22);
+    }
     
     function regularPolygon(cx, cy, r, sides, rotation = 0) {
       const pts = [];
@@ -162,36 +168,34 @@
         base.push(polar(cx, cy, ang, r));
       }
     
-      const wall = [];
-    
       // Controls
-      const longFactor = clamp(10 - (bastionCount - 5) * (5 / 7), 5, 10);
-      const bastionLen = wallR * 0.30*longFactor;     // outward reach (big)
-      const shoulder = wallR * 0.10*longFactor;      // where bastion starts on each side
-      const cheekAlong = wallR * 0.15*longFactor;     // cheek pull along edge direction
-      const cheekOutFrac = 0.55*longFactor;           // cheek push outward (fraction of L)
+      const bastionLen = wallR * 0.30;
+      const shoulderFactor = clamp(0.10 - (bastionCount - 5) * (0.03 / 7), 0.07, 0.10);
+      const shoulder = wallR * shoulderFactor;
+    
+      const cheekAlongFactor = clamp(0.10 - (bastionCount - 5) * (0.05 / 7), 0.05, 0.10);
+      const cheekAlong = wallR * cheekAlongFactor;
+    
+      const cheekOutFrac = 0.55;
+    
+      const bastions = [];
     
       for (let i = 0; i < base.length; i++) {
         const prev = base[(i - 1 + base.length) % base.length];
         const curr = base[i];
         const next = base[(i + 1) % base.length];
     
-        // Unit vectors along edges
-        const uIn = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
+        const uIn  = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
         const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
     
-        // Outward radial (stable)
         const out = normalize({ x: curr.x - cx, y: curr.y - cy });
     
-        // Shoulder points (on the base ring edges)
-        const s1 = { x: curr.x - uIn.x * shoulder, y: curr.y - uIn.y * shoulder };
+        const s1 = { x: curr.x - uIn.x  * shoulder, y: curr.y - uIn.y  * shoulder };
         const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
     
-        // Tip
         const L = bastionLen * (0.90 + rng() * 0.25);
         const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
     
-        // Cheeks: outward + along each adjacent edge direction
         const cheekOut = L * cheekOutFrac;
     
         const leftFace = {
@@ -204,51 +208,81 @@
           y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
         };
     
-        wall.push(s1, leftFace, tip, rightFace, s2);
+        bastions.push({
+          i,
+          pts: [s1, leftFace, tip, rightFace, s2],
+          shoulders: [s1, s2],
+        });
       }
+
+      // Safety: keep cheeks at least slightly outside the base vertex radius
+      const minOut = wallR * 0.02;
+      leftFace.x  = curr.x + out.x * Math.max(minOut, (leftFace.x - curr.x) * out.x + (leftFace.y - curr.y) * out.y);
+      leftFace.y  = curr.y + out.y * Math.max(minOut, (leftFace.x - curr.x) * out.x + (leftFace.y - curr.y) * out.y);
+      rightFace.x = curr.x + out.x * Math.max(minOut, (rightFace.x - curr.x) * out.x + (rightFace.y - curr.y) * out.y);
+      rightFace.y = curr.y + out.y * Math.max(minOut, (rightFace.x - curr.x) * out.x + (rightFace.y - curr.y) * out.y);
+      
+      // Default wall (full bastions)
+      const wall = bastions.flatMap(b => b.pts);
     
-      return { base, wall };
+      return { base, wall, bastions };
     }
 
 
-    function pickGates(rng, wallBase, gateCount) {
-      // Choose gate vertices spaced out around the ring.
-      const n = wallBase.length;
-      const gates = [];
-      const used = new Set();
-      const minGap = Math.floor(n / gateCount) - 1;
 
+    function pickGates(rng, wallBase, gateCount, bastionCount) {
+      const n = wallBase.length; // vertices == bastions
+      const gates = [];
+      const usedEdges = new Set();
+    
+      // choose edges, not vertices
+      const minGap = Math.floor(n / gateCount) - 1;
+    
+      // offset along the edge (more bastions => smaller offset)
+      const tJitter = clamp(0.16 - (bastionCount - 5) * (0.09 / 7), 0.07, 0.16);
+    
       for (let k = 0; k < gateCount; k++) {
         let tries = 0;
         while (tries++ < 200) {
-          const idx = Math.floor(rng() * n);
-          if (used.has(idx)) continue;
-
-          // Enforce spacing
+          const e = Math.floor(rng() * n); // edge from e -> e+1
+          if (usedEdges.has(e)) continue;
+    
           let ok = true;
-          for (const j of used) {
-            const d = Math.min((idx - j + n) % n, (j - idx + n) % n);
+          for (const j of usedEdges) {
+            const d = Math.min((e - j + n) % n, (j - e + n) % n);
             if (d <= minGap) { ok = false; break; }
           }
           if (!ok) continue;
-
-          used.add(idx);
-          gates.push({ ...wallBase[idx], idx });
+    
+          usedEdges.add(e);
+    
+          const a = wallBase[e];
+          const b = wallBase[(e + 1) % n];
+    
+          // deterministic side, keeps it stable
+          const sign = (e % 2 === 0) ? +1 : -1;
+          const t = clamp(0.5 + sign * tJitter, 0.15, 0.85);
+    
+          const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+          gates.push({ ...p, idx: e }); // idx is edge index now
           break;
         }
       }
-
-      // If we failed to place enough due to strict spacing, relax.
+    
       while (gates.length < gateCount) {
-        const idx = Math.floor(rng() * n);
-        if (!used.has(idx)) {
-          used.add(idx);
-          gates.push({ ...wallBase[idx], idx });
-        }
+        const e = Math.floor(rng() * n);
+        if (usedEdges.has(e)) continue;
+        usedEdges.add(e);
+    
+        const a = wallBase[e];
+        const b = wallBase[(e + 1) % n];
+        const p = { x: lerp(a.x, b.x, 0.5), y: lerp(a.y, b.y, 0.5) };
+        gates.push({ ...p, idx: e });
       }
-
+    
       return gates;
     }
+    
 
     function drawGatehouse(ctx, gate, centre, size) {
       const out = normalize({ x: gate.x - centre.x, y: gate.y - centre.y });
@@ -589,10 +623,11 @@
       return best;
     }
 
-    function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly) {
+    function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly, bastionCount) {
       const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
     
-      const theta = Math.PI / 10; // 18 degrees
+      const theta = bastionAngularOffset(bastionCount);
+
       const forward = ditchWidth + glacisWidth + wallR * 0.34;
     
       const baseW = wallR * 0.10;
@@ -665,16 +700,17 @@
       const rng = mulberry32(seed);
     
       const cx = width * 0.5;
-      const cy = height * 0.55; // slightly lower to leave UI breathing room
+      const cy = height * 0.55;
       const baseR = Math.min(width, height) * 0.33;
     
       const footprint = generateFootprint(rng, cx, cy, baseR, 22);
     
-      // Wall ring radius smaller than footprint so it stays inside
       const wallR = baseR * 0.78;
-      const { base: wallBase, wall } = generateBastionedWall(rng, cx, cy, wallR, bastionCount);
     
-      // --- Ditch + glacis (use wallBase for clean offsets) ---
+      // ✅ include bastions
+      const { base: wallBase, wall, bastions } =
+        generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+    
       const ditchWidth = wallR * 0.035;
       const glacisWidth = wallR * 0.08;
     
@@ -684,30 +720,35 @@
     
       const centre = centroid(footprint);
     
-      const gates = pickGates(rng, wallBase, gateCount);
-    
-      // Pick the primary gate (first gate) for the New Town expansion
+      const gates = pickGates(rng, wallBase, gateCount, bastionCount);
       const primaryGate = gates[0];
     
-      // New Town starts beyond the glacis
       const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
-      
-      // Ravelins (outworks)
+    
+      // Flatten bastions that land in New Town
+      let wallFinal = wall;
+    
+      if (newTown && newTown.poly && newTown.poly.length >= 3) {
+        const bastionsFinal = bastions.map(b => {
+          const hitsNewTown = b.pts.some(p => pointInPoly(p, newTown.poly));
+          return hitsNewTown ? { ...b, pts: b.shoulders } : b;
+        });
+        wallFinal = bastionsFinal.flatMap(b => b.pts);
+      }
+    
+      // Ravelins
       const ravelins = gates
-        .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null))
+        .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
         .filter(Boolean);
     
-      // Outer boundary that includes both core footprint and New Town
       const outerBoundary = convexHull([
         ...footprint,
         ...(newTown ? newTown.poly : []),
       ]);
     
-      // Ring boulevard just inside the walls (use wallBase for cleaner shape)
       const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
     
-      // --- Citadel placement with collision avoidance against the main wall ---
       const citSize = baseR * 0.10;
       let citCentre = null;
       let citadel = null;
@@ -716,7 +757,8 @@
         const citAng = rng() * Math.PI * 2;
         const candidate = polar(cx, cy, citAng, wallR * 0.72);
     
-        const gap = minDistPointToPoly(candidate, wall);
+        // ✅ test against final wall
+        const gap = minDistPointToPoly(candidate, wallFinal);
         if (gap < citSize * 1.8) continue;
     
         citCentre = candidate;
@@ -729,17 +771,14 @@
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
       }
     
-      // Avenue: straight line from square to citadel centre
       const avenue = [centre, citCentre];
-    
       const roads = generateRoadsToCentre(gates, centre);
     
       return {
         footprint,
-        cx,
-        cy,
+        cx, cy,
         wallBase,
-        wall,
+        wall: wallFinal,
         gates,
         centre,
         squareR: baseR * 0.055,
@@ -759,7 +798,6 @@
         ravelins,
       };
     }
-
 
     // ---------- App wiring ----------
     const canvas = document.getElementById("c");
