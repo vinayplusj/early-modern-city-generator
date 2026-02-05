@@ -169,14 +169,15 @@
       }
     
       // Controls
-      const bastionLen = wallR * 0.30;
+      
       const shoulderFactor = clamp(0.10 - (bastionCount - 5) * (0.03 / 7), 0.07, 0.10);
+      const bastionLen = wallR * 0.30 * shoulderFactor;
       const shoulder = wallR * shoulderFactor;
     
-      const cheekAlongFactor = clamp(0.10 - (bastionCount - 5) * (0.05 / 7), 0.05, 0.10);
+      const cheekAlongFactor = clamp(1.0 - (bastionCount - 5) * (0.5 / 7), 0.5, 1.0);
       const cheekAlong = wallR * cheekAlongFactor;
     
-      const cheekOutFrac = 0.55;
+      const cheekOutFrac = 0.55 * cheekAlongFactor;
     
       const bastions = [];
     
@@ -198,43 +199,39 @@
     
         const cheekOut = L * cheekOutFrac;
     
-        const leftFace = {
+        const leftFace0 = {
           x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
           y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
         };
-    
-        const rightFace = {
+        
+        const rightFace0 = {
           x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
           y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
         };
-
-        // Safety: keep cheeks at least slightly outside the vertex radially
+        
+        // Safety: keep cheeks at least slightly outside curr along the radial
         const minOut = wallR * 0.02;
         
-        // Radial projection amount from curr along out
         function radialAmount(p) {
           return (p.x - curr.x) * out.x + (p.y - curr.y) * out.y;
         }
         
-        let lf = radialAmount(leftFace);
-        if (lf < minOut) {
+        let leftFace = leftFace0;
+        if (radialAmount(leftFace) < minOut) {
           leftFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
         }
         
-        let rf = radialAmount(rightFace);
-        if (rf < minOut) {
+        let rightFace = rightFace0;
+        if (radialAmount(rightFace) < minOut) {
           rightFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
         }
-
-    
+        
         bastions.push({
           i,
           pts: [s1, leftFace, tip, rightFace, s2],
           shoulders: [s1, s2],
         });
-      }
-
-  
+      }  
       
       // Default wall (full bastions)
       const wall = bastions.flatMap(b => b.pts);
