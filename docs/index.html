@@ -174,8 +174,9 @@
       const bastionLen = wallR * 3.0 * shoulderFactor;
       const shoulder = wallR * shoulderFactor;
     
-      const cheekAlongFactor = clamp(1.0 - (bastionCount - 5) * (0.5 / 7), 0.5, 1.0);
-      const cheekAlong = wallR * cheekAlongFactor;
+      const cheekAlongFrac = clamp(0.50 - (bastionCount - 5) * (0.30 / 7), 0.20, 0.50);
+      // later, inside the loop (after L is computed):
+      const cheekAlong = L * cheekAlongFrac;
     
       const cheekOutFrac = 0.6;
     
@@ -212,18 +213,15 @@
         // Safety: keep cheeks at least slightly outside curr along the radial
         const minOut = wallR * 0.02;
         
-        function radialAmount(p) {
-          return (p.x - curr.x) * out.x + (p.y - curr.y) * out.y;
+        function pushOutToMinRadial(p, curr, out, minOut) {
+          const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y; // radial projection
+          if (r >= minOut) return p;
+          const delta = minOut - r;
+          return { x: p.x + out.x * delta, y: p.y + out.y * delta };
         }
         
-        let leftFace = leftFace0;
-        if (radialAmount(leftFace) < minOut) {
-          leftFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
-        }
-        
-        let rightFace = rightFace0;
-        if (radialAmount(rightFace) < minOut) {
-          rightFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
+        let leftFace  = pushOutToMinRadial(leftFace0,  curr, out, minOut);
+        let rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
         }
         
         bastions.push({
@@ -570,8 +568,8 @@
     
       // New Town footprint as a 6-point polygon (a tapered expansion)
       const depth = wallR * 0.80;
-      const wideNear = wallR * 0.30;
-      const wideFar = wallR * 0.70;
+      const wideNear = wallR * 0.26;
+      const wideFar  = wallR * 0.45;
     
       const p0 = add(gateOut, mul(side, -wideNear));
       const p1 = add(gateOut, mul(side,  wideNear));
@@ -734,7 +732,7 @@
       const gates = pickGates(rng, wallBase, gateCount, bastionCount);
       const primaryGate = gates[0];
     
-      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.05;
+      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.30;
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
     
       // Flatten bastions that land in New Town
@@ -742,7 +740,7 @@
     
       if (newTown && newTown.poly && newTown.poly.length >= 3) {
         const bastionsFinal = bastions.map(b => {
-          const hitsNewTown = b.pts.some(p => pointInPoly(p, newTown.poly));
+          const hitsNewTown = pointInPoly(centroid(b.pts), newTown.poly);
           return hitsNewTown ? { ...b, pts: b.shoulders } : b;
         });
         wallFinal = bastionsFinal.flatMap(b => b.pts);
