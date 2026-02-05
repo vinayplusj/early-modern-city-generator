@@ -164,12 +164,11 @@
     
       const wall = [];
     
-      // Bigger bastions
-      const bastionLen = wallR * 0.32;
-      const shoulder = wallR * 0.09;
-    
-      // “Cheek” length along edges (controls pentagon feel)
-      const cheek = wallR * 0.085;
+      // Controls
+      const bastionLen = wallR * 0.30;     // outward reach (big)
+      const shoulder = wallR * 0.085;      // where bastion starts on each side
+      const cheekAlong = wallR * 0.07;     // cheek pull along edge direction
+      const cheekOutFrac = 0.55;           // cheek push outward (fraction of L)
     
       for (let i = 0; i < base.length; i++) {
         const prev = base[(i - 1 + base.length) % base.length];
@@ -180,34 +179,28 @@
         const uIn = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
         const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
     
-        // Shoulder points along the wall edges
+        // Outward radial (stable)
+        const out = normalize({ x: curr.x - cx, y: curr.y - cy });
+    
+        // Shoulder points (on the base ring edges)
         const s1 = { x: curr.x - uIn.x * shoulder, y: curr.y - uIn.y * shoulder };
         const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
     
-        // Outward bisector (points out from the corner)
-        const bis = normalize({ x: uIn.x + uOut.x, y: uIn.y + uOut.y });
+        // Tip
+        const L = bastionLen * (0.90 + rng() * 0.25);
+        const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
     
-        // Ensure bisector points outward (away from centre)
-        const toC = normalize({ x: curr.x - cx, y: curr.y - cy });
-        if (bis.x * toC.x + bis.y * toC.y < 0) {
-          bis.x *= -1;
-          bis.y *= -1;
-        }
+        // Cheeks: outward + along each adjacent edge direction
+        const cheekOut = L * cheekOutFrac;
     
-        // Tip point
-        const L = bastionLen * (0.92 + rng() * 0.22);
-        const tip = { x: curr.x + bis.x * L, y: curr.y + bis.y * L };
-    
-        // Cheeks: push a bit outward and along each edge direction
-        // This creates the “pentangular” indentation rather than a square look.
         const leftFace = {
-          x: curr.x - uIn.x * cheek + bis.x * (L * 0.45),
-          y: curr.y - uIn.y * cheek + bis.y * (L * 0.45),
+          x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
+          y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
         };
     
         const rightFace = {
-          x: curr.x + uOut.x * cheek + bis.x * (L * 0.45),
-          y: curr.y + uOut.y * cheek + bis.y * (L * 0.45),
+          x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
+          y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
         };
     
         wall.push(s1, leftFace, tip, rightFace, s2);
@@ -215,7 +208,6 @@
     
       return { base, wall };
     }
-
 
 
     function pickGates(rng, wallBase, gateCount) {
@@ -599,18 +591,17 @@
     function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth) {
       const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
     
-      // Rotate so it is not directly in the bastion line
-      // Deterministic sign based on gate position
-      const sign = ((gate.x + gate.y) % 2) < 1 ? 1 : -1;
-      const out = rotate(out0, sign * (Math.PI / 10)); // ~18 degrees
+      // Deterministic rotation based on gate index
+      const sign = (gate.idx % 2 === 0) ? 1 : -1;
+      const out = rotate(out0, sign * (Math.PI / 8)); // 22.5 degrees
       const side = normalize(perp(out));
     
-      // Do not shrink (keep size)
+      // Keep size (do not shrink)
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
     
-      // Push farther out beyond ditch + glacis
-      const forward = ditchWidth + glacisWidth + wallR * 0.30;
+      // Push farther out beyond ditch + glacis (more than before)
+      const forward = ditchWidth + glacisWidth + wallR * 0.34;
     
       const centre = add(gate, mul(out, forward));
     
@@ -620,8 +611,6 @@
     
       return [a, c, b];
     }
-
-
 
     // Add a convex hull
     function convexHull(points) {
