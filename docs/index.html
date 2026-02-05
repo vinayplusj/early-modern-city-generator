@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Early Modern Fantasy City Generator (Milestone 1)</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #111; color: #eee; }
+    header { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: #1a1a1a; position: sticky; top: 0; }
+    button, input { background: #222; color: #eee; border: 1px solid #333; padding: 8px 10px; border-radius: 8px; }
+    button { cursor: pointer; }
+    button:hover { background: #262626; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    canvas { display: block; width: 100vw; height: calc(100vh - 60px); }
+    .label { opacity: 0.9; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header class="row">
+    <button id="regen">Regenerate</button>
+    <span class="label">Seed:</span>
+    <input id="seed" type="number" min="1" step="1" value="1" />
+    <span class="label">Bastions:</span>
+    <input id="bastions" type="number" min="5" max="12" step="1" value="8" />
+    <span class="label">Gates:</span>
+    <input id="gates" type="number" min="2" max="6" step="1" value="3" />
+  </header>
+
+  <canvas id="c"></canvas>
+
+  <script>
+    // ---------- Utilities ----------
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+    // Deterministic PRNG (Mulberry32)
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return function() {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function polar(cx, cy, angle, radius) {
+      return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
+    }
+
+    function dist(a, b) {
+      const dx = a.x - b.x, dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    }
+
+    function centroid(poly) {
+      // Polygon centroid (area-weighted). Falls back to average if degenerate.
+      let a = 0, cx = 0, cy = 0;
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i], q = poly[(i + 1) % poly.length];
+        const cross = p.x * q.y - q.x * p.y;
+        a += cross;
+        cx += (p.x + q.x) * cross;
+        cy += (p.y + q.y) * cross;
+      }
+      a *= 0.5;
+      if (Math.abs(a) < 1e-6) {
+        let sx = 0, sy = 0;
+        for (const p of poly) { sx += p.x; sy += p.y; }
+        return { x: sx / poly.length, y: sy / poly.length };
+      }
+      cx /= (6 * a);
+      cy /= (6 * a);
+      return { x: cx, y: cy };
+    }
+
+    // ---------- Geometry generation ----------
+    function generateFootprint(rng, cx, cy, baseR, pointCount = 20) {
+      // Make a blobby polygon by sampling radius with noise, then smoothing once.
+      const pts = [];
+      const wobble = baseR * 0.22;
+      const phase = rng() * Math.PI * 2;
+
+      for (let i = 0; i < pointCount; i++) {
+        const t = i / pointCount;
+        const ang = t * Math.PI * 2;
+        // Two-frequency wobble to feel less uniform
+        const n1 = Math.sin(ang * 2 + phase) * (0.45 + rng() * 0.25);
+        const n2 = Math.sin(ang * 5 + phase * 1.7) * (0.25 + rng() * 0.2);
+        const r = baseR + wobble * (n1 + n2) + wobble * (rng() - 0.5) * 0.35;
+        pts.push(polar(cx, cy, ang, r));
+      }
+
+      // Simple smoothing pass (Chaikin-ish lite)
+      const smooth = [];
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i], q = pts[(i + 1) % pts.length];
+        smooth.push({ x: lerp(p.x, q.x, 0.25), y: lerp(p.y, q.y, 0.25) });
+        smooth.push({ x: lerp(p.x, q.x, 0.75), y: lerp(p.y, q.y, 0.75) });
+      }
+
+      return smooth;
+    }
+
+    function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
+      // Base regular polygon
+      const base = [];
+      const rotation = rng() * Math.PI * 2;
+
+      for (let i = 0; i < bastionCount; i++) {
+        const ang = rotation + (i / bastionCount) * Math.PI * 2;
+        // Small radius jitter so it does not look perfectly regular
+        const r = wallR * (0.96 + rng() * 0.08);
+        base.push(polar(cx, cy, ang, r));
+      }
+
+      // Create outward bastion points at each vertex
+      const wall = [];
+      const bastionLen = wallR * 0.22;       // outward spike length
+      const shoulder = wallR * 0.10;         // shoulder offset along edges
+
+      for (let i = 0; i < base.length; i++) {
+        const prev = base[(i - 1 + base.length) % base.length];
+        const curr = base[i];
+        const next = base[(i + 1) % base.length];
+
+        // Direction vectors along edges
+        const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
+        const v2 = { x: next.x - curr.x, y: next.y - curr.y };
+
+        const l1 = Math.hypot(v1.x, v1.y) || 1;
+        const l2 = Math.hypot(v2.x, v2.y) || 1;
+
+        const u1 = { x: v1.x / l1, y: v1.y / l1 };
+        const u2 = { x: v2.x / l2, y: v2.y / l2 };
+
+        // Shoulder points on each side of the vertex
+        const s1 = { x: curr.x - u1.x * shoulder, y: curr.y - u1.y * shoulder };
+        const s2 = { x: curr.x + u2.x * shoulder, y: curr.y + u2.y * shoulder };
+
+        // Outward normal direction: from centre to vertex (good enough for our ring)
+        const fromC = { x: curr.x - cx, y: curr.y - cy };
+        const lc = Math.hypot(fromC.x, fromC.y) || 1;
+        const outward = { x: fromC.x / lc, y: fromC.y / lc };
+
+        const spike = {
+          x: curr.x + outward.x * (bastionLen * (0.85 + rng() * 0.35)),
+          y: curr.y + outward.y * (bastionLen * (0.85 + rng() * 0.35)),
+        };
+
+        // Add: shoulder -> spike -> shoulder
+        wall.push(s1, spike, s2);
+      }
+
+      return { base, wall };
+    }
+
+    function pickGates(rng, wallBase, gateCount) {
+      // Choose gate vertices spaced out around the ring.
+      const n = wallBase.length;
+      const gates = [];
+      const used = new Set();
+      const minGap = Math.floor(n / gateCount) - 1;
+
+      for (let k = 0; k < gateCount; k++) {
+        let tries = 0;
+        while (tries++ < 200) {
+          const idx = Math.floor(rng() * n);
+          if (used.has(idx)) continue;
+
+          // Enforce spacing
+          let ok = true;
+          for (const j of used) {
+            const d = Math.min((idx - j + n) % n, (j - idx + n) % n);
+            if (d <= minGap) { ok = false; break; }
+          }
+          if (!ok) continue;
+
+          used.add(idx);
+          gates.push({ ...wallBase[idx], idx });
+          break;
+        }
+      }
+
+      // If we failed to place enough due to strict spacing, relax.
+      while (gates.length < gateCount) {
+        const idx = Math.floor(rng() * n);
+        if (!used.has(idx)) {
+          used.add(idx);
+          gates.push({ ...wallBase[idx], idx });
+        }
+      }
+
+      return gates;
+    }
+
+    function generateRoadsToCentre(gates, centre) {
+      // Primary roads as straight polylines for now.
+      return gates.map(g => [g, centre]);
+    }
+
+    // ---------- Rendering ----------
+    function drawPoly(ctx, poly, close = true) {
+      if (poly.length === 0) return;
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      if (close) ctx.closePath();
+    }
+
+    function drawCircle(ctx, p, r) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+
+    function render(ctx, model) {
+      const { footprint, wall, wallBase, gates, centre, squareR, roads } = model;
+
+      // Background
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.fillStyle = "#0f0f0f";
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+      // Footprint fill
+      ctx.fillStyle = "#151515";
+      drawPoly(ctx, footprint, true);
+      ctx.fill();
+
+      // Footprint outline
+      ctx.strokeStyle = "#2b2b2b";
+      ctx.lineWidth = 2;
+      drawPoly(ctx, footprint, true);
+      ctx.stroke();
+
+      // Bastioned wall
+      ctx.strokeStyle = "#d9d9d9";
+      ctx.lineWidth = 3;
+      drawPoly(ctx, wall, true);
+      ctx.stroke();
+
+      // Inner base ring (helps readability)
+      ctx.strokeStyle = "#9a9a9a";
+      ctx.lineWidth = 1.5;
+      drawPoly(ctx, wallBase, true);
+      ctx.stroke();
+
+      // Gates (small breaks/markers)
+      for (const g of gates) {
+        ctx.fillStyle = "#ffffff";
+        drawCircle(ctx, g, 4);
+        ctx.fill();
+
+        // Gate notch indicator: draw a short line inward
+        const dx = centre.x - g.x, dy = centre.y - g.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y);
+        ctx.lineTo(g.x + ux * 18, g.y + uy * 18);
+        ctx.stroke();
+      }
+
+      // Roads
+      ctx.strokeStyle = "#cfcfcf";
+      ctx.lineWidth = 2;
+      for (const road of roads) {
+        ctx.beginPath();
+        ctx.moveTo(road[0].x, road[0].y);
+        for (let i = 1; i < road.length; i++) ctx.lineTo(road[i].x, road[i].y);
+        ctx.stroke();
+      }
+
+      // Central square
+      ctx.fillStyle = "#1f1f1f";
+      drawCircle(ctx, centre, squareR);
+      ctx.fill();
+      ctx.strokeStyle = "#efefef";
+      ctx.lineWidth = 2;
+      drawCircle(ctx, centre, squareR);
+      ctx.stroke();
+
+      // Centre marker
+      ctx.fillStyle = "#efefef";
+      drawCircle(ctx, centre, 2.5);
+      ctx.fill();
+    }
+
+    // ---------- Model generation ----------
+    function generate(seed, bastionCount, gateCount, width, height) {
+      const rng = mulberry32(seed);
+
+      const cx = width * 0.5;
+      const cy = height * 0.55; // slightly lower to leave UI breathing room
+      const baseR = Math.min(width, height) * 0.33;
+
+      const footprint = generateFootprint(rng, cx, cy, baseR, 22);
+
+      // Wall ring radius smaller than footprint so it stays inside
+      const wallR = baseR * 0.78;
+      const { base: wallBase, wall } = generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+
+      const centre = centroid(footprint);
+
+      const gates = pickGates(rng, wallBase, gateCount);
+
+      const roads = generateRoadsToCentre(gates, centre);
+
+      return {
+        footprint,
+        wallBase,
+        wall,
+        gates,
+        centre,
+        squareR: baseR * 0.055,
+        roads,
+      };
+    }
+
+    // ---------- App wiring ----------
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+
+    const seedInput = document.getElementById("seed");
+    const bastionsInput = document.getElementById("bastions");
+    const gatesInput = document.getElementById("gates");
+    const regenBtn = document.getElementById("regen");
+
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor((window.innerHeight - 60) * dpr);
+      canvas.style.height = (window.innerHeight - 60) + "px";
+      canvas.style.width = window.innerWidth + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function draw() {
+      const seed = Math.max(1, parseInt(seedInput.value || "1", 10));
+      const bastions = clamp(parseInt(bastionsInput.value || "8", 10), 5, 12);
+      const gates = clamp(parseInt(gatesInput.value || "3", 10), 2, 6);
+
+      const model = generate(seed, bastions, gates, window.innerWidth, window.innerHeight - 60);
+      render(ctx, model);
+    }
+
+    regenBtn.addEventListener("click", () => {
+      seedInput.value = String(Math.floor(Math.random() * 1_000_000) + 1);
+      draw();
+    });
+
+    seedInput.addEventListener("change", draw);
+    bastionsInput.addEventListener("change", draw);
+    gatesInput.addEventListener("change", draw);
+    window.addEventListener("resize", () => { resizeCanvas(); draw(); });
+
+    resizeCanvas();
+    draw();
+  </script>
+</body>
+</html>
