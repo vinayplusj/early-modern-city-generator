@@ -337,7 +337,7 @@
         footprint, outerBoundary, wall, wallBase, gates,
         centre, squareR, roads, ditchOuter, ditchInner, glacisOuter,
         ring, citadel, citCentre, avenue, ravelins,
-        newTown, primaryGate
+        newTown, primaryGate, cx, cy
       } = model;
 
       // Background
@@ -460,13 +460,17 @@
       }
 
       // Gates (small breaks/markers)
+      
+      // Gates (symbols)
       for (const g of gates) {
-        drawGatehouse(ctx, g, centre, squareR * 0.55);
+        drawGatehouse(ctx, g, { x: cx, y: cy }, squareR * 0.55);
+      
+        // Optional small dot marker at exact gate point
         ctx.fillStyle = "#ffffff";
-        drawCircle(ctx, g, 4);
+        drawCircle(ctx, g, 3.5);
         ctx.fill();
-
-
+      } 
+      
       if (primaryGate) {
         ctx.fillStyle = "#ffffff";
         drawCircle(ctx, primaryGate, 6);
@@ -727,6 +731,8 @@
     
       return {
         footprint,
+        cx,
+        cy,
         wallBase,
         wall,
         gates,
