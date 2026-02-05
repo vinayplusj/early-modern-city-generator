@@ -165,10 +165,11 @@
       const wall = [];
     
       // Controls
-      const bastionLen = wallR * 0.30;     // outward reach (big)
-      const shoulder = wallR * 0.10;      // where bastion starts on each side
-      const cheekAlong = wallR * 0.20;     // cheek pull along edge direction
-      const cheekOutFrac = 0.55;           // cheek push outward (fraction of L)
+      const longFactor = clamp(10 - (bastionCount - 5) * (5 / 7), 5, 10);
+      const bastionLen = wallR * 0.30*longFactor;     // outward reach (big)
+      const shoulder = wallR * 0.10*longFactor;      // where bastion starts on each side
+      const cheekAlong = wallR * 0.15*longFactor;     // cheek pull along edge direction
+      const cheekOutFrac = 0.55*longFactor;           // cheek push outward (fraction of L)
     
       for (let i = 0; i < base.length; i++) {
         const prev = base[(i - 1 + base.length) % base.length];
@@ -591,10 +592,9 @@
     function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly) {
       const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
     
-      const theta = Math.PI / 10; // 18 degrees (safe)
+      const theta = Math.PI / 10; // 18 degrees
       const forward = ditchWidth + glacisWidth + wallR * 0.34;
     
-      // Keep size (do not shrink)
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
     
@@ -602,8 +602,7 @@
         const out = rotate(out0, sign * theta);
         const side = normalize(perp(out));
     
-        const c0 = add(gate, mul(out, forward)); // ravelin centre
-    
+        const c0 = add(gate, mul(out, forward));
         const a = add(c0, mul(side, -baseW));
         const b = add(c0, mul(side,  baseW));
         const tip = add(c0, mul(out, depth));
@@ -614,22 +613,21 @@
       const rvPos = build(+1);
       const rvNeg = build(-1);
     
-      // Pick the one that does NOT land in New Town
+      // If we have New Town, choose an option that does NOT intersect it.
       if (newTownPoly && newTownPoly.length >= 3) {
         const posIn = rvPos.some(p => pointInPoly(p, newTownPoly));
         const negIn = rvNeg.some(p => pointInPoly(p, newTownPoly));
-
     
         if (posIn && !negIn) return rvNeg;
         if (negIn && !posIn) return rvPos;
     
-        // If both in or both out, fall through to deterministic choice
+        // If BOTH intersect New Town, delete this ravelin (return null)
+        if (posIn && negIn) return null;
       }
     
-      // Deterministic fallback (stable)
+      // Deterministic fallback (stable) if no New Town (or both are fine)
       return (gate.idx % 2 === 0) ? rvPos : rvNeg;
     }
-
 
     // Add a convex hull
     function convexHull(points) {
@@ -696,9 +694,9 @@
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
       
       // Ravelins (outworks)
-      const ravelins = gates.map(g =>
-        makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null)
-      );
+      const ravelins = gates
+        .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null))
+        .filter(Boolean);
     
       // Outer boundary that includes both core footprint and New Town
       const outerBoundary = convexHull([
