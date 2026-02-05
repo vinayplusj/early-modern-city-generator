@@ -207,6 +207,25 @@
           x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
           y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
         };
+
+        // Safety: keep cheeks at least slightly outside the vertex radially
+        const minOut = wallR * 0.02;
+        
+        // Radial projection amount from curr along out
+        function radialAmount(p) {
+          return (p.x - curr.x) * out.x + (p.y - curr.y) * out.y;
+        }
+        
+        let lf = radialAmount(leftFace);
+        if (lf < minOut) {
+          leftFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
+        }
+        
+        let rf = radialAmount(rightFace);
+        if (rf < minOut) {
+          rightFace = { x: curr.x + out.x * minOut, y: curr.y + out.y * minOut };
+        }
+
     
         bastions.push({
           i,
@@ -215,12 +234,7 @@
         });
       }
 
-      // Safety: keep cheeks at least slightly outside the base vertex radius
-      const minOut = wallR * 0.02;
-      leftFace.x  = curr.x + out.x * Math.max(minOut, (leftFace.x - curr.x) * out.x + (leftFace.y - curr.y) * out.y);
-      leftFace.y  = curr.y + out.y * Math.max(minOut, (leftFace.x - curr.x) * out.x + (leftFace.y - curr.y) * out.y);
-      rightFace.x = curr.x + out.x * Math.max(minOut, (rightFace.x - curr.x) * out.x + (rightFace.y - curr.y) * out.y);
-      rightFace.y = curr.y + out.y * Math.max(minOut, (rightFace.x - curr.x) * out.x + (rightFace.y - curr.y) * out.y);
+  
       
       // Default wall (full bastions)
       const wall = bastions.flatMap(b => b.pts);
@@ -236,7 +250,7 @@
       const usedEdges = new Set();
     
       // choose edges, not vertices
-      const minGap = Math.floor(n / gateCount) - 1;
+      const minGap = Math.max(1, Math.floor(n / gateCount) - 1);
     
       // offset along the edge (more bastions => smaller offset)
       const tJitter = clamp(0.16 - (bastionCount - 5) * (0.09 / 7), 0.07, 0.16);
@@ -650,8 +664,8 @@
     
       // If we have New Town, choose an option that does NOT intersect it.
       if (newTownPoly && newTownPoly.length >= 3) {
-        const posIn = rvPos.some(p => pointInPoly(p, newTownPoly));
-        const negIn = rvNeg.some(p => pointInPoly(p, newTownPoly));
+        const posIn = rvPos.some(p => pointInPoly(p, newTownPoly)) || pointInPoly(centroid(rvPos), newTownPoly);
+        const negIn = rvNeg.some(p => pointInPoly(p, newTownPoly)) || pointInPoly(centroid(rvNeg), newTownPoly);
     
         if (posIn && !negIn) return rvNeg;
         if (negIn && !posIn) return rvPos;
