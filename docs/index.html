@@ -259,7 +259,7 @@
 
     function render(ctx, model) {
       const {
-        footprint, wall, wallBase, gates,
+        footprint, outerBoundary, wall, wallBase, gates,
         centre, squareR, roads,
         ring, citadel, citCentre, avenue,
         newTown, primaryGate
@@ -276,10 +276,13 @@
       ctx.fill();
 
       // Footprint outline
-      ctx.strokeStyle = "#2b2b2b";
-      ctx.lineWidth = 2;
-      drawPoly(ctx, footprint, true);
-      ctx.stroke();
+      // Outer boundary outline (includes New Town)
+      if (outerBoundary && outerBoundary.length >= 3) {
+        ctx.strokeStyle = "#2b2b2b";
+        ctx.lineWidth = 2;
+        drawPoly(ctx, outerBoundary, true);
+        ctx.stroke();
+      }
 
       // New Town area (planned expansion)
     if (newTown) {
@@ -478,6 +481,46 @@
       return { poly, streets, mainAve, gateOut };
     }
 
+    function minDistPointToPoly(pt, poly) {
+      let best = Infinity;
+      for (const p of poly) {
+        const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+        if (d < best) best = d;
+      }
+      return best;
+    }
+
+    // Add a convex hull
+    function convexHull(points) {
+      // Monotonic chain convex hull
+      const pts = points.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
+      if (pts.length <= 2) return pts;
+    
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    
+      const lower = [];
+      for (const p of pts) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+          lower.pop();
+        }
+        lower.push(p);
+      }
+    
+      const upper = [];
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const p = pts[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+          upper.pop();
+        }
+        upper.push(p);
+      }
+    
+      upper.pop();
+      lower.pop();
+      return lower.concat(upper);
+    }
+
+    
     // ---------- Model generation ----------
     function generate(seed, bastionCount, gateCount, width, height) {
       const rng = mulberry32(seed);
@@ -501,17 +544,41 @@
       // New Town planned grid outside the primary gate
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR);
 
+      // Outer boundary that includes both core footprint and New Town
+      const outerBoundary = convexHull([
+        ...footprint,
+        ...(newTown ? newTown.poly : []),
+      ]);
+
       // Ring boulevard that follows the wall shape.
       // We take the bastioned wall polyline and pull it inward a bit.
       const ring = offsetRadial(wall, cx, cy, -wallR * 0.06);
       
-      // Citadel placement: pick an angle, place it near the wall.
-      const citAng = rng() * Math.PI * 2;
-      const citCentre = polar(cx, cy, citAng, wallR * 0.88);
+     // Citadel placement with collision avoidance against the main wall
+      const citSize = baseR * 0.10; // slightly smaller than before
+      let citCentre = null;
+      let citadel = null;
       
-      // Citadel shape: a small bastioned polygon (5 sides looks good).
-      const citRotation = rng() * Math.PI * 2;
-      const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, baseR * 0.12, 5).wall;
+      for (let tries = 0; tries < 40; tries++) {
+        const citAng = rng() * Math.PI * 2;
+      
+        // Pull it inward so it is less likely to hit the wall
+        const candidate = polar(cx, cy, citAng, wallR * 0.72);
+      
+        // Keep a safety gap from the wall vertices
+        const gap = minDistPointToPoly(candidate, wall);
+        if (gap < citSize * 1.8) continue;
+      
+        citCentre = candidate;
+        citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+        break;
+      }
+      
+      // Fallback if all tries fail
+      if (!citCentre) {
+        citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
+        citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+      }
       
       // Avenue: straight line from square to citadel centre.
       const avenue = [centre, citCentre];
@@ -532,6 +599,7 @@
         avenue,
         primaryGate,
         newTown,
+        outerBoundary,
       };
 
     }
