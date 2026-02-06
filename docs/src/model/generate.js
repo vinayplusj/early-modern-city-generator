@@ -438,6 +438,12 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
+  console.log("BLOCK COUNTS", {
+    blocks: blocks?.length || 0,
+    firstArea: blocks?.[0]?._debug?.absArea || 0,
+  });
+
+
   console.log("MODEL COUNTS", {
     seed,
     newTownStreets: newTown?.streets?.length || 0,
