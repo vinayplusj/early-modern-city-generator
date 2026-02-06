@@ -239,6 +239,13 @@
       return best;
     }
 
+    function routeGateToSquareViaRing(gate, ring, squareCentre) {
+      if (!ring || ring.length < 3) return [gate, gate, squareCentre];
+      const a = closestPointOnPolyline(gate, ring);
+      if (!a) return [gate, gate, squareCentre];
+      return [gate, a, squareCentre];
+    }
+
     // ---------- Geometry generation ----------
     function generateFootprint(rng, cx, cy, baseR, pointCount = 20) {
       const pts = [];
@@ -1108,16 +1115,27 @@ function generate(seed, bastionCount, gateCount, width, height) {
   // ---------- Milestone 3.3: Road graph ----------
   const polylines = [];
 
-  // Gate -> square (primary)
+  // Gate -> ring -> square (primary), to avoid cutting through bastions
   for (const g of gates) {
+    const path = routeGateToSquareViaRing(g, ring, squareCentre); // [gate, snap, square]
+  
     polylines.push({
-      points: [g, squareCentre],
+      points: [path[0], path[1]],
+      kind: "primary",
+      width: 2.2,
+      nodeKindA: "gate",
+      nodeKindB: "junction",
+    });
+  
+    polylines.push({
+      points: [path[1], path[2]],
       kind: "primary",
       width: 2.5,
-      nodeKindA: "gate",
+      nodeKindA: "junction",
       nodeKindB: "square",
     });
   }
+
 
   // Square -> citadel (primary)
   polylines.push({
@@ -1138,14 +1156,27 @@ function generate(seed, bastionCount, gateCount, width, height) {
     for (const seg of newTown.streets) {
       polylines.push({ points: seg, kind: "secondary", width: 1.0 });
     }
-    if (newTown.mainAve) {
+  
+    // New Town main avenue: route into the city via the ring, then to the square
+    if (newTown.mainAve && ring) {
+      const entry = closestPointOnPolyline(newTown.mainAve[0], ring);
       polylines.push({
-        points: newTown.mainAve,
+        points: [newTown.mainAve[0], entry],
         kind: "primary",
         width: 2.0,
-        nodeKindA: "newtown_gate",
-        nodeKindB: "newtown_terminus",
+        nodeKindA: "junction",
+        nodeKindB: "junction",
       });
+      polylines.push({
+        points: [entry, squareCentre],
+        kind: "primary",
+        width: 2.2,
+        nodeKindA: "junction",
+        nodeKindB: "square",
+      });
+    } else if (newTown.mainAve) {
+      // Fallback if ring is missing for any reason
+      polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
     }
   }
 
