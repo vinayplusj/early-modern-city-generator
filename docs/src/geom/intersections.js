@@ -198,3 +198,74 @@ export function splitSegmentsAtProperIntersections(segments, eps = 2.0) {
 
   return out;
 }
+
+// ---------- Polygon intersection helpers ----------
+//
+// These are used by the city model for collision tests (New Town vs wall/bastions).
+// They are intentionally simple and stable.
+
+function pointOnSeg(p, a, b, eps = 1e-6) {
+  // Collinearity via cross product, then bounding box.
+  const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  if (Math.abs(cross) > eps) return false;
+
+  const dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+  if (dot < -eps) return false;
+
+  const len2 = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
+  if (dot - len2 > eps) return false;
+
+  return true;
+}
+
+function pointInPoly(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    const intersect =
+      ((a.y > pt.y) !== (b.y > pt.y)) &&
+      (pt.x < (b.x - a.x) * (pt.y - a.y) / ((b.y - a.y) || 1e-9) + a.x);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInPolyOrOn(pt, poly, eps = 1e-6) {
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if (pointOnSeg(pt, a, b, eps)) return true;
+  }
+  return pointInPoly(pt, poly);
+}
+
+export function polyIntersectsPoly(A, B) {
+  if (!A || !B || A.length < 3 || B.length < 3) return false;
+
+  // Edge-edge intersection (treat any hit as collision)
+  for (let i = 0; i < A.length; i++) {
+    const a1 = A[i], a2 = A[(i + 1) % A.length];
+    for (let j = 0; j < B.length; j++) {
+      const b1 = B[j], b2 = B[(j + 1) % B.length];
+      const hit = segmentIntersection(a1, a2, b1, b2);
+      if (hit.type === "proper" || hit.type === "touch" || hit.type === "collinear") {
+        return true;
+      }
+    }
+  }
+
+  // Containment (boundary treated as inside)
+  if (pointInPolyOrOn(A[0], B)) return true;
+  if (pointInPolyOrOn(B[0], A)) return true;
+
+  return false;
+}
+
+export function polyIntersectsPolyBuffered(A, B, eps = 1.5) {
+  if (polyIntersectsPoly(A, B)) return true;
+
+  // “Buffered” test: any vertex on/inside the other polygon.
+  for (const p of A) if (pointInPolyOrOn(p, B, eps)) return true;
+  for (const p of B) if (pointInPolyOrOn(p, A, eps)) return true;
+
+  return false;
+}
