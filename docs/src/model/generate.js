@@ -35,6 +35,8 @@ import { closestPointOnPolyline } from "../geom/nearest.js";
 
 // Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
+import { buildRadialDistricts, assignBlocksToDistricts } from "./districts.js";
+
 
 function dist2(a, b) {
   const dx = a.x - b.x;
@@ -438,6 +440,18 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
+  const DISTRICT_COUNT = 8;
+  const DISTRICT_JITTER = 0.12;
+  const DISTRICT_MIN_SPAN = 0.35;
+  
+  const districts = buildRadialDistricts(rng, outerBoundary, cx, cy, {
+    COUNT: DISTRICT_COUNT,
+    JITTER: DISTRICT_JITTER,
+    MIN_SPAN: DISTRICT_MIN_SPAN,
+  });
+  
+  assignBlocksToDistricts(blocks, districts, cx, cy)
+
   console.log("BLOCK COUNTS", {
     blocks: blocks?.length || 0,
     firstArea: blocks?.[0]?._debug?.absArea || 0,
@@ -467,7 +481,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     glacisOuter,
     ditchWidth,
     glacisWidth,
-
+    districts,
+    blocks,
     // Anchors
     centre,
     squareR: baseR * 0.055,
