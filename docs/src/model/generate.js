@@ -39,6 +39,12 @@ import {
 
 import { closestPointOnPolyline } from "../geom/nearest.js";
 
+import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
+
+const ROAD_EPS = 2.0;
+const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
+
+
 function dist2(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -402,6 +408,26 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const ROAD_EPS = 2.0;
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
+    // ---------------- Milestone 3.6: blocks (faces) ----------------
+  const BLOCKS_ANGLE_EPS = 1e-9;
+  const BLOCKS_AREA_EPS = 8.0;
+  const BLOCKS_MAX_FACE_STEPS = 10000;
+
+  const blocks = extractBlocksFromRoadGraph(roadGraph, {
+    ANGLE_EPS: BLOCKS_ANGLE_EPS,
+    AREA_EPS: BLOCKS_AREA_EPS,
+    MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
+  });
+
+  for (const b of blocks) { // debug polygons into landmarks
+    landmarks.push({
+      id: `dbg_${b.id}`,
+      pointOrPolygon: b.polygon,
+      kind: "debug_block",
+      label: b.id,
+    });
+  }
+
   return {
     footprint,
     cx,
@@ -439,5 +465,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     ravelins,
 
     bastionPolys,
+    roadGraph,
+    blocks,
+    landmarks,
   };
 }
