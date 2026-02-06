@@ -200,18 +200,25 @@ export function generate(seed, bastionCount, gateCount, width, height) {
           }
   
           // Reject if New Town collides with any bastion polygon.
-          let hitsBastion = false;
-          for (const b of bastions) {
+          const hitBastions = [];
+
+          for (let i = 0; i < bastions.length; i++) {
+            const b = bastions[i];
             if (!b || !b.pts || b.pts.length < 3) continue;
+          
             if (polyIntersectsPolyBuffered(b.pts, nt.poly, bastionBuffer)) {
-              hitsBastion = true;
-              break;
+              hitBastions.push(i);
             }
           }
-          if (hitsBastion) {
-            stats.hitsBastion++;
-            continue;
-          }
+          
+          // Do NOT reject the New Town.
+          // Instead, return which bastions were hit.
+          return {
+            newTown: nt,
+            primaryGate: g,
+            hitBastions,
+            stats,
+          };
   
           stats.ok++;
           return { newTown: nt, primaryGate: g, stats };
@@ -229,20 +236,39 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   console.log("NewTown placement stats", placed.stats);
 
 
-  // Last-resort failsafe only:
-  // If a collision still happens (rare), flatten just the colliding bastions.
-  if (newTown && newTown.poly && newTown.poly.length >= 3) {
-    const bastionsFinal = bastions.map((b) => {
-      const hit =
-        polyIntersectsPolyBuffered(b.pts, newTown.poly, 1.5) ||
-        pointInPolyOrOn(centroid(b.pts), newTown.poly, 1.5);
+    // If a collision still happens (rare), flatten just the colliding bastions.
+    // Targeted bastion removal when New Town intersects them
+    if (
+      newTown &&
+      newTown.poly &&
+      newTown.poly.length >= 3 &&
+      placed.hitBastions &&
+      placed.hitBastions.length > 0
+    ) {
+      const hitSet = new Set(placed.hitBastions);
+    
+      const bastionsFinal = bastions.map((b, i) => {
+        if (!b || !b.pts || b.pts.length < 3) return b;
+    
+        // Only flatten bastions that actually intersected the New Town
+        if (hitSet.has(i)) {
+          return { ...b, pts: b.shoulders };
+        }
+        return b;
+      });
+    
+      wallFinal = bastionsFinal.flatMap((b) => b.pts);
+      bastionPolys = bastionsFinal.map((b) => b.pts);
+    }
 
-      return hit ? { ...b, pts: b.shoulders } : b;
-    });
-
-    wallFinal = bastionsFinal.flatMap((b) => b.pts);
-    bastionPolys = bastionsFinal.map((b) => b.pts);
-  }
+  for (const i of placed.hitBastions || []) {
+  landmarks.push({
+    id: `dbg_bastion_removed_${i}`,
+    pointOrPolygon: bastions[i].pts,
+    kind: "debug_bastion_removed",
+    label: "Removed Bastion",
+  });
+}
 
   // ---------------- Outworks ----------------
   const ravelins = gates
