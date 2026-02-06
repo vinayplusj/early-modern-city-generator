@@ -45,6 +45,8 @@ import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
 
 const ROAD_EPS = 2.0;
 const polylines = [];
+console.log("POLYLINES NEW ARRAY", polylines);
+
 const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
 
