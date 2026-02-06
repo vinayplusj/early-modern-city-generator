@@ -164,6 +164,27 @@ export function render(ctx, model) {
     drawPoly(ctx, footprint, true);
     ctx.fill();
   }
+
+  // Districts (debug)
+  if (model.districts && model.districts.length) {
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = "#ffffff";
+    for (const d of model.districts) {
+      if (!d.polygon || d.polygon.length < 3) continue;
+      drawPoly(ctx, d.polygon, true);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
+    for (const d of model.districts) {
+      if (!d.polygon || d.polygon.length < 3) continue;
+      drawPoly(ctx, d.polygon, true);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   
   // Blocks (debug)
   const BLOCK_FILL_ALPHA = 0.10;
