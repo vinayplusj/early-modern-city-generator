@@ -83,6 +83,29 @@
       });
     }
 
+    function pointOnSeg(p, a, b, eps = 1e-6) {
+      // Check collinearity via cross product, then bounding box.
+      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      if (Math.abs(cross) > eps) return false;
+    
+      const dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+      if (dot < -eps) return false;
+    
+      const len2 = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
+      if (dot - len2 > eps) return false;
+    
+      return true;
+    }
+    
+    function pointInPolyOrOn(pt, poly, eps = 1e-6) {
+      // If on any edge, treat as inside (for collision / keep-out).
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        if (pointOnSeg(pt, a, b, eps)) return true;
+      }
+      return pointInPoly(pt, poly);
+    }
+    
     function pointInPoly(pt, poly) {
       let inside = false;
       for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -121,6 +144,19 @@
       const ab2 = ab.x * ab.x + ab.y * ab.y || 1;
       const t = clamp((ap.x * ab.x + ap.y * ab.y) / ab2, 0, 1);
       return add(a, mul(ab, t));
+    }
+
+    function polyIntersectsPolyBuffered(A, B, eps = 1.5) {
+      if (polyIntersectsPoly(A, B)) return true;
+    
+      // If any vertex of A is on/inside B with a looser eps, treat as collision.
+      for (const p of A) {
+        if (pointInPolyOrOn(p, B, eps)) return true;
+      }
+      for (const p of B) {
+        if (pointInPolyOrOn(p, A, eps)) return true;
+      }
+      return false;
     }
 
     function closestPointOnPolyline(p, poly) {
@@ -266,9 +302,9 @@
         }
       }
     
-      // Containment (one vertex inside the other polygon)
-      if (pointInPoly(A[0], B)) return true;
-      if (pointInPoly(B[0], A)) return true;
+      // Containment (treat boundary as inside for collision purposes)
+      if (pointInPolyOrOn(A[0], B)) return true;
+      if (pointInPolyOrOn(B[0], A)) return true;
     
       return false;
     }
@@ -835,7 +871,8 @@
               // Constraint 2: must not intersect any bastion polygon
               let hitsBastion = false;
               for (const bp of bastionPolys) {
-                if (polyIntersectsPoly(nt.poly, bp)) { hitsBastion = true; break; }
+                if (polyIntersectsPolyBuffered(nt.poly, bp, 1.5)) { hitsBastion = true; break; }
+
               }
               if (hitsBastion) continue;
     
