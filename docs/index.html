@@ -27,6 +27,19 @@
   </header>
 
   <canvas id="c"></canvas>
+  <script type="importmap">
+  {
+    "imports": {
+      "@geom/": "./src/geom/",
+      "@model/": "./src/model/",
+      "@render/": "./src/render/",
+      "@rng/": "./src/rng/",
+      "@roads/": "./src/roads/"
+    }
+  }
+  </script>
+  
+  <script type="module" src="./src/main.js"></script>
 
   <script type="module" src="./src/main.js"></script>
 </body>
