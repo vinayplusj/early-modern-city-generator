@@ -261,15 +261,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
       bastionPolys = bastionsFinal.map((b) => b.pts);
     }
 
-  for (const i of placed.hitBastions || []) {
-  landmarks.push({
-    id: `dbg_bastion_removed_${i}`,
-    pointOrPolygon: bastions[i].pts,
-    kind: "debug_bastion_removed",
-    label: "Removed Bastion",
-  });
-}
-
   // ---------------- Outworks ----------------
   const ravelins = gates
     .map((g) =>
