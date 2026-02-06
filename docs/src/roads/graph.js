@@ -8,8 +8,7 @@
 // Notes:
 // - This implementation focuses on proper intersections (X-crossings).
 // - Collinear overlaps are ignored for now (stable first pass for Milestone 3.4).
-// - IMPORTANT FIX: edge dedupe state must be per-run (no static function property),
-//   otherwise later regenerations can silently drop edges.
+// - IMPORTANT: edge dedupe state must be per-run, otherwise later regenerations can silently drop edges.
 
 import {
   segmentProperIntersectionPoint,
@@ -24,12 +23,22 @@ function snapKey(x, y, eps) {
   return `${Math.round(x / eps)}|${Math.round(y / eps)}`;
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+function bboxOfSeg(a, b) {
+  return {
+    minX: Math.min(a.x, b.x),
+    minY: Math.min(a.y, b.y),
+    maxX: Math.max(a.x, b.x),
+    maxY: Math.max(a.y, b.y),
+  };
 }
 
-function lerpPoint(a, b, t) {
-  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+function bboxesOverlap(A, B, pad = 0) {
+  return !(
+    A.maxX + pad < B.minX ||
+    A.minX - pad > B.maxX ||
+    A.maxY + pad < B.minY ||
+    A.minY - pad > B.maxY
+  );
 }
 
 // ---------- Splitting logic ----------
@@ -40,12 +49,12 @@ function lerpPoint(a, b, t) {
 //
 // Steps:
 // 1) Convert all polylines into raw segments (with style metadata).
-// 2) Find pairwise proper intersections.
+// 2) Find pairwise intersections.
 // 3) For each segment, collect split parameters t in (0,1).
 // 4) Split segments into smaller segments.
 // 5) Snap endpoints by eps to keep graph stable.
 export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
-  // 1) Flatten to segments
+  // 1) Flatten to raw segments
   const segs = [];
   for (const pl of polylines || []) {
     const pts = pl.points || [];
@@ -57,10 +66,10 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
         b: pts[i + 1],
         kind: pl.kind || "secondary",
         width: pl.width || 1.0,
-        // Only keep endpoint nodeKinds on the original first/last segment endpoints.
-        // When split, all new interior points become junctions.
+        // Keep endpoint nodeKinds only at the original endpoints.
         nodeKindA: (i === 0 && pl.nodeKindA) ? pl.nodeKindA : "junction",
         nodeKindB: (i === pts.length - 2 && pl.nodeKindB) ? pl.nodeKindB : "junction",
+        _bbox: null, // computed lazily
       });
     }
   }
@@ -79,13 +88,23 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
   const splits = new Array(segs.length);
   for (let i = 0; i < splits.length; i++) splits[i] = [];
 
-  // Pairwise intersections
+  // Precompute bboxes once (speed + stability)
+  for (const s of segs) s._bbox = bboxOfSeg(s.a, s.b);
+
+  // Pairwise proper intersections
+  // Use a small numeric epsilon for intersection math, but keep snapping eps for merging.
+  const I_EPS = 1e-9;
+
   for (let i = 0; i < segs.length; i++) {
     const si = segs[i];
+
     for (let j = i + 1; j < segs.length; j++) {
       const sj = segs[j];
 
-      // Do not split when sharing endpoints
+      // Fast reject: bbox does not overlap (pad a bit for safety)
+      if (!bboxesOverlap(si._bbox, sj._bbox, 0.0)) continue;
+
+      // Do not split when sharing endpoints (already connected)
       if (
         samePoint(si.a, sj.a, eps) ||
         samePoint(si.a, sj.b, eps) ||
@@ -95,7 +114,7 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
         continue;
       }
 
-      const hit = segmentProperIntersectionPoint(si.a, si.b, sj.a, sj.b);
+      const hit = segmentProperIntersectionPoint(si.a, si.b, sj.a, sj.b, I_EPS);
       if (!hit) continue;
 
       splits[i].push(hit.t);
@@ -114,11 +133,8 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
     const pts = buildSplitPointsOnSegment(s.a, s.b, ts, 1e-6);
 
     for (let k = 0; k < pts.length - 1; k++) {
-      const aRaw = pts[k];
-      const bRaw = pts[k + 1];
-
-      const a = snap(aRaw);
-      const b = snap(bRaw);
+      const a = snap(pts[k]);
+      const b = snap(pts[k + 1]);
 
       // Drop tiny segments
       if (dist2(a, b) <= (eps * eps) * 0.01) continue;
@@ -150,7 +166,7 @@ export function buildRoadGraph(polylines, eps = 2.0) {
   const edges = [];
   const buckets = new Map(); // key -> [nodeIds]
 
-  // IMPORTANT: per-run edge dedupe (do not attach state to a function)
+  // IMPORTANT: per-run edge dedupe (no static state)
   const edgeSet = new Set();
 
   function getNodeById(id) {
@@ -164,7 +180,7 @@ export function buildRoadGraph(polylines, eps = 2.0) {
     for (const id of list) {
       const n = getNodeById(id);
       if (dist2(n, p) <= eps * eps) {
-        // Upgrade kind if the existing node is generic.
+        // Upgrade kind if existing node is generic.
         if (n.kind === "junction" && kind !== "junction") n.kind = kind;
         return n.id;
       }
