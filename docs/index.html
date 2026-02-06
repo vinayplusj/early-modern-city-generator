@@ -234,50 +234,61 @@
       const n = wallBase.length;
       const gates = [];
       const usedEdges = new Set();
-
+    
       const minGap = Math.max(1, Math.floor(n / gateCount) - 1);
       const tJitter = clamp(0.16 - (bastionCount - 5) * (0.09 / 7), 0.07, 0.16);
-
+    
+      function edgeOk(e) {
+        for (const j of usedEdges) {
+          const d = Math.min((e - j + n) % n, (j - e + n) % n);
+          if (d <= minGap) return false;
+        }
+        return true;
+      }
+    
+      // Primary pass
       for (let k = 0; k < gateCount; k++) {
         let tries = 0;
-        while (tries++ < 200) {
-          const e = Math.floor(Math.random() * n); // NOTE: you kept rng() elsewhere; keep consistent if desired
+        while (tries++ < 220) {
+          const e = Math.floor(rng() * n);
           if (usedEdges.has(e)) continue;
-
-          let ok = true;
-          for (const j of usedEdges) {
-            const d = Math.min((e - j + n) % n, (j - e + n) % n);
-            if (d <= minGap) { ok = false; break; }
-          }
-          if (!ok) continue;
-
+          if (!edgeOk(e)) continue;
+    
           usedEdges.add(e);
-
+    
           const a = wallBase[e];
           const b = wallBase[(e + 1) % n];
-
+    
           const sign = (e % 2 === 0) ? +1 : -1;
           const t = clamp(0.5 + sign * tJitter, 0.15, 0.85);
-
+    
           const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
           gates.push({ ...p, idx: e });
           break;
         }
       }
-
-      while (gates.length < gateCount) {
-        const e = Math.floor(Math.random() * n);
+    
+      // Fallback fill (still deterministic)
+      let guard = 0;
+      while (gates.length < gateCount && guard++ < 5000) {
+        const e = Math.floor(rng() * n);
         if (usedEdges.has(e)) continue;
+        if (!edgeOk(e)) continue;
+    
         usedEdges.add(e);
-
+    
         const a = wallBase[e];
         const b = wallBase[(e + 1) % n];
         const p = { x: lerp(a.x, b.x, 0.5), y: lerp(a.y, b.y, 0.5) };
         gates.push({ ...p, idx: e });
       }
-
+    
+      // Stable order
+      gates.sort((g1, g2) => g1.idx - g2.idx);
+    
       return gates;
     }
+
 
     function drawGatehouse(ctx, gate, centre, size) {
       const out = normalize({ x: gate.x - centre.x, y: gate.y - centre.y });
@@ -329,36 +340,49 @@
     }
 
     // NEW (Milestone 3.1): secondary rings + secondary roads
-    function generateSecondaryRoads(rng, gates, centre, ring1, ring2) {
+    function generateSecondaryRoads(rng, gates, ring1, ring2) {
       const secondary = [];
-
-      // ring connectors: gate -> ring1 -> ring2
+      if (!gates || !gates.length || !ring1 || !ring2) return secondary;
+    
+      // Gate -> ring1, then ring1 -> ring2
+      const ring1Snaps = [];
+      const ring2Snaps = [];
+    
       for (const g of gates) {
         const a = closestPointOnPolyline(g, ring1);
         const b = closestPointOnPolyline(a, ring2);
-
-        // small jitter so the lines are not perfectly radial, but still stable
-        const j = (rng() - 0.5) * 0.08;
-        const a2 = lerpPoint(a, centre, j);
-        const b2 = lerpPoint(b, centre, j);
-
-        secondary.push([g, a2]);
-        secondary.push([a2, b2]);
+    
+        ring1Snaps.push(a);
+        ring2Snaps.push(b);
+    
+        secondary.push([g, a]);  // gate -> ring1
+        secondary.push([a, b]);  // ring1 -> ring2
       }
-
-      // a few cross links between ring2 points
-      // pick every Nth gate to avoid clutter
-      const step = Math.max(2, Math.floor(gates.length / 3));
-      for (let i = 0; i < gates.length; i += step) {
-        const g = gates[i];
-        const a = closestPointOnPolyline(g, ring2);
-        const h = gates[(i + step) % gates.length];
-        const b = closestPointOnPolyline(h, ring2);
-        secondary.push([a, b]);
+    
+      // Sparse cross-links on ring2 (use snapped points so it feels connected).
+      // Keep it small and deterministic.
+      const linkCount = clamp(Math.floor(gates.length / 2), 2, 3);
+      const used = new Set();
+    
+      let guard = 0;
+      while (used.size < linkCount && guard++ < 2000) {
+        const i = Math.floor(rng() * ring2Snaps.length);
+        const step = Math.max(1, Math.floor(lerp(2, Math.max(3, ring2Snaps.length - 1), rng())));
+        const j = (i + step) % ring2Snaps.length;
+    
+        const key = i < j ? `${i}:${j}` : `${j}:${i}`;
+        if (used.has(key)) continue;
+    
+        // Avoid very short links.
+        if (dist(ring2Snaps[i], ring2Snaps[j]) < 20) continue;
+    
+        used.add(key);
+        secondary.push([ring2Snaps[i], ring2Snaps[j]]);
       }
-
+    
       return secondary;
     }
+
 
     function lerpPoint(a, b, t) { return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }; }
 
@@ -517,19 +541,7 @@
         ctx.restore();
       }
 
-      for (const g of gates) {
-        drawGatehouse(ctx, g, { x: cx, y: cy }, squareR * 0.55);
-        ctx.fillStyle = "#ffffff";
-        drawCircle(ctx, g, 3.5);
-        ctx.fill();
-      }
-
-      if (primaryGate) {
-        ctx.fillStyle = "#ffffff";
-        drawCircle(ctx, primaryGate, 6);
-        ctx.fill();
-      }
-
+      
       if (avenue) {
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 3;
@@ -548,6 +560,20 @@
         for (let i = 1; i < road.length; i++) ctx.lineTo(road[i].x, road[i].y);
         ctx.stroke();
       }
+      
+      for (const g of gates) {
+        drawGatehouse(ctx, g, { x: cx, y: cy }, squareR * 0.55);
+        ctx.fillStyle = "#ffffff";
+        drawCircle(ctx, g, 3.5);
+        ctx.fill();
+      }
+
+      if (primaryGate) {
+        ctx.fillStyle = "#ffffff";
+        drawCircle(ctx, primaryGate, 6);
+        ctx.fill();
+      }
+
 
       if (citadel) {
         ctx.fillStyle = "#101010";
@@ -786,7 +812,7 @@
       const roads = generateRoadsToCentre(gates, centre);
 
       // Milestone 3.1: secondary roads
-      const secondaryRoads = generateSecondaryRoads(rng, gates, centre, ring, ring2);
+      const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
 
       return {
         footprint,
