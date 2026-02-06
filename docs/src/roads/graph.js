@@ -230,6 +230,16 @@ export function buildRoadGraph(polylines, eps = 2.0) {
 
 // Convenience wrapper: split + build
 export function buildRoadGraphWithIntersections(polylines, eps = 2.0) {
+  export function buildRoadGraphWithIntersections(polylines, eps = 2.0) {
+    console.log("POLYLINES IN", polylines?.length || 0);
+  
+    const split = splitPolylinesAtIntersections(polylines, eps);
+  
+    console.log("POLYLINES OUT", split?.length || 0);
+  
+    return buildRoadGraph(split, eps);
+  }
+
   const split = splitPolylinesAtIntersections(polylines, eps);
   return buildRoadGraph(split, eps);
 }
