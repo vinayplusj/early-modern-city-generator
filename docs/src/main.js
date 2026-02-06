@@ -1,42 +1,56 @@
-import { clamp } from "./geom/primitives.js";
 import { generate } from "./model/generate.js";
 import { render } from "./render/render.js";
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-const seedInput = document.getElementById("seed");
-const bastionsInput = document.getElementById("bastions");
-const gatesInput = document.getElementById("gates");
-const regenBtn = document.getElementById("regen");
-
-function resizeCanvas() {
+function resizeCanvasToDevicePixels() {
+  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(window.innerWidth * dpr);
-  canvas.height = Math.floor((window.innerHeight - 60) * dpr);
-  canvas.style.height = (window.innerHeight - 60) + "px";
-  canvas.style.width = window.innerWidth + "px";
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  return { w, h };
 }
 
-function draw() {
-  const seed = Math.max(1, parseInt(seedInput.value || "1", 10));
-  const bastions = clamp(parseInt(bastionsInput.value || "9", 10), 5, 14);
-  const gates = clamp(parseInt(gatesInput.value || "3", 10), 2, 6);
+function getInputs() {
+  return {
+    seed: Number(document.getElementById("seed").value) || 1,
+    bastions: Number(document.getElementById("bastions").value) || 8,
+    gates: Number(document.getElementById("gates").value) || 3,
+  };
+}
 
-  const model = generate(seed, bastions, gates, window.innerWidth, window.innerHeight - 60);
+let model = null;
+
+function regenerate() {
+  const { w, h } = resizeCanvasToDevicePixels();
+  const { seed, bastions, gates } = getInputs();
+
+  console.log("REGEN", { seed, bastions, gates, w, h });
+
+  model = generate(seed, bastions, gates, w, h);
+  window.model = model; // debug
   render(ctx, model);
 }
 
-regenBtn.addEventListener("click", () => {
-  seedInput.value = String(Math.floor(Math.random() * 1_000_000) + 1);
-  draw();
+// Wire events ONCE
+document.getElementById("regen").addEventListener("click", regenerate);
+document.getElementById("seed").addEventListener("change", regenerate);
+document.getElementById("bastions").addEventListener("change", regenerate);
+document.getElementById("gates").addEventListener("change", regenerate);
+
+// Debounced resize (prevents 3–5 regen calls during layout settle)
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(regenerate, 100);
 });
 
-seedInput.addEventListener("change", draw);
-bastionsInput.addEventListener("change", draw);
-gatesInput.addEventListener("change", draw);
-window.addEventListener("resize", () => { resizeCanvas(); draw(); });
-
-resizeCanvas();
-draw();
+// Initial render
+regenerate();
