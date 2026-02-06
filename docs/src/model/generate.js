@@ -1,13 +1,11 @@
-// src/model/generate.js
+// docs/src/model/generate.js
 //
 // City model generator (Milestone 3.4 entry point).
-// This module is responsible for assembling the full "model" object consumed by rendering.
+// This module assembles the full "model" object consumed by rendering.
 //
-// Notes:
-// - This is a direct ES-module translation of your current monolithic generate() function.
-// - It depends on geometry + feature modules.
-// - Milestone 3.4 (road intersection splitting) will be added in the road-graph builder; this file
-//   already centralizes polylines so the splitter can be plugged in cleanly.
+// Milestone 3.4 change:
+// - Road graph construction uses intersection splitting (proper crossings) via
+//   buildRoadGraphWithIntersections().
 
 import { mulberry32 } from "../rng/mulberry32.js";
 
@@ -17,10 +15,10 @@ import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
 import {
   polyIntersectsPoly,
-  polyIntersectsPolyBuffered
+  polyIntersectsPolyBuffered,
 } from "../geom/intersections.js";
 
-import { buildRoadGraph } from "../roads/graph.js";
+import { buildRoadGraphWithIntersections } from "../roads/graph.js";
 
 import {
   generateFootprint,
@@ -31,10 +29,10 @@ import {
   generateNewTownGrid,
   makeRavelin,
   minDistPointToPoly,
-  routeGateToSquareViaRing
+  routeGateToSquareViaRing,
 } from "./features.js";
-import { closestPointOnPolyline } from "../geom/nearest.js";
 
+import { closestPointOnPolyline } from "../geom/nearest.js";
 
 /**
  * Generate a full city model.
@@ -56,8 +54,13 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   const wallR = baseR * 0.78;
 
-  const { base: wallBase, wall, bastions } =
-    generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+  const { base: wallBase, wall, bastions } = generateBastionedWall(
+    rng,
+    cx,
+    cy,
+    wallR,
+    bastionCount
+  );
 
   const ditchWidth = wallR * 0.035;
   const glacisWidth = wallR * 0.08;
@@ -74,24 +77,32 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   let wallFinal = wall;
 
   // Keep bastion polys stable, but we will re-set them if we flatten.
-  let bastionPolys = bastions.map(b => b.pts);
+  let bastionPolys = bastions.map((b) => b.pts);
 
   // ---------------- New Town placement ----------------
   function placeNewTown() {
-    const startOffset0 = (ditchWidth + glacisWidth) * 1.60;
+    const startOffset0 = (ditchWidth + glacisWidth) * 1.6;
 
     // Try gates in order, then try a few scaled variants.
     const scales = [1.0, 0.92, 0.84, 0.76];
-    const offsetMul = [1.00, 1.12, 1.25];
+    const offsetMul = [1.0, 1.12, 1.25];
 
     for (const g of gates) {
       for (const om of offsetMul) {
         for (const s of scales) {
-          const nt = generateNewTownGrid(g, cx, cy, wallR, baseR, startOffset0 * om, s);
+          const nt = generateNewTownGrid(
+            g,
+            cx,
+            cy,
+            wallR,
+            baseR,
+            startOffset0 * om,
+            s
+          );
           if (!nt || !nt.poly || nt.poly.length < 3) continue;
 
           // Strong: keep entire New Town outside the ditch outer.
-          const outsideDitch = nt.poly.every(p => !pointInPoly(p, ditchOuter));
+          const outsideDitch = nt.poly.every((p) => !pointInPoly(p, ditchOuter));
           if (!outsideDitch) continue;
 
           // Avoid intersecting wall base edges.
@@ -112,7 +123,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // If New Town overlaps bastions, flatten bastions (hide bastions, keep town).
   // (This is still a failsafe. Ideally, placement avoids it.)
   if (newTown && newTown.poly && newTown.poly.length >= 3) {
-    const bastionsFinal = bastions.map(b => {
+    const bastionsFinal = bastions.map((b) => {
       const hit =
         polyIntersectsPolyBuffered(b.pts, newTown.poly, 1.5) ||
         pointInPolyOrOn(centroid(b.pts), newTown.poly, 1.5);
@@ -120,18 +131,24 @@ export function generate(seed, bastionCount, gateCount, width, height) {
       return hit ? { ...b, pts: b.shoulders } : b;
     });
 
-    wallFinal = bastionsFinal.flatMap(b => b.pts);
-    bastionPolys = bastionsFinal.map(b => b.pts);
+    wallFinal = bastionsFinal.flatMap((b) => b.pts);
+    bastionPolys = bastionsFinal.map((b) => b.pts);
   }
 
   // ---------------- Outworks ----------------
   const ravelins = gates
-    .map(g => makeRavelin(
-      g, cx, cy, wallR,
-      ditchWidth, glacisWidth,
-      newTown ? newTown.poly : null,
-      bastionCount
-    ))
+    .map((g) =>
+      makeRavelin(
+        g,
+        cx,
+        cy,
+        wallR,
+        ditchWidth,
+        glacisWidth,
+        newTown ? newTown.poly : null,
+        bastionCount
+      )
+    )
     .filter(Boolean);
 
   const outerBoundary = convexHull([
@@ -144,7 +161,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
   // ---------------- Citadel ----------------
-  const citSize = baseR * 0.10;
+  const citSize = baseR * 0.1;
   let citCentre = null;
   let citadel = null;
 
@@ -170,7 +187,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     if (!primaryGate) return centre;
 
     const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-    const candidate = add(centre, mul(out, baseR * 0.10));
+    const candidate = add(centre, mul(out, baseR * 0.1));
 
     // Keep it inside footprint and inside wallBase.
     if (!pointInPoly(candidate, footprint)) return centre;
@@ -184,7 +201,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const marketCentre = (() => {
     if (!primaryGate) {
       const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
-      return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
+      return pointInPoly(c0, footprint) && pointInPoly(c0, wallBase) ? c0 : squareCentre;
     }
 
     const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
@@ -206,22 +223,23 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   ];
 
   // Primary roads now go to the square (not the old centre).
- const roads = generateRoadsToCentre(gates, squareCentre);
+  // Keep this for compatibility even if you are drawing from roadGraph now.
+  const roads = generateRoadsToCentre(gates, squareCentre);
+
   const avenue = [squareCentre, citCentre];
 
   // Secondary roads
   const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
 
   // ---------------- Road polylines -> road graph ----------------
-  // Milestone 3.4 will split intersections in buildRoadGraph, but this file stays stable.
   const polylines = [];
 
   // Gate -> ring -> square (primary), to avoid cutting through bastions
   for (const g of gates) {
     const path = routeGateToSquareViaRing(g, ring, squareCentre);
-  
+
     if (!path || path.length < 2) continue;
-  
+
     if (path.length === 2) {
       polylines.push({
         points: [path[0], path[1]],
@@ -232,8 +250,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
       });
       continue;
     }
-  
-    // 3+ points: keep your existing split
+
+    // 3+ points: split at ring snap
     polylines.push({
       points: [path[0], path[1]],
       kind: "primary",
@@ -241,7 +259,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
       nodeKindA: "gate",
       nodeKindB: "junction",
     });
-  
+
     polylines.push({
       points: [path[1], path[2]],
       kind: "primary",
@@ -261,7 +279,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   });
 
   // Secondary roads
-  for (const r of (secondaryRoads || [])) {
+  for (const r of secondaryRoads || []) {
     polylines.push({ points: r, kind: "secondary", width: 1.25 });
   }
 
@@ -296,12 +314,14 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     }
   }
 
+  // Milestone 3.4: split intersections before building graph
   const ROAD_EPS = 2.0;
-  const roadGraph = buildRoadGraph(polylines, ROAD_EPS);
+  const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
   return {
     footprint,
-    cx, cy,
+    cx,
+    cy,
     wallBase,
     wall: wallFinal,
     gates,
@@ -337,6 +357,3 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     bastionPolys,
   };
 }
-
-
-
