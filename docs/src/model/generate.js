@@ -151,7 +151,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     const offsetMul = [1.0, 1.12, 1.25, 1.40, 1.55, 1.70];
   
     // Buffer used to keep New Town off bastion wedges.
-    const bastionBuffer = 1.0;
+    const bastionBuffer = 0.0;
   
     const stats = {
       tried: 0,
