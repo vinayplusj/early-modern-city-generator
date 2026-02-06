@@ -186,57 +186,56 @@ export function render(ctx, model) {
     ctx.restore();
   }
   
-  // Blocks (debug)
-  const BLOCK_FILL_ALPHA = 0.10;
-  const BLOCK_STROKE_ALPHA = 0.25;
-  const BLOCK_STROKE_WIDTH = 1;
-
-    // Blocks (debug) coloured by district
-  if (model.blocks && model.blocks.length) {
+  // Blocks (debug) coloured by district
+  if (blocks && blocks.length) {
     const palette = [
       "#5ddcff", "#7dffb2", "#ffd36b", "#ff7d7d",
       "#c08bff", "#7dd7ff", "#9cff7d", "#ffb27d",
       "#7d7dff", "#b2ff7d", "#ff7dd7", "#d7d7d7",
     ];
-
+  
     function hashIdToIndex(id, m) {
       const s = String(id || "");
       let h = 0;
       for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
       return h % m;
     }
-
+  
     ctx.save();
-
+  
     // Fill
     ctx.globalAlpha = 0.18;
-    for (const b of model.blocks) {
+    for (const b of blocks) {
       if (!b || !b.polygon || b.polygon.length < 3) continue;
-
-      const idx = hashIdToIndex(b.districtId, palette.length);
-      ctx.fillStyle = palette[idx];
-
+  
+      if (!b.districtId) {
+        ctx.fillStyle = "#ff00ff";
+      } else {
+        ctx.fillStyle = palette[hashIdToIndex(b.districtId, palette.length)];
+      }
+  
       drawPoly(ctx, b.polygon, true);
       ctx.fill();
     }
-
+  
     // Outline
     ctx.globalAlpha = 0.55;
     ctx.lineWidth = 1;
-    for (const b of model.blocks) {
+    for (const b of blocks) {
       if (!b || !b.polygon || b.polygon.length < 3) continue;
-
-      const idx = hashIdToIndex(b.districtId, palette.length);
-      ctx.strokeStyle = palette[idx];
-
+  
+      if (!b.districtId) {
+        ctx.strokeStyle = "#ff00ff";
+      } else {
+        ctx.strokeStyle = palette[hashIdToIndex(b.districtId, palette.length)];
+      }
+  
       drawPoly(ctx, b.polygon, true);
       ctx.stroke();
     }
-
+  
     ctx.restore();
   }
-
-
 
   // Outer boundary (convex hull) stroke
   if (outerBoundary && outerBoundary.length >= 3) {
