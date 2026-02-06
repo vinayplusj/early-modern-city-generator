@@ -1,11 +1,16 @@
 // docs/src/model/generate.js
 //
-// City model generator (Milestone 3.4 entry point).
+// City model generator (Milestone 3.5).
 // This module assembles the full "model" object consumed by rendering.
 //
-// Milestone 3.4 change:
+// Milestone 3.4 change (already in place):
 // - Road graph construction uses intersection splitting (proper crossings) via
 //   buildRoadGraphWithIntersections().
+//
+// Milestone 3.5 changes:
+// - New Town placement now rejects candidates that collide with bastion polygons
+//   (buffered), instead of relying on “flatten bastions” as the primary fix.
+// - Bastion flattening remains as a last-resort failsafe only.
 
 import { mulberry32 } from "../rng/mulberry32.js";
 
@@ -63,7 +68,7 @@ function safeMarketNudge({
     (!footprint || footprint.length < 3 || pointInPoly(p, footprint)) &&
     (!wallBase || wallBase.length < 3 || pointInPoly(p, wallBase));
 
-  // Preferred direction: perpendicular to gate->centre axis (same logic you already use)
+  // Preferred direction: perpendicular to gate->centre axis
   let out = null;
   if (primaryGate) {
     out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
@@ -76,7 +81,6 @@ function safeMarketNudge({
   const side = normalize(perp(out));
   const step = minSep;
 
-  // Try the cleanest two options first
   const c1 = add(squareCentre, mul(side, step));
   if (inside(c1)) return c1;
 
@@ -92,20 +96,9 @@ function safeMarketNudge({
     if (inside(c)) return c;
   }
 
-  // If everything fails, keep as-is
   return marketCentre;
 }
 
-
-/**
- * Generate a full city model.
- * @param {number} seed
- * @param {number} bastionCount
- * @param {number} gateCount
- * @param {number} width
- * @param {number} height
- * @returns {object} model
- */
 export function generate(seed, bastionCount, gateCount, width, height) {
   const rng = mulberry32(seed);
 
@@ -142,13 +135,18 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // Keep bastion polys stable, but we will re-set them if we flatten.
   let bastionPolys = bastions.map((b) => b.pts);
 
-  // ---------------- New Town placement ----------------
+  // ---------------- New Town placement (Milestone 3.5) ----------------
   function placeNewTown() {
     const startOffset0 = (ditchWidth + glacisWidth) * 1.6;
 
     // Try gates in order, then try a few scaled variants.
-    const scales = [1.0, 0.92, 0.84, 0.76];
-    const offsetMul = [1.0, 1.12, 1.25];
+    // Add a slightly wider search to reduce cases where we would need flattening.
+    const scales = [1.0, 0.92, 0.84, 0.76, 0.70];
+    const offsetMul = [1.0, 1.12, 1.25, 1.40];
+
+    // Buffer used to keep New Town off bastion wedges.
+    // Keep it close to ROAD_EPS scale so it “matches” visual thickness.
+    const bastionBuffer = 2.0;
 
     for (const g of gates) {
       for (const om of offsetMul) {
@@ -171,6 +169,18 @@ export function generate(seed, bastionCount, gateCount, width, height) {
           // Avoid intersecting wall base edges.
           if (polyIntersectsPoly(nt.poly, wallBase)) continue;
 
+          // Milestone 3.5: reject if New Town collides with any bastion polygon.
+          // This prevents “clipping into a bastion wedge” up front.
+          let hitsBastion = false;
+          for (const b of bastions) {
+            if (!b || !b.pts || b.pts.length < 3) continue;
+            if (polyIntersectsPolyBuffered(b.pts, nt.poly, bastionBuffer)) {
+              hitsBastion = true;
+              break;
+            }
+          }
+          if (hitsBastion) continue;
+
           return { newTown: nt, primaryGate: g };
         }
       }
@@ -183,8 +193,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
 
-  // If New Town overlaps bastions, flatten bastions (hide bastions, keep town).
-  // (This is still a failsafe. Ideally, placement avoids it.)
+  // Last-resort failsafe only:
+  // If a collision still happens (rare), flatten just the colliding bastions.
   if (newTown && newTown.poly && newTown.poly.length >= 3) {
     const bastionsFinal = bastions.map((b) => {
       const hit =
@@ -252,7 +262,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
     const candidate = add(centre, mul(out, baseR * 0.1));
 
-    // Keep it inside footprint and inside wallBase.
     if (!pointInPoly(candidate, footprint)) return centre;
     if (!pointInPoly(candidate, wallBase)) return centre;
 
@@ -262,36 +271,35 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const squareCentre = placeSquare();
 
   let marketCentre = (() => {
-  if (!primaryGate) {
-    const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
-    return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
-  }
+    if (!primaryGate) {
+      const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
+      return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
+    }
 
-  const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-  const side = normalize(perp(out));
+    const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
+    const side = normalize(perp(out));
 
-  const c1 = add(squareCentre, mul(side, baseR * 0.07));
-  if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
+    const c1 = add(squareCentre, mul(side, baseR * 0.07));
+    if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
 
-  const c2 = add(squareCentre, mul(side, -baseR * 0.07));
-  if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
+    const c2 = add(squareCentre, mul(side, -baseR * 0.07));
+    if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
 
-  return squareCentre;
-})();
+    return squareCentre;
+  })();
 
-// Nudge if too close to the square (including identical point)
-marketCentre = safeMarketNudge({
-  squareCentre,
-  marketCentre,
-  centre,
-  primaryGate,
-  cx,
-  cy,
-  baseR,
-  footprint,
-  wallBase,
-});
-
+  // Nudge if too close to the square (including identical point)
+  marketCentre = safeMarketNudge({
+    squareCentre,
+    marketCentre,
+    centre,
+    primaryGate,
+    cx,
+    cy,
+    baseR,
+    footprint,
+    wallBase,
+  });
 
   const landmarks = [
     { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
@@ -386,7 +394,6 @@ marketCentre = safeMarketNudge({
         nodeKindB: "square",
       });
     } else if (newTown.mainAve) {
-      // Fallback if ring is missing for any reason
       polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
     }
   }
