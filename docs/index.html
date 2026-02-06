@@ -174,7 +174,7 @@
   const shoulder = wallR * shoulderFactor;
 
   // More bastions => smaller tangential spread
-  const cheekAlongFrac = clamp(1.50 - (bastionCount - 5) * (0.90 / 7), 0.60, 1.50);
+  const cheekAlongFrac = clamp(1.20 - (bastionCount - 5) * 0.10, 0.60, 1.20);
   const cheekOutFrac = 0.6;
 
   const bastions = [];
@@ -818,7 +818,7 @@
 
     function draw() {
       const seed = Math.max(1, parseInt(seedInput.value || "1", 10));
-      const bastions = clamp(parseInt(bastionsInput.value || "8", 10), 5, 12);
+      const bastions = clamp(parseInt(bastionsInput.value || "9", 10), 5, 14);
       const gates = clamp(parseInt(gatesInput.value || "3", 10), 2, 6);
 
       const model = generate(seed, bastions, gates, window.innerWidth, window.innerHeight - 60);
