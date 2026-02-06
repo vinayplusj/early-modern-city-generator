@@ -8,16 +8,20 @@
 // Notes:
 // - This implementation focuses on proper intersections (X-crossings).
 // - Collinear overlaps are ignored for now (stable first pass for Milestone 3.4).
+// - IMPORTANT FIX: edge dedupe state must be per-run (no static function property),
+//   otherwise later regenerations can silently drop edges.
+
+import {
+  segmentProperIntersectionPoint,
+  buildSplitPointsOnSegment,
+  makePointSnapper,
+  samePoint,
+  dist2,
+} from "../geom/intersections.js";
 
 // ---------- Small utils ----------
-function clamp(v, a, b) {
-  return Math.max(a, Math.min(b, v));
-}
-
-function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
+function snapKey(x, y, eps) {
+  return `${Math.round(x / eps)}|${Math.round(y / eps)}`;
 }
 
 function lerp(a, b, t) {
@@ -28,47 +32,6 @@ function lerpPoint(a, b, t) {
   return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
 }
 
-function snapKey(x, y, eps) {
-  return `${Math.round(x / eps)}|${Math.round(y / eps)}`;
-}
-
-function samePoint(a, b, eps) {
-  return dist2(a, b) <= eps * eps;
-}
-
-// ---------- Segment intersection (proper crossing) ----------
-// Returns { p, t, u } where:
-// - p is intersection point
-// - t is parameter along AB (0..1)
-// - u is parameter along CD (0..1)
-// Returns null if no proper intersection.
-//
-// Important: We exclude endpoint-only touches by using a small margin.
-function segmentIntersectionPoint(a, b, c, d, eps = 1e-9) {
-  const r = { x: b.x - a.x, y: b.y - a.y };
-  const s = { x: d.x - c.x, y: d.y - c.y };
-
-  const rxs = r.x * s.y - r.y * s.x;
-  const qpx = c.x - a.x;
-  const qpy = c.y - a.y;
-  const qpxr = qpx * r.y - qpy * r.x;
-
-  // Parallel or collinear
-  if (Math.abs(rxs) < eps) {
-    return null;
-  }
-
-  const t = (qpx * s.y - qpy * s.x) / rxs;
-  const u = qpxr / rxs;
-
-  // Proper intersection inside both segments.
-  // Exclude near-endpoint hits to reduce double-splitting noise.
-  const margin = 1e-6;
-  if (t <= margin || t >= 1 - margin || u <= margin || u >= 1 - margin) return null;
-
-  return { p: { x: a.x + t * r.x, y: a.y + t * r.y }, t, u };
-}
-
 // ---------- Splitting logic ----------
 //
 // Input: polylines like:
@@ -77,7 +40,7 @@ function segmentIntersectionPoint(a, b, c, d, eps = 1e-9) {
 //
 // Steps:
 // 1) Convert all polylines into raw segments (with style metadata).
-// 2) Find pairwise intersections.
+// 2) Find pairwise proper intersections.
 // 3) For each segment, collect split parameters t in (0,1).
 // 4) Split segments into smaller segments.
 // 5) Snap endpoints by eps to keep graph stable.
@@ -122,12 +85,17 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
     for (let j = i + 1; j < segs.length; j++) {
       const sj = segs[j];
 
-      // Quick reject: shared endpoints (do not treat as intersection)
-      if (samePoint(si.a, sj.a, eps) || samePoint(si.a, sj.b, eps) || samePoint(si.b, sj.a, eps) || samePoint(si.b, sj.b, eps)) {
+      // Do not split when sharing endpoints
+      if (
+        samePoint(si.a, sj.a, eps) ||
+        samePoint(si.a, sj.b, eps) ||
+        samePoint(si.b, sj.a, eps) ||
+        samePoint(si.b, sj.b, eps)
+      ) {
         continue;
       }
 
-      const hit = segmentIntersectionPoint(si.a, si.b, sj.a, sj.b);
+      const hit = segmentProperIntersectionPoint(si.a, si.b, sj.a, sj.b);
       if (!hit) continue;
 
       splits[i].push(hit.t);
@@ -135,42 +103,25 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
     }
   }
 
-  // 3) Split each segment
+  // 3) Split each segment and snap points
+  const snap = makePointSnapper(eps);
   const out = [];
 
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
     const ts = splits[i];
 
-    // No splits
-    if (!ts || ts.length === 0) {
-      out.push({
-        points: [s.a, s.b],
-        kind: s.kind,
-        width: s.width,
-        nodeKindA: s.nodeKindA,
-        nodeKindB: s.nodeKindB,
-      });
-      continue;
-    }
+    const pts = buildSplitPointsOnSegment(s.a, s.b, ts, 1e-6);
 
-    // Sort and unique split params (within tolerance)
-    ts.sort((x, y) => x - y);
-    const uniq = [];
-    const tol = 1e-6;
-    for (const t of ts) {
-      if (uniq.length === 0 || Math.abs(t - uniq[uniq.length - 1]) > tol) uniq.push(t);
-    }
-
-    // Build split points
-    const pts = [s.a];
-    for (const t of uniq) pts.push(lerpPoint(s.a, s.b, t));
-    pts.push(s.b);
-
-    // Emit sub-segments
     for (let k = 0; k < pts.length - 1; k++) {
-      const a = pts[k];
-      const b = pts[k + 1];
+      const aRaw = pts[k];
+      const bRaw = pts[k + 1];
+
+      const a = snap(aRaw);
+      const b = snap(bRaw);
+
+      // Drop tiny segments
+      if (dist2(a, b) <= (eps * eps) * 0.01) continue;
 
       const nkA = (k === 0) ? s.nodeKindA : "junction";
       const nkB = (k === pts.length - 2) ? s.nodeKindB : "junction";
@@ -185,41 +136,10 @@ export function splitPolylinesAtIntersections(polylines, eps = 2.0) {
     }
   }
 
-  // 4) Snap/merge endpoints to stable coordinates (eps bucket)
-  // This prevents almost-identical float intersection points from creating duplicate nodes.
-  const snapped = [];
-  const canonical = new Map(); // key -> point
-
-  function snapPoint(p) {
-    const k = snapKey(p.x, p.y, eps);
-    const existing = canonical.get(k);
-    if (existing) return existing;
-
-    // If the bucket exists but is empty, just set this as canonical.
-    canonical.set(k, p);
-    return p;
-  }
-
-  for (const s of out) {
-    const a = snapPoint(s.points[0]);
-    const b = snapPoint(s.points[1]);
-
-    // Drop tiny segments
-    if (dist2(a, b) <= (eps * eps) * 0.01) continue;
-
-    snapped.push({
-      points: [a, b],
-      kind: s.kind,
-      width: s.width,
-      nodeKindA: s.nodeKindA,
-      nodeKindB: s.nodeKindB,
-    });
-  }
-
-  return snapped;
+  return out;
 }
 
-// ---------- Build road graph (existing behaviour, with stable imports) ----------
+// ---------- Build road graph ----------
 //
 // Builds a graph from polylines, snapping nodes with eps.
 // If you have already split segments, call splitPolylinesAtIntersections() first,
@@ -229,6 +149,9 @@ export function buildRoadGraph(polylines, eps = 2.0) {
   const nodes = [];
   const edges = [];
   const buckets = new Map(); // key -> [nodeIds]
+
+  // IMPORTANT: per-run edge dedupe (do not attach state to a function)
+  const edgeSet = new Set();
 
   function getNodeById(id) {
     return nodes[id - 1];
@@ -261,10 +184,8 @@ export function buildRoadGraph(polylines, eps = 2.0) {
     const lo = Math.min(aId, bId);
     const hi = Math.max(aId, bId);
     const key = `${lo}|${hi}|${kind}`;
-    // Lazily create a set only when needed
-    if (!addEdge._set) addEdge._set = new Set();
-    if (addEdge._set.has(key)) return;
-    addEdge._set.add(key);
+    if (edgeSet.has(key)) return;
+    edgeSet.add(key);
 
     edges.push({ a: aId, b: bId, kind, width });
   }
