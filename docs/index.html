@@ -786,33 +786,24 @@
       }
 
       // Landmarks (square + market)
-        if (squareCentre) {
-          ctx.fillStyle = "#222222";
-          drawCircle(ctx, squareCentre, squareR * 0.95);
-          ctx.fill();
-        
-          ctx.strokeStyle = "#efefef";
-          ctx.lineWidth = 2;
-          drawCircle(ctx, squareCentre, squareR * 0.95);
-          ctx.stroke();
-        }
-        
-        if (marketCentre) {
-          ctx.fillStyle = "#efefef";
-          drawCircle(ctx, marketCentre, 3);
-          ctx.fill();
-        }
-
-      ctx.fillStyle = "#1f1f1f";
-      drawCircle(ctx, squareCentre || centre, squareR);
-      ctx.fill();
-      ctx.strokeStyle = "#efefef";
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#efefef";
-      ctx.lineWidth = 2;
-      drawCircle(ctx, squareCentre || centre, squareR);
-      ctx.stroke();
-
+      if (squareCentre) {
+        ctx.fillStyle = "#222222";
+        drawCircle(ctx, squareCentre, squareR * 0.95);
+        ctx.fill();
+      
+        ctx.strokeStyle = "#efefef";
+        ctx.lineWidth = 2;
+        drawCircle(ctx, squareCentre, squareR * 0.95);
+        ctx.stroke();
+      }
+      
+      if (marketCentre) {
+        ctx.fillStyle = "#efefef";
+        drawCircle(ctx, marketCentre, 3);
+        ctx.fill();
+      }
+      
+      // City centre dot (small)
       ctx.fillStyle = "#efefef";
       drawCircle(ctx, centre, 2.5);
       ctx.fill();
