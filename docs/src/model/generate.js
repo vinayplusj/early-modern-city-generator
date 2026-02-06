@@ -450,7 +450,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MIN_SPAN: DISTRICT_MIN_SPAN,
   });
   
-  assignBlocksToDistricts(blocks, districts, cx, cy)
+  assignBlocksToDistricts(blocks, districts, cx, cy);
 
   console.log("BLOCK COUNTS", {
     blocks: blocks?.length || 0,
@@ -505,9 +505,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
     // District-ish boundary
     outerBoundary,
-
-    // Milestone 3.6 debug
-    blocks,
 
     // Markers
     landmarks,
