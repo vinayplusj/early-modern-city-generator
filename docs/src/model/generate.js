@@ -31,7 +31,7 @@ import {
   routeGateToSquareViaRing,
 } from "./features.js";
 
-import { closestPointOnPolyline } from "../geom/nearest.js";
+import { closestPointOnPolyline } from "../geom/poly.js";
 
 // Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
