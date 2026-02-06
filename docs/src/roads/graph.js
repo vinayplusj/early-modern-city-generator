@@ -10,6 +10,7 @@
 // - Collinear overlaps are ignored for now (stable first pass for Milestone 3.4).
 // - IMPORTANT: edge dedupe state must be per-run, otherwise later regenerations can silently drop edges.
 
+console.count("buildRoadGraphWithIntersections() calls");
 import {
   segmentProperIntersectionPoint,
   buildSplitPointsOnSegment,
