@@ -230,6 +230,49 @@
       return { base, wall, bastions };
     }
 
+    function segIntersect(a, b, c, d) {
+      // Proper segment intersection (including collinear overlap).
+      const cross = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+      const onSeg = (p, q, r) =>
+        Math.min(p.x, r.x) - 1e-9 <= q.x && q.x <= Math.max(p.x, r.x) + 1e-9 &&
+        Math.min(p.y, r.y) - 1e-9 <= q.y && q.y <= Math.max(p.y, r.y) + 1e-9;
+    
+      const d1 = cross(a, b, c);
+      const d2 = cross(a, b, d);
+      const d3 = cross(c, d, a);
+      const d4 = cross(c, d, b);
+    
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+    
+      // Collinear cases
+      if (Math.abs(d1) < 1e-9 && onSeg(a, c, b)) return true;
+      if (Math.abs(d2) < 1e-9 && onSeg(a, d, b)) return true;
+      if (Math.abs(d3) < 1e-9 && onSeg(c, a, d)) return true;
+      if (Math.abs(d4) < 1e-9 && onSeg(c, b, d)) return true;
+    
+      return false;
+    }
+    
+    function polyIntersectsPoly(A, B) {
+      if (!A || !B || A.length < 3 || B.length < 3) return false;
+    
+      // Edge-edge intersection
+      for (let i = 0; i < A.length; i++) {
+        const a1 = A[i], a2 = A[(i + 1) % A.length];
+        for (let j = 0; j < B.length; j++) {
+          const b1 = B[j], b2 = B[(j + 1) % B.length];
+          if (segIntersect(a1, a2, b1, b2)) return true;
+        }
+      }
+    
+      // Containment (one vertex inside the other polygon)
+      if (pointInPoly(A[0], B)) return true;
+      if (pointInPoly(B[0], A)) return true;
+    
+      return false;
+    }
+
     function pickGates(rng, wallBase, gateCount, bastionCount) {
       const n = wallBase.length;
       const gates = [];
@@ -605,31 +648,35 @@
       ctx.fill();
     }
 
-    function generateNewTownGrid(gate, cx, cy, wallR, baseR, newTownStartOffset) {
+    function generateNewTownGrid(gate, cx, cy, wallR, baseR, newTownStartOffset, scale = 1.0) {
       const out = normalize({ x: gate.x - cx, y: gate.y - cy });
+      if (!isFinite(out.x) || !isFinite(out.y)) return null;
+    
       const side = normalize(perp(out));
-
+    
       const gateOut = add(gate, mul(out, newTownStartOffset));
-
-      const depth = wallR * 0.80;
-      const wideNear = wallR * 0.20;
-      const wideFar  = wallR * 0.50;
-
+    
+      const depth = wallR * 0.80 * scale;
+      const wideNear = wallR * 0.20 * scale;
+      const wideFar  = wallR * 0.50 * scale;
+    
       const p0 = add(gateOut, mul(side, -wideNear));
       const p1 = add(gateOut, mul(side,  wideNear));
       const p2 = add(add(gateOut, mul(out, depth * 0.55)), mul(side,  wideFar));
       const p3 = add(add(gateOut, mul(out, depth * 1.00)), mul(side,  wideFar));
       const p4 = add(add(gateOut, mul(out, depth * 1.00)), mul(side, -wideFar));
       const p5 = add(add(gateOut, mul(out, depth * 0.55)), mul(side, -wideFar));
-
+    
       const poly = [p0, p1, p2, p3, p4, p5];
-
-      const spacing = baseR * 0.085;
-      const cols = 18;
-      const rows = 18;
-
+    
+      const spacing = baseR * 0.085 * clamp(scale, 0.75, 1.0);
+    
+      // Derive grid size from geometry so density stays stable across scales
+      const cols = Math.max(10, Math.floor((wideFar * 2) / spacing));
+      const rows = Math.max(10, Math.floor(depth / spacing));
+    
       const origin = gateOut;
-
+    
       const points = [];
       for (let r = 0; r <= rows; r++) {
         for (let c = -Math.floor(cols / 2); c <= Math.floor(cols / 2); c++) {
@@ -637,25 +684,25 @@
           if (pointInPoly(pt, poly)) points.push({ r, c, pt });
         }
       }
-
+    
       const key = (r, c) => `${r}|${c}`;
       const map = new Map();
       for (const p of points) map.set(key(p.r, p.c), p.pt);
-
+    
       const streets = [];
       for (const p of points) {
         const a = p.pt;
-
+    
         const b = map.get(key(p.r + 1, p.c));
         if (b) streets.push([a, b]);
-
+    
         const d = map.get(key(p.r, p.c + 1));
         if (d) streets.push([a, d]);
       }
-
+    
       const mainEnd = add(gateOut, mul(out, depth * 0.85));
       const mainAve = [gateOut, mainEnd];
-
+    
       return { poly, streets, mainAve, gateOut };
     }
 
@@ -737,83 +784,133 @@
     // ---------- Model generation ----------
     function generate(seed, bastionCount, gateCount, width, height) {
       const rng = mulberry32(seed);
-
+    
       const cx = width * 0.5;
       const cy = height * 0.55;
       const baseR = Math.min(width, height) * 0.33;
-
+    
       const footprint = generateFootprint(rng, cx, cy, baseR, 22);
-
+    
       const wallR = baseR * 0.78;
-
+    
       const { base: wallBase, wall, bastions } =
         generateBastionedWall(rng, cx, cy, wallR, bastionCount);
-
+    
       const ditchWidth = wallR * 0.035;
       const glacisWidth = wallR * 0.08;
-
+    
       const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
       const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
       const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
-
+    
       const centre = centroid(footprint);
-
+    
       const gates = pickGates(rng, wallBase, gateCount, bastionCount);
-      const primaryGate = gates[0];
-
-      const newTownStartOffset = (ditchWidth + glacisWidth) * 1.30;
-      const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
-
+    
+      // Keep a stable list of bastion polygons to treat as "keep-out".
+      const bastionPolys = bastions.map(b => b.pts);
+    
+      // Start with the full bastioned wall.
       let wallFinal = wall;
-
+    
+      function placeNewTown() {
+        const startOffset0 = (ditchWidth + glacisWidth) * 1.30;
+    
+        // Try gates in order, then try a few scaled variants.
+        const scales = [1.0, 0.92, 0.84, 0.76];
+        const offsetMul = [1.00, 1.12, 1.25]; // push it farther out if needed
+    
+        for (const g of gates) {
+          for (const om of offsetMul) {
+            for (const s of scales) {
+              const nt = generateNewTownGrid(g, cx, cy, wallR, baseR, startOffset0 * om, s);
+    
+              // Defensive: if generator returns null or malformed poly
+              if (!nt || !nt.poly || nt.poly.length < 3) continue;
+    
+              // Constraint 1: all vertices must be outside glacisOuter
+              const outsideGlacis = nt.poly.every(p => !pointInPoly(p, glacisOuter));
+              if (!outsideGlacis) continue;
+    
+              // Constraint 2: must not intersect any bastion polygon
+              let hitsBastion = false;
+              for (const bp of bastionPolys) {
+                if (polyIntersectsPoly(nt.poly, bp)) { hitsBastion = true; break; }
+              }
+              if (hitsBastion) continue;
+    
+              // Constraint 3 (optional): avoid intersecting the wall polygon itself
+              if (polyIntersectsPoly(nt.poly, wallFinal)) continue;
+    
+              return { newTown: nt, primaryGate: g };
+            }
+          }
+        }
+    
+        // If nothing fits, return null.
+        return { newTown: null, primaryGate: gates[0] || null };
+      }
+    
+      // Place new town using constraints.
+      const placed = placeNewTown();
+      let newTown = placed.newTown;
+      const primaryGate = placed.primaryGate;
+    
+      // Failsafe: if new town still overlaps bastions, "flatten" those bastions.
+      // With the placement constraints, this should rarely trigger.
       if (newTown && newTown.poly && newTown.poly.length >= 3) {
         const bastionsFinal = bastions.map(b => {
-          const hitsNewTown = pointInPoly(centroid(b.pts), newTown.poly);
-          return hitsNewTown ? { ...b, pts: b.shoulders } : b;
+          const hit = polyIntersectsPoly(b.pts, newTown.poly) || pointInPoly(centroid(b.pts), newTown.poly);
+          return hit ? { ...b, pts: b.shoulders } : b;
         });
         wallFinal = bastionsFinal.flatMap(b => b.pts);
+    
+        // Optional: after flattening, you can re-check and drop newTown if it still intersects wallFinal
+        if (polyIntersectsPoly(newTown.poly, wallFinal)) {
+          newTown = null;
+        }
       }
-
+    
       const ravelins = gates
         .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
         .filter(Boolean);
-
+    
       const outerBoundary = convexHull([
         ...footprint,
         ...(newTown ? newTown.poly : []),
       ]);
-
+    
       // Milestone 3.1: two inner rings
       const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
       const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
-
+    
       const citSize = baseR * 0.10;
       let citCentre = null;
       let citadel = null;
-
+    
       for (let tries = 0; tries < 40; tries++) {
         const citAng = rng() * Math.PI * 2;
         const candidate = polar(cx, cy, citAng, wallR * 0.72);
-
+    
         const gap = minDistPointToPoly(candidate, wallFinal);
         if (gap < citSize * 1.8) continue;
-
+    
         citCentre = candidate;
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
         break;
       }
-
+    
       if (!citCentre) {
         citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
       }
-
+    
       const avenue = [centre, citCentre];
       const roads = generateRoadsToCentre(gates, centre);
-
+    
       // Milestone 3.1: secondary roads
       const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
-
+    
       return {
         footprint,
         cx, cy,
@@ -838,8 +935,10 @@
         ditchWidth,
         glacisWidth,
         ravelins,
+        bastionPolys,
       };
     }
+
 
     // ---------- App wiring ----------
     const canvas = document.getElementById("c");
