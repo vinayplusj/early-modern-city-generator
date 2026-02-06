@@ -144,19 +144,29 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // ---------------- New Town placement (Milestone 3.5) ----------------
   function placeNewTown() {
     const startOffset0 = (ditchWidth + glacisWidth) * 1.6;
-
-    // Try gates in order, then try a few scaled variants.
-    // Add a slightly wider search to reduce cases where we would need flattening.
-    const scales = [1.0, 0.92, 0.84, 0.76, 0.70];
-    const offsetMul = [1.0, 1.12, 1.25, 1.40];
-
+  
+    // Slightly wider search to reduce cases where we would need flattening.
+    const scales = [1.0, 0.92, 0.84, 0.76, 0.70, 0.64];
+    const offsetMul = [1.0, 1.12, 1.25, 1.40, 1.55, 1.70];
+  
     // Buffer used to keep New Town off bastion wedges.
-    // Keep it close to ROAD_EPS scale so it “matches” visual thickness.
-    const bastionBuffer = 2.0;
-
+    const bastionBuffer = 1.0;
+  
+    const stats = {
+      tried: 0,
+      badPoly: 0,
+      centroidInsideDitch: 0,
+      crossesDitch: 0,
+      hitsWallBase: 0,
+      hitsBastion: 0,
+      ok: 0,
+    };
+  
     for (const g of gates) {
       for (const om of offsetMul) {
         for (const s of scales) {
+          stats.tried++;
+  
           const nt = generateNewTownGrid(
             g,
             cx,
@@ -166,17 +176,29 @@ export function generate(seed, bastionCount, gateCount, width, height) {
             startOffset0 * om,
             s
           );
-          if (!nt || !nt.poly || nt.poly.length < 3) continue;
-
-          // Strong: keep entire New Town outside the ditch outer.
-          const outsideDitch = nt.poly.every((p) => !pointInPoly(p, ditchOuter));
-          if (!outsideDitch) continue;
-
+          if (!nt || !nt.poly || nt.poly.length < 3) {
+            stats.badPoly++;
+            continue;
+          }
+  
+          // Robust ditch test
+          const ntC = centroid(nt.poly);
+          if (pointInPoly(ntC, ditchOuter)) {
+            stats.centroidInsideDitch++;
+            continue;
+          }
+          if (polyIntersectsPoly(nt.poly, ditchOuter)) {
+            stats.crossesDitch++;
+            continue;
+          }
+  
           // Avoid intersecting wall base edges.
-          if (polyIntersectsPoly(nt.poly, wallBase)) continue;
-
-          // Milestone 3.5: reject if New Town collides with any bastion polygon.
-          // This prevents “clipping into a bastion wedge” up front.
+          if (polyIntersectsPoly(nt.poly, wallBase)) {
+            stats.hitsWallBase++;
+            continue;
+          }
+  
+          // Reject if New Town collides with any bastion polygon.
           let hitsBastion = false;
           for (const b of bastions) {
             if (!b || !b.pts || b.pts.length < 3) continue;
@@ -185,19 +207,26 @@ export function generate(seed, bastionCount, gateCount, width, height) {
               break;
             }
           }
-          if (hitsBastion) continue;
-
-          return { newTown: nt, primaryGate: g };
+          if (hitsBastion) {
+            stats.hitsBastion++;
+            continue;
+          }
+  
+          stats.ok++;
+          return { newTown: nt, primaryGate: g, stats };
         }
       }
     }
-
-    return { newTown: null, primaryGate: gates[0] || null };
+  
+    return { newTown: null, primaryGate: gates[0] || null, stats };
   }
+
 
   const placed = placeNewTown();
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
+  console.log("NewTown placement stats", placed.stats);
+
 
   // Last-resort failsafe only:
   // If a collision still happens (rare), flatten just the colliding bastions.
