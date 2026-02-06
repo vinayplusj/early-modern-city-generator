@@ -797,11 +797,13 @@
         }
 
       ctx.fillStyle = "#1f1f1f";
-      drawCircle(ctx, centre, squareR);
+      drawCircle(ctx, squareCentre || centre, squareR);
       ctx.fill();
       ctx.strokeStyle = "#efefef";
       ctx.lineWidth = 2;
-      drawCircle(ctx, centre, squareR);
+      ctx.strokeStyle = "#efefef";
+      ctx.lineWidth = 2;
+      drawCircle(ctx, squareCentre || centre, squareR);
       ctx.stroke();
 
       ctx.fillStyle = "#efefef";
@@ -943,249 +945,244 @@
     }
 
     // ---------- Model generation ----------
-    function generate(seed, bastionCount, gateCount, width, height) {
-      const rng = mulberry32(seed);
-    
-      const cx = width * 0.5;
-      const cy = height * 0.55;
-      const baseR = Math.min(width, height) * 0.33;
-    
-      const footprint = generateFootprint(rng, cx, cy, baseR, 22);
-    
-      const wallR = baseR * 0.78;
-    
-      const { base: wallBase, wall, bastions } =
-        generateBastionedWall(rng, cx, cy, wallR, bastionCount);
-    
-      const ditchWidth = wallR * 0.035;
-      const glacisWidth = wallR * 0.08;
-    
-      const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-      const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-      const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
-    
-      const centre = centroid(footprint);
-    
-      const gates = pickGates(rng, wallBase, gateCount, bastionCount);
-    
-      // Keep a stable list of bastion polygons to treat as "keep-out".
-      let bastionPolys = bastions.map(b => b.pts);
-    
-      // Start with the full bastioned wall.
-      let wallFinal = wall;
-    
-      function placeNewTown() {
-        const startOffset0 = (ditchWidth + glacisWidth) * 1.60;
-    
-        // Try gates in order, then try a few scaled variants.
-        const scales = [1.0, 0.92, 0.84, 0.76];
-        const offsetMul = [1.00, 1.12, 1.25]; // push it farther out if needed
-    
-        for (const g of gates) {
-          for (const om of offsetMul) {
-            for (const s of scales) {
-              const nt = generateNewTownGrid(g, cx, cy, wallR, baseR, startOffset0 * om, s);
-    
-              // Defensive: if generator returns null or malformed poly
-              if (!nt || !nt.poly || nt.poly.length < 3) continue;
-    
-              // Constraint 1: all vertices must be outside glacisOuter
-              // Constraint 1: the New Town must be outside the ditch (strong), not necessarily outside the glacis (too strict)
-              const outsideDitch = nt.poly.every(p => !pointInPoly(p, ditchOuter));
-              if (!outsideDitch) continue;
-              
-              // Optional: make sure the starting point is outside glacis (lighter touch)
-             //  if (pointInPoly(nt.gateOut, glacisOuter)) continue;
-    
-              // Constraint 3 (optional): avoid intersecting the wall polygon itself
-              if (polyIntersectsPoly(nt.poly, wallBase)) continue;
-    
-              return { newTown: nt, primaryGate: g };
-            }
-          }
-        }
-    
-        // If nothing fits, return null.
-        return { newTown: null, primaryGate: gates[0] || null };
-      }
-    
-      // Place new town using constraints.
-      const placed = placeNewTown();
-      let newTown = placed.newTown;
-      const primaryGate = placed.primaryGate;
+    // ---------- Model generation ----------
+function generate(seed, bastionCount, gateCount, width, height) {
+  const rng = mulberry32(seed);
 
-      // ---------- Milestone 3.3: Primary anchors ----------
-      function placeSquare() {
-        // Bias the square toward the primary gate direction.
-        if (!primaryGate) return centre;
-      
-        const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-        const candidate = add(centre, mul(out, baseR * 0.10));
-      
-        // Keep it inside footprint and inside wallBase.
-        if (!pointInPoly(candidate, footprint)) return centre;
-        if (!pointInPoly(candidate, wallBase)) return centre;
-      
-        return candidate;
-      }
-      
-      const squareCentre = placeSquare();
-      
-      const marketCentre = (() => {
-        // Offset market sideways from the square (common early modern pattern).
-        if (!primaryGate) {
-          const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
-          return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
-        }
-      
-        const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-        const side = normalize(perp(out));
-      
-        const c1 = add(squareCentre, mul(side, baseR * 0.07));
-        if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
-      
-        const c2 = add(squareCentre, mul(side, -baseR * 0.07));
-        if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
-      
-        return squareCentre;
-      })();
-      
-      const landmarks = [
-        { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
-        { id: "market", pointOrPolygon: marketCentre, kind: "market", label: "Market" },
-        { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
-      ];
-          
-      // Failsafe: if new town still overlaps bastions, "flatten" those bastions.
-      // With the placement constraints, this should rarely trigger.
-      if (newTown && newTown.poly && newTown.poly.length >= 3) {
-        const bastionsFinal = bastions.map(b => {
-          const hit =
-            polyIntersectsPolyBuffered(b.pts, newTown.poly, 1.5) ||
-            pointInPolyOrOn(centroid(b.pts), newTown.poly, 1.5);
-      
-          return hit ? { ...b, pts: b.shoulders } : b;
-        });
-      
-        wallFinal = bastionsFinal.flatMap(b => b.pts);
-      
-        // Update bastion polygons after flattening so the model is consistent.
-        bastionPolys = bastionsFinal.map(b => b.pts);
-      }
+  const cx = width * 0.5;
+  const cy = height * 0.55;
+  const baseR = Math.min(width, height) * 0.33;
 
-    
-      const ravelins = gates
-        .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
-        .filter(Boolean);
-    
-      const outerBoundary = convexHull([
-        ...footprint,
-        ...(newTown ? newTown.poly : []),
-      ]);
-    
-      // Milestone 3.1: two inner rings
-      const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
-      const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
-    
-      const citSize = baseR * 0.10;
-      let citCentre = null;
-      let citadel = null;
-    
-      for (let tries = 0; tries < 40; tries++) {
-        const citAng = rng() * Math.PI * 2;
-        const candidate = polar(cx, cy, citAng, wallR * 0.72);
-    
-        const gap = minDistPointToPoly(candidate, wallFinal);
-        if (gap < citSize * 1.8) continue;
-    
-        citCentre = candidate;
-        citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-        break;
-      }
-    
-      if (!citCentre) {
-        citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
-        citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-      }
-    
-      const avenue = [centre, citCentre];
-      const roads = generateRoadsToCentre(gates, centre);
-    
-      // Milestone 3.1: secondary roads
-      const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
+  const footprint = generateFootprint(rng, cx, cy, baseR, 22);
 
-      // ---------- Milestone 3.3: Road graph ----------
-      const polylines = [];
-      
-      // Gate -> square (primary)
-      for (const g of gates) {
-        polylines.push({
-          points: [g, squareCentre],
-          kind: "primary",
-          width: 2.5,
-          nodeKindA: "gate",
-          nodeKindB: "square",
-        });
-      }
-      
-      // Square -> citadel (primary)
-      polylines.push({
-        points: [squareCentre, citCentre],
-        kind: "primary",
-        width: 3.0,
-        nodeKindA: "square",
-        nodeKindB: "citadel",
-      });
-      
-      // Secondary roads (existing)
-      for (const r of (secondaryRoads || [])) {
-        polylines.push({ points: r, kind: "secondary", width: 1.25 });
-      }
-      
-      // New Town streets
-      if (newTown && newTown.streets) {
-        for (const seg of newTown.streets) {
-          polylines.push({ points: seg, kind: "secondary", width: 1.0 });
-        }
-        if (newTown.mainAve) {
-          polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
+  const wallR = baseR * 0.78;
+
+  const { base: wallBase, wall, bastions } =
+    generateBastionedWall(rng, cx, cy, wallR, bastionCount);
+
+  const ditchWidth = wallR * 0.035;
+  const glacisWidth = wallR * 0.08;
+
+  const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
+  const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
+  const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+
+  const centre = centroid(footprint);
+
+  const gates = pickGates(rng, wallBase, gateCount, bastionCount);
+
+  // Start with the full bastioned wall.
+  let wallFinal = wall;
+
+  // Keep bastion polys stable, but we will re-set them if we flatten.
+  let bastionPolys = bastions.map(b => b.pts);
+
+  function placeNewTown() {
+    const startOffset0 = (ditchWidth + glacisWidth) * 1.60;
+
+    // Try gates in order, then try a few scaled variants.
+    const scales = [1.0, 0.92, 0.84, 0.76];
+    const offsetMul = [1.00, 1.12, 1.25];
+
+    for (const g of gates) {
+      for (const om of offsetMul) {
+        for (const s of scales) {
+          const nt = generateNewTownGrid(g, cx, cy, wallR, baseR, startOffset0 * om, s);
+
+          if (!nt || !nt.poly || nt.poly.length < 3) continue;
+
+          // Strong: keep entire New Town outside the ditch outer.
+          const outsideDitch = nt.poly.every(p => !pointInPoly(p, ditchOuter));
+          if (!outsideDitch) continue;
+
+          // Avoid intersecting wall base edges.
+          if (polyIntersectsPoly(nt.poly, wallBase)) continue;
+
+          return { newTown: nt, primaryGate: g };
         }
       }
-      
-      const roadGraph = buildRoadGraph(polylines, 2.0);
-
-    
-      return {
-        footprint,
-        cx, cy,
-        wallBase,
-        wall: wallFinal,
-        gates,
-        centre,
-        squareR: baseR * 0.055,
-        roads,
-        ring,
-        ring2,
-        secondaryRoads,
-        citCentre,
-        citadel,
-        avenue,
-        roadGraph,
-        landmarks,
-        squareCentre,
-        marketCentre,
-        primaryGate,
-        newTown,
-        outerBoundary,
-        ditchOuter,
-        ditchInner,
-        glacisOuter,
-        ditchWidth,
-        glacisWidth,
-        ravelins,
-        bastionPolys,
-      };
     }
+
+    return { newTown: null, primaryGate: gates[0] || null };
+  }
+
+  const placed = placeNewTown();
+  let newTown = placed.newTown;
+  const primaryGate = placed.primaryGate;
+
+  // If New Town overlaps bastions, flatten bastions (hide bastions, keep town).
+  if (newTown && newTown.poly && newTown.poly.length >= 3) {
+    const bastionsFinal = bastions.map(b => {
+      const hit =
+        polyIntersectsPolyBuffered(b.pts, newTown.poly, 1.5) ||
+        pointInPolyOrOn(centroid(b.pts), newTown.poly, 1.5);
+
+      return hit ? { ...b, pts: b.shoulders } : b;
+    });
+
+    wallFinal = bastionsFinal.flatMap(b => b.pts);
+    bastionPolys = bastionsFinal.map(b => b.pts);
+  }
+
+  const ravelins = gates
+    .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
+    .filter(Boolean);
+
+  const outerBoundary = convexHull([
+    ...footprint,
+    ...(newTown ? newTown.poly : []),
+  ]);
+
+  // Two inner rings
+  const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
+  const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
+
+  // Citadel
+  const citSize = baseR * 0.10;
+  let citCentre = null;
+  let citadel = null;
+
+  for (let tries = 0; tries < 40; tries++) {
+    const citAng = rng() * Math.PI * 2;
+    const candidate = polar(cx, cy, citAng, wallR * 0.72);
+
+    const gap = minDistPointToPoly(candidate, wallFinal);
+    if (gap < citSize * 1.8) continue;
+
+    citCentre = candidate;
+    citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+    break;
+  }
+
+  if (!citCentre) {
+    citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
+    citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+  }
+
+  // ---------- Milestone 3.3: Primary anchors ----------
+  function placeSquare() {
+    if (!primaryGate) return centre;
+
+    const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
+    const candidate = add(centre, mul(out, baseR * 0.10));
+
+    if (!pointInPoly(candidate, footprint)) return centre;
+    if (!pointInPoly(candidate, wallBase)) return centre;
+
+    return candidate;
+  }
+
+  const squareCentre = placeSquare();
+
+  const marketCentre = (() => {
+    if (!primaryGate) {
+      const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
+      return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
+    }
+
+    const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
+    const side = normalize(perp(out));
+
+    const c1 = add(squareCentre, mul(side, baseR * 0.07));
+    if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
+
+    const c2 = add(squareCentre, mul(side, -baseR * 0.07));
+    if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
+
+    return squareCentre;
+  })();
+
+  const landmarks = [
+    { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
+    { id: "market", pointOrPolygon: marketCentre, kind: "market", label: "Market" },
+    { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
+  ];
+
+  // Primary roads now go to the square (not the old centre).
+  const roads = generateRoadsToCentre(gates, squareCentre);
+  const avenue = [squareCentre, citCentre];
+
+  // Secondary roads
+  const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
+
+  // ---------- Milestone 3.3: Road graph ----------
+  const polylines = [];
+
+  // Gate -> square (primary)
+  for (const g of gates) {
+    polylines.push({
+      points: [g, squareCentre],
+      kind: "primary",
+      width: 2.5,
+      nodeKindA: "gate",
+      nodeKindB: "square",
+    });
+  }
+
+  // Square -> citadel (primary)
+  polylines.push({
+    points: [squareCentre, citCentre],
+    kind: "primary",
+    width: 3.0,
+    nodeKindA: "square",
+    nodeKindB: "citadel",
+  });
+
+  // Secondary roads (existing)
+  for (const r of (secondaryRoads || [])) {
+    polylines.push({ points: r, kind: "secondary", width: 1.25 });
+  }
+
+  // New Town streets
+  if (newTown && newTown.streets) {
+    for (const seg of newTown.streets) {
+      polylines.push({ points: seg, kind: "secondary", width: 1.0 });
+    }
+    if (newTown.mainAve) {
+      polylines.push({
+        points: newTown.mainAve,
+        kind: "primary",
+        width: 2.0,
+        nodeKindA: "newtown_gate",
+        nodeKindB: "newtown_terminus",
+      });
+    }
+  }
+
+  const roadGraph = buildRoadGraph(polylines, 2.0);
+
+  return {
+    footprint,
+    cx, cy,
+    wallBase,
+    wall: wallFinal,
+    gates,
+    centre, // keep original centre for reference
+    squareR: baseR * 0.055,
+    roads,
+    ring,
+    ring2,
+    secondaryRoads,
+    citCentre,
+    citadel,
+    avenue,
+    roadGraph,
+    landmarks,
+    squareCentre,
+    marketCentre,
+    primaryGate,
+    newTown,
+    outerBoundary,
+    ditchOuter,
+    ditchInner,
+    glacisOuter,
+    ditchWidth,
+    glacisWidth,
+    ravelins,
+    bastionPolys,
+  };
+}
+
 
 
     // ---------- App wiring ----------
