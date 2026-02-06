@@ -33,6 +33,8 @@ import {
   minDistPointToPoly,
   routeGateToSquareViaRing
 } from "./features.js";
+import { closestPointOnPolyline } from "../geom/nearest.js";
+
 
 /**
  * Generate a full city model.
