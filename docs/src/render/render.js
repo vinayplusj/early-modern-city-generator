@@ -1,15 +1,24 @@
-// src/render/render.js
+// docs/src/render/render.js
 //
-// Canvas renderer for the city model.
-// Keeps visuals close to your current monolithic implementation, but packaged as an ES module.
-//
-// Exports:
-// - render(ctx, model)
+// Canvas renderer for Milestone 3.4.
+// Expects a model object from docs/src/model/generate.js.
+// This renderer draws:
+// - footprint + outer boundary
+// - New Town polygon + streets + main avenue connector
+// - glacis + ditch rings
+// - ravelins
+// - wall + wallBase + inner rings
+// - road graph (primary and secondary)
+// - gates + primaryGate marker
+// - citadel + landmarks (square + market)
 //
 // Notes:
-// - Expects ctx already set up with correct transform for DPR (your app.js does that).
-// - Uses helper drawing routines local to this file to keep imports minimal.
+// - No external assets.
+// - Uses CSS pixel coordinates (ctx already scaled in main.js).
 
+import { pointInPoly } from "../geom/poly.js";
+
+// ---------- Basic drawing helpers ----------
 function drawPoly(ctx, poly, close = true) {
   if (!poly || poly.length === 0) return;
   ctx.beginPath();
@@ -22,6 +31,15 @@ function drawCircle(ctx, p, r) {
   if (!p) return;
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+}
+
+function strokePolyline(ctx, pts, width) {
+  if (!pts || pts.length < 2) return;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.stroke();
 }
 
 function normalize(v) {
@@ -41,7 +59,10 @@ function mul(a, s) {
   return { x: a.x * s, y: a.y * s };
 }
 
+// Gatehouse icon (simple block + towers)
 function drawGatehouse(ctx, gate, centre, size) {
+  if (!gate || !centre) return;
+
   const out = normalize({ x: gate.x - centre.x, y: gate.y - centre.y });
   const side = normalize(perp(out));
 
@@ -69,63 +90,75 @@ function drawGatehouse(ctx, gate, centre, size) {
   ctx.fill();
   ctx.stroke();
 
-  const towerR = size * 0.28;
+  const towerRad = size * 0.28;
   const towerL = add(p, mul(side, -w));
-  const towerRgt = add(p, mul(side, w));
+  const towerR = add(p, mul(side, w));
 
   ctx.beginPath();
-  ctx.arc(towerL.x, towerL.y, towerR, 0, Math.PI * 2);
+  ctx.arc(towerL.x, towerL.y, towerRad, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.arc(towerRgt.x, towerRgt.y, towerR, 0, Math.PI * 2);
+  ctx.arc(towerR.x, towerR.y, towerRad, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
   ctx.restore();
 }
 
+// ---------- Public render ----------
 export function render(ctx, model) {
   const {
     footprint,
     outerBoundary,
+
+    // Walls
     wall,
     wallBase,
-    gates,
-    centre,
-    squareR,
     ring,
     ring2,
-    roadGraph,
+
+    // Moatworks
+    ditchOuter,
+    ditchInner,
+    glacisOuter,
+
+    // Features
+    gates,
+    primaryGate,
+    ravelins,
+
+    // Anchors
+    cx,
+    cy,
+    centre,
+    squareR,
     squareCentre,
     marketCentre,
     citadel,
     citCentre,
-    ravelins,
+
+    // Roads
+    roadGraph,
+
+    // New Town
     newTown,
-    primaryGate,
-    cx,
-    cy,
-    ditchOuter,
-    ditchInner,
-    glacisOuter,
   } = model || {};
 
-  if (!ctx || !ctx.canvas) return;
-
+  // Background
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = "#0f0f0f";
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-  // Footprint
+  // Footprint fill
   if (footprint && footprint.length >= 3) {
     ctx.fillStyle = "#151515";
     drawPoly(ctx, footprint, true);
     ctx.fill();
   }
 
-  // Outer boundary hull
+  // Outer boundary (convex hull) stroke
   if (outerBoundary && outerBoundary.length >= 3) {
     ctx.strokeStyle = "#2b2b2b";
     ctx.lineWidth = 2;
@@ -133,13 +166,13 @@ export function render(ctx, model) {
     ctx.stroke();
   }
 
-  // New Town polygon + streets
+  // New Town (polygon + grid)
   if (newTown && newTown.poly && newTown.poly.length >= 3) {
     ctx.fillStyle = "#131313";
     drawPoly(ctx, newTown.poly, true);
     ctx.fill();
 
-    // streets
+    // Streets
     if (newTown.streets && newTown.streets.length) {
       ctx.save();
       ctx.globalAlpha = 0.75;
@@ -155,23 +188,24 @@ export function render(ctx, model) {
       ctx.restore();
     }
 
-    // connection to primary gate (visual emphasis)
-    if (newTown.gateOut && primaryGate && newTown.mainAve && newTown.mainAve.length >= 2) {
+    // Main avenue within New Town
+    if (newTown.mainAve && newTown.mainAve.length >= 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.9;
       ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(primaryGate.x, primaryGate.y);
-      ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
-      ctx.stroke();
+      ctx.lineWidth = 2.0;
+      strokePolyline(ctx, newTown.mainAve, 2.0);
+      ctx.restore();
     }
 
+    // Outline
     ctx.strokeStyle = "#3a3a3a";
     ctx.lineWidth = 2;
     drawPoly(ctx, newTown.poly, true);
     ctx.stroke();
   }
 
-  // Glacis / ditch
+  // Glacis ring
   if (glacisOuter && glacisOuter.length >= 3) {
     ctx.save();
     ctx.globalAlpha = 0.35;
@@ -182,7 +216,8 @@ export function render(ctx, model) {
     ctx.restore();
   }
 
-  if (ditchOuter && ditchInner && ditchOuter.length >= 3 && ditchInner.length >= 3) {
+  // Ditch rings
+  if (ditchOuter && ditchOuter.length >= 3 && ditchInner && ditchInner.length >= 3) {
     ctx.save();
     ctx.globalAlpha = 0.55;
 
@@ -213,7 +248,7 @@ export function render(ctx, model) {
     ctx.restore();
   }
 
-  // Main wall
+  // Bastioned wall (final)
   if (wall && wall.length >= 3) {
     ctx.strokeStyle = "#d9d9d9";
     ctx.lineWidth = 3;
@@ -221,7 +256,7 @@ export function render(ctx, model) {
     ctx.stroke();
   }
 
-  // Wall base
+  // Wall base (inner line)
   if (wallBase && wallBase.length >= 3) {
     ctx.strokeStyle = "#9a9a9a";
     ctx.lineWidth = 1.5;
@@ -229,7 +264,7 @@ export function render(ctx, model) {
     ctx.stroke();
   }
 
-  // Inner ring (primary boulevard)
+  // Ring boulevard (primary)
   if (ring && ring.length >= 3) {
     ctx.strokeStyle = "#bdbdbd";
     ctx.lineWidth = 2;
@@ -237,7 +272,7 @@ export function render(ctx, model) {
     ctx.stroke();
   }
 
-  // Second ring
+  // Second ring (secondary)
   if (ring2 && ring2.length >= 3) {
     ctx.save();
     ctx.globalAlpha = 0.65;
@@ -248,9 +283,9 @@ export function render(ctx, model) {
     ctx.restore();
   }
 
-  // Roads (from roadGraph)
+  // Road graph
   if (roadGraph && roadGraph.nodes && roadGraph.edges) {
-    const nodeById = new Map(roadGraph.nodes.map(n => [n.id, n]));
+    const nodeById = new Map(roadGraph.nodes.map((n) => [n.id, n]));
 
     // Secondary first
     ctx.save();
@@ -289,19 +324,16 @@ export function render(ctx, model) {
     ctx.restore();
   }
 
-  // Gates
+  // Gates + markers
   if (gates && gates.length) {
     for (const g of gates) {
-      if (!g) continue;
       drawGatehouse(ctx, g, { x: cx, y: cy }, (squareR || 10) * 0.55);
-
       ctx.fillStyle = "#ffffff";
       drawCircle(ctx, g, 3.5);
       ctx.fill();
     }
   }
 
-  // Primary gate highlight
   if (primaryGate) {
     ctx.fillStyle = "#ffffff";
     drawCircle(ctx, primaryGate, 6);
@@ -326,8 +358,17 @@ export function render(ctx, model) {
     }
   }
 
-  // Landmarks: square and market
-  if (squareCentre) {
+  // Landmarks: Main square + market
+  // Ensure visibility: draw them regardless, but keep them inside wallBase when possible.
+  const squareOk =
+    squareCentre &&
+    (!wallBase || wallBase.length < 3 || pointInPoly(squareCentre, wallBase));
+
+  const marketOk =
+    marketCentre &&
+    (!wallBase || wallBase.length < 3 || pointInPoly(marketCentre, wallBase));
+
+  if (squareOk) {
     ctx.fillStyle = "#222222";
     drawCircle(ctx, squareCentre, (squareR || 10) * 0.95);
     ctx.fill();
@@ -338,13 +379,13 @@ export function render(ctx, model) {
     ctx.stroke();
   }
 
-  if (marketCentre) {
+  if (marketOk) {
     ctx.fillStyle = "#efefef";
     drawCircle(ctx, marketCentre, 3);
     ctx.fill();
   }
 
-  // Centre marker (keep as reference)
+  // Centre marker (reference)
   if (centre) {
     ctx.fillStyle = "#efefef";
     drawCircle(ctx, centre, 2.5);
