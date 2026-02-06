@@ -142,6 +142,7 @@ export function render(ctx, model) {
 
     // New Town
     newTown,
+    blocks,
   } = model || {};
 
   // Background (robust clear even if caller applied transforms)
@@ -165,28 +166,34 @@ export function render(ctx, model) {
   }
   
   // Blocks (debug)
-if (model.blocks && model.blocks.length) {
-  ctx.save();
-  ctx.globalAlpha = 0.10;
-  ctx.fillStyle = "#ffffff";
+  const BLOCK_FILL_ALPHA = 0.10;
+  const BLOCK_STROKE_ALPHA = 0.25;
+  const BLOCK_STROKE_WIDTH = 1;
 
-  for (const b of model.blocks) {
-    if (!b || !b.polygon || b.polygon.length < 3) continue;
-    drawPoly(ctx, b.polygon, true);
-    ctx.fill();
+  // Blocks (debug)
+  if (blocks && blocks.length) {
+    ctx.save();
+
+    ctx.globalAlpha = BLOCK_FILL_ALPHA;
+    ctx.fillStyle = "#ffffff";
+    for (const b of blocks) {
+      if (!b || !b.polygon || b.polygon.length < 3) continue;
+      drawPoly(ctx, b.polygon, true);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = BLOCK_STROKE_ALPHA;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = BLOCK_STROKE_WIDTH;
+    for (const b of blocks) {
+      if (!b || !b.polygon || b.polygon.length < 3) continue;
+      drawPoly(ctx, b.polygon, true);
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 
-  ctx.globalAlpha = 0.25;
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 1;
-  for (const b of model.blocks) {
-    if (!b || !b.polygon || b.polygon.length < 3) continue;
-    drawPoly(ctx, b.polygon, true);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
 
   // Outer boundary (convex hull) stroke
   if (outerBoundary && outerBoundary.length >= 3) {
