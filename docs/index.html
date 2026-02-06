@@ -169,12 +169,12 @@
   }
 
   // Controls
-  const shoulderFactor = clamp(0.10 - (bastionCount - 5) * (0.03 / 7), 0.07, 0.10);
-  const bastionLen = wallR * 3.0 * shoulderFactor;
-  const shoulder = wallR * 1.40 * shoulderFactor;
+  const shoulderFactor = clamp(0.20 - (bastionCount - 5) * (0.13 / 7), 0.07, 0.20);
+  const bastionLen = wallR * 2.0 * shoulderFactor;
+  const shoulder = wallR * 1.20 * shoulderFactor;
 
   // More bastions => smaller tangential spread
-  const cheekAlongFrac = clamp(0.9 - (bastionCount - 5) * 0.04, 0.50, 0.90);
+  const cheekAlongFrac = clamp(0.8 - (bastionCount - 5) * 0.04, 0.60, 0.80);
   const cheekOutFrac = 0.6;
 
   const bastions = [];
