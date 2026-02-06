@@ -13,6 +13,8 @@
 // - Face ordering is stable via sort key.
 //
 
+const OUTER_RATIO_MIN = 1.5;
+
 function signedArea(poly) {
   let a = 0;
   for (let i = 0; i < poly.length; i++) {
@@ -24,8 +26,6 @@ function signedArea(poly) {
 }
 
 function centroid(poly) {
-  // Simple centroid for non-self-intersecting polygons.
-  // Falls back to average if area is tiny.
   const a = signedArea(poly);
   const absA = Math.abs(a);
   if (absA < 1e-12) {
@@ -63,30 +63,31 @@ function dirKey(u, v) {
   return `${u}->${v}`;
 }
 
-function dedupeConsecutive(poly) {
+function samePoint(a, b, eps) {
+  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps;
+}
+
+function dedupeConsecutive(poly, eps) {
   if (poly.length < 2) return poly;
   const out = [poly[0]];
   for (let i = 1; i < poly.length; i++) {
     const p = poly[i];
     const prev = out[out.length - 1];
-    if (p.x === prev.x && p.y === prev.y) continue;
+    if (samePoint(p, prev, eps)) continue;
     out.push(p);
   }
-  // Remove closing duplicate if present
-  if (out.length >= 2) {
-    const a = out[0];
-    const b = out[out.length - 1];
-    if (a.x === b.x && a.y === b.y) out.pop();
-  }
+  if (out.length >= 2 && samePoint(out[0], out[out.length - 1], eps)) out.pop();
   return out;
 }
 
-function cycleIdsToPoints(ids, nodeById) {
-  const pts = ids.map((id) => {
+function cycleIdsToPoints(ids, nodeById, eps) {
+  const pts = [];
+  for (const id of ids) {
     const n = nodeById.get(id);
-    return { x: n.x, y: n.y };
-  });
-  return dedupeConsecutive(pts);
+    if (!n) return null;
+    pts.push({ x: n.x, y: n.y });
+  }
+  return dedupeConsecutive(pts, eps);
 }
 
 function isValidCycle(ids) {
@@ -101,6 +102,7 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
     ANGLE_EPS = 1e-9,
     AREA_EPS = 8.0,
     MAX_FACE_STEPS = 10000,
+    POINT_EPS = 1e-9,
   } = opts;
 
   const nodeById = new Map();
@@ -126,10 +128,9 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
   }
 
   // Deterministic sort with tie-break by to id.
-  for (const [id, list] of adj.entries()) {
+  for (const [, list] of adj.entries()) {
     list.sort((p, q) => {
       if (!almostEqual(p.angle, q.angle, ANGLE_EPS)) return p.angle - q.angle;
-      // Stable tie-break
       if (p.to < q.to) return -1;
       if (p.to > q.to) return 1;
       return 0;
@@ -138,32 +139,28 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
 
   // Build "next directed edge" mapping.
   // For each directed edge u->v, at node v find incoming neighbour u in v's list,
-  // then take previous (wrap) to keep the face on the left (with this ordering).
+  // then take previous (wrap) to keep the face on the left.
   const next = new Map();
 
   for (const [v, list] of adj.entries()) {
     const deg = list.length;
     if (deg < 2) continue;
 
-    // Map neighbour id -> index in sorted list.
     const indexOf = new Map();
     for (let i = 0; i < deg; i++) indexOf.set(list[i].to, i);
 
     for (let i = 0; i < deg; i++) {
-      const u = list[i].to; // This represents direction v->u
-      // Incoming is (u->v). We need to define next for (u->v).
-      // At v, incoming neighbour is u. Find its index.
+      const u = list[i].to;
       const idxIn = indexOf.get(u);
       if (idxIn == null) continue;
 
       const idxPrev = (idxIn - 1 + deg) % deg;
       const w = list[idxPrev].to;
 
-      next.set(dirKey(u, v), { from: v, to: w }); // next is v->w
+      next.set(dirKey(u, v), w); // next is v->w
     }
   }
 
-  // Face-walk over directed edges.
   const used = new Set();
   const faces = [];
 
@@ -176,31 +173,25 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
       used.add(dirKey(u, v));
       cycle.push(u);
 
-      const step = next.get(dirKey(u, v));
-      if (!step) return null;
-
-      const w = step.to;
+      const w = next.get(dirKey(u, v));
+      if (w == null) return null;
 
       u = v;
       v = w;
 
-      if (u === startU && v === startV) break;
+      if (u === startU && v === startV) return cycle;
     }
 
-    return cycle;
+    return null;
   }
 
-  // Deterministic iteration order of directed edges:
-  // sort nodes, then their neighbours.
-  const nodeIds = Array.from(adj.keys()).sort();
+  // Deterministic iteration order: node ids, then angle-sorted neighbours.
+  const nodeIds = Array.from(adj.keys()).sort((a, b) => a - b);
+
   for (const u of nodeIds) {
     const list = adj.get(u) || [];
-    for (const u of nodeIds) {
-      const list = adj.get(u) || [];
-      for (const d of list) {
-        const v = d.to;
-        const k = dirKey(u, v);
-        if (used.has(k)) continue;
+    for (const d of list) {
+      const v = d.to;
       const k = dirKey(u, v);
       if (used.has(k)) continue;
 
@@ -208,7 +199,7 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
       if (!cyc) continue;
       if (!isValidCycle(cyc)) continue;
 
-      const poly = cycleIdsToPoints(cyc, nodeById);
+      const poly = cycleIdsToPoints(cyc, nodeById, POINT_EPS);
       if (!poly || poly.length < 3) continue;
 
       const a = signedArea(poly);
@@ -223,21 +214,31 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
       });
     }
   }
-  }
 
   if (faces.length === 0) return [];
 
-  // Remove the outer face by largest absolute area.
+  // Outer face removal with ratio guard.
   let outerIndex = 0;
-  for (let i = 1; i < faces.length; i++) {
-    if (faces[i].absArea > faces[outerIndex].absArea) outerIndex = i;
+  let largest = -Infinity;
+  let second = -Infinity;
+
+  for (let i = 0; i < faces.length; i++) {
+    const a = faces[i].absArea;
+    if (a > largest) {
+      second = largest;
+      largest = a;
+      outerIndex = i;
+    } else if (a > second) {
+      second = a;
+    }
   }
 
-  const inner = faces.filter((_, i) => i !== outerIndex);
+  const dropOuter =
+    faces.length >= 2 && second > 0 && largest >= second * OUTER_RATIO_MIN;
 
-  // Deterministic block ordering
+  const inner = dropOuter ? faces.filter((_, i) => i !== outerIndex) : faces;
+
   inner.sort((A, B) => {
-    // Larger blocks first
     if (A.absArea !== B.absArea) return B.absArea - A.absArea;
 
     const cA = centroid(A.polygon);
@@ -246,7 +247,6 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
     if (cA.x !== cB.x) return cA.x - cB.x;
     if (cA.y !== cB.y) return cA.y - cB.y;
 
-    // Final stable tie-break: first vertex position
     const a0 = A.polygon[0];
     const b0 = B.polygon[0];
     if (a0.x !== b0.x) return a0.x - b0.x;
@@ -255,7 +255,7 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
     return 0;
   });
 
-  const blocks = inner.map((f, i) => ({
+  return inner.map((f, i) => ({
     id: `b${i}`,
     polygon: f.polygon,
     districtId: null,
@@ -265,6 +265,4 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
       nodeCycle: f.ids,
     },
   }));
-
-  return blocks;
 }
