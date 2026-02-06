@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Early Modern Fantasy City Generator (Milestone 1)</title>
+  <title>Early Modern Fantasy City Generator (Milestone 3)</title>
   <style>
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #111; color: #eee; }
     header { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: #1a1a1a; position: sticky; top: 0; }
@@ -21,7 +21,7 @@
     <span class="label">Seed:</span>
     <input id="seed" type="number" min="1" step="1" value="1" />
     <span class="label">Bastions:</span>
-    <input id="bastions" type="number" min="5" max="12" step="1" value="8" />
+    <input id="bastions" type="number" min="5" max="14" step="1" value="8" />
     <span class="label">Gates:</span>
     <input id="gates" type="number" min="2" max="6" step="1" value="3" />
   </header>
@@ -55,7 +55,6 @@
     }
 
     function centroid(poly) {
-      // Polygon centroid (area-weighted). Falls back to average if degenerate.
       let a = 0, cx = 0, cy = 0;
       for (let i = 0; i < poly.length; i++) {
         const p = poly[i], q = poly[(i + 1) % poly.length];
@@ -76,7 +75,6 @@
     }
 
     function offsetRadial(poly, cx, cy, offset) {
-      // Moves each vertex inward (negative) or outward (positive) along the centre radial.
       return poly.map(p => {
         const v = { x: p.x - cx, y: p.y - cy };
         const l = Math.hypot(v.x, v.y) || 1;
@@ -84,9 +82,8 @@
         return { x: p.x + ux * offset, y: p.y + uy * offset };
       });
     }
-    
+
     function pointInPoly(pt, poly) {
-      // Ray casting algorithm
       let inside = false;
       for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
         const a = poly[i], b = poly[j];
@@ -97,7 +94,7 @@
       }
       return inside;
     }
-    
+
     function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
     function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
     function mul(a, s) { return { x: a.x * s, y: a.y * s }; }
@@ -114,25 +111,33 @@
     }
 
     function bastionAngularOffset(bastionCount) {
-      // More bastions => smaller offset.
-      // 5  -> ~0.22 rad (12.6°)
-      // 12 -> ~0.09 rad (5.1°)
       return clamp(0.22 - (bastionCount - 5) * (0.13 / 7), 0.09, 0.22);
     }
-    
-    function regularPolygon(cx, cy, r, sides, rotation = 0) {
-      const pts = [];
-      for (let i = 0; i < sides; i++) {
-        const ang = rotation + (i / sides) * Math.PI * 2;
-        pts.push(polar(cx, cy, ang, r));
-      }
-      return pts;
+
+    // NEW: segment helpers (for snapping roads to ring)
+    function closestPointOnSegment(p, a, b) {
+      const ab = sub(b, a);
+      const ap = sub(p, a);
+      const ab2 = ab.x * ab.x + ab.y * ab.y || 1;
+      const t = clamp((ap.x * ab.x + ap.y * ab.y) / ab2, 0, 1);
+      return add(a, mul(ab, t));
     }
 
-    
+    function closestPointOnPolyline(p, poly) {
+      let best = null;
+      let bestD = Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        const q = closestPointOnSegment(p, a, b);
+        const d = dist(p, q);
+        if (d < bestD) { bestD = d; best = q; }
+      }
+      return best;
+    }
+
     // ---------- Geometry generation ----------
     function generateFootprint(rng, cx, cy, baseR, pointCount = 20) {
-      // Make a blobby polygon by sampling radius with noise, then smoothing once.
       const pts = [];
       const wobble = baseR * 0.22;
       const phase = rng() * Math.PI * 2;
@@ -140,14 +145,12 @@
       for (let i = 0; i < pointCount; i++) {
         const t = i / pointCount;
         const ang = t * Math.PI * 2;
-        // Two-frequency wobble to feel less uniform
         const n1 = Math.sin(ang * 2 + phase) * (0.45 + rng() * 0.25);
         const n2 = Math.sin(ang * 5 + phase * 1.7) * (0.25 + rng() * 0.2);
         const r = baseR + wobble * (n1 + n2) + wobble * (rng() - 0.5) * 0.35;
         pts.push(polar(cx, cy, ang, r));
       }
 
-      // Simple smoothing pass (Chaikin-ish lite)
       const smooth = [];
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i], q = pts[(i + 1) % pts.length];
@@ -159,152 +162,142 @@
     }
 
     function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
-  const base = [];
-  const rotation = rng() * Math.PI * 2;
+      const base = [];
+      const rotation = rng() * Math.PI * 2;
 
-  for (let i = 0; i < bastionCount; i++) {
-    const ang = rotation + (i / bastionCount) * Math.PI * 2;
-    const r = wallR * (0.96 + rng() * 0.08);
-    base.push(polar(cx, cy, ang, r));
-  }
+      for (let i = 0; i < bastionCount; i++) {
+        const ang = rotation + (i / bastionCount) * Math.PI * 2;
+        const r = wallR * (0.96 + rng() * 0.08);
+        base.push(polar(cx, cy, ang, r));
+      }
 
-  // Controls
-  const shoulderFactor = clamp(0.30 - (bastionCount - 5) * (0.10 / 7), 0.20, 0.30);
-  const bastionLen = wallR * 2.0 * shoulderFactor;
-  const shoulder = wallR * 0.80 * shoulderFactor;
+      const shoulderFactor = clamp(0.30 - (bastionCount - 5) * (0.10 / 7), 0.20, 0.30);
+      const bastionLen = wallR * 2.0 * shoulderFactor;
+      const shoulder = wallR * 0.80 * shoulderFactor;
 
-  // More bastions => smaller tangential spread
-  const cheekAlongFrac = clamp(0.80 - (bastionCount - 5) * 0.02, 0.65, 0.80);
-  const cheekOutFrac = 0.6;
+      const cheekAlongFrac = clamp(0.80 - (bastionCount - 5) * 0.02, 0.65, 0.80);
+      const cheekOutFrac = 0.6;
 
-  const bastions = [];
+      const bastions = [];
 
-  function pushOutToMinRadial(p, curr, out, minOut) {
-    const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y; // radial projection
-    if (r >= minOut) return p;
-    const delta = minOut - r;
-    return { x: p.x + out.x * delta, y: p.y + out.y * delta };
-  }
+      function pushOutToMinRadial(p, curr, out, minOut) {
+        const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y;
+        if (r >= minOut) return p;
+        const delta = minOut - r;
+        return { x: p.x + out.x * delta, y: p.y + out.y * delta };
+      }
 
-  for (let i = 0; i < base.length; i++) {
-    const prev = base[(i - 1 + base.length) % base.length];
-    const curr = base[i];
-    const next = base[(i + 1) % base.length];
+      for (let i = 0; i < base.length; i++) {
+        const prev = base[(i - 1 + base.length) % base.length];
+        const curr = base[i];
+        const next = base[(i + 1) % base.length];
 
-    const uIn  = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
-    const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
-    const out  = normalize({ x: curr.x - cx, y: curr.y - cy });
+        const uIn  = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
+        const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
+        const out  = normalize({ x: curr.x - cx, y: curr.y - cy });
 
-    const s1 = { x: curr.x - uIn.x  * shoulder, y: curr.y - uIn.y  * shoulder };
-    const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
+        const s1 = { x: curr.x - uIn.x  * shoulder, y: curr.y - uIn.y  * shoulder };
+        const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
 
-    const L = bastionLen * (0.90 + rng() * 0.25);
-    const cheekAlong = L * cheekAlongFrac;
+        const L = bastionLen * (0.90 + rng() * 0.25);
+        const cheekAlong = L * cheekAlongFrac;
 
-    const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
-    const cheekOut = L * cheekOutFrac;
+        const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
+        const cheekOut = L * cheekOutFrac;
 
-    const leftFace0 = {
-      x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
-      y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
-    };
+        const leftFace0 = {
+          x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
+          y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
+        };
 
-    const rightFace0 = {
-      x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
-      y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
-    };
+        const rightFace0 = {
+          x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
+          y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
+        };
 
-    const minOut = wallR * 0.02;
-    const leftFace  = pushOutToMinRadial(leftFace0,  curr, out, minOut);
-    const rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
+        const minOut = wallR * 0.02;
+        const leftFace  = pushOutToMinRadial(leftFace0,  curr, out, minOut);
+        const rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
 
-    bastions.push({
-      i,
-      pts: [s1, leftFace, tip, rightFace, s2],
-      shoulders: [s1, s2],
-    });
-  }
+        bastions.push({
+          i,
+          pts: [s1, leftFace, tip, rightFace, s2],
+          shoulders: [s1, s2],
+        });
+      }
 
-  const wall = bastions.flatMap(b => b.pts);
-  return { base, wall, bastions };
-}
+      const wall = bastions.flatMap(b => b.pts);
+      return { base, wall, bastions };
+    }
 
     function pickGates(rng, wallBase, gateCount, bastionCount) {
-      const n = wallBase.length; // vertices == bastions
+      const n = wallBase.length;
       const gates = [];
       const usedEdges = new Set();
-    
-      // choose edges, not vertices
+
       const minGap = Math.max(1, Math.floor(n / gateCount) - 1);
-    
-      // offset along the edge (more bastions => smaller offset)
       const tJitter = clamp(0.16 - (bastionCount - 5) * (0.09 / 7), 0.07, 0.16);
-    
+
       for (let k = 0; k < gateCount; k++) {
         let tries = 0;
         while (tries++ < 200) {
-          const e = Math.floor(rng() * n); // edge from e -> e+1
+          const e = Math.floor(Math.random() * n); // NOTE: you kept rng() elsewhere; keep consistent if desired
           if (usedEdges.has(e)) continue;
-    
+
           let ok = true;
           for (const j of usedEdges) {
             const d = Math.min((e - j + n) % n, (j - e + n) % n);
             if (d <= minGap) { ok = false; break; }
           }
           if (!ok) continue;
-    
+
           usedEdges.add(e);
-    
+
           const a = wallBase[e];
           const b = wallBase[(e + 1) % n];
-    
-          // deterministic side, keeps it stable
+
           const sign = (e % 2 === 0) ? +1 : -1;
           const t = clamp(0.5 + sign * tJitter, 0.15, 0.85);
-    
+
           const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
-          gates.push({ ...p, idx: e }); // idx is edge index now
+          gates.push({ ...p, idx: e });
           break;
         }
       }
-    
+
       while (gates.length < gateCount) {
-        const e = Math.floor(rng() * n);
+        const e = Math.floor(Math.random() * n);
         if (usedEdges.has(e)) continue;
         usedEdges.add(e);
-    
+
         const a = wallBase[e];
         const b = wallBase[(e + 1) % n];
         const p = { x: lerp(a.x, b.x, 0.5), y: lerp(a.y, b.y, 0.5) };
         gates.push({ ...p, idx: e });
       }
-    
+
       return gates;
     }
-    
 
     function drawGatehouse(ctx, gate, centre, size) {
       const out = normalize({ x: gate.x - centre.x, y: gate.y - centre.y });
       const side = normalize(perp(out));
-    
-      const w = size * 1.2;  // width across the wall
-      const d = size * 0.7;  // depth outward
-    
-      // Place gatehouse slightly outward from the wall line
+
+      const w = size * 1.2;
+      const d = size * 0.7;
+
       const p = add(gate, mul(out, size * 0.35));
-    
-      // Rectangle corners (oriented)
+
       const tl = add(add(p, mul(side, -w)), mul(out, -d));
       const tr = add(add(p, mul(side,  w)), mul(out, -d));
       const br = add(add(p, mul(side,  w)), mul(out,  d));
       const bl = add(add(p, mul(side, -w)), mul(out,  d));
-    
-      // Main body
+
       ctx.save();
       ctx.fillStyle = "#0f0f0f";
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
-    
+
       ctx.beginPath();
       ctx.moveTo(tl.x, tl.y);
       ctx.lineTo(tr.x, tr.y);
@@ -313,30 +306,61 @@
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-    
-      // Two small towers (circles) on the corners nearest the wall
+
       const towerR = size * 0.28;
       const towerL = add(p, mul(side, -w));
       const towerRgt = add(p, mul(side,  w));
-    
+
       ctx.beginPath();
       ctx.arc(towerL.x, towerL.y, towerR, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-    
+
       ctx.beginPath();
       ctx.arc(towerRgt.x, towerRgt.y, towerR, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-    
+
       ctx.restore();
     }
 
-
     function generateRoadsToCentre(gates, centre) {
-      // Primary roads as straight polylines for now.
       return gates.map(g => [g, centre]);
     }
+
+    // NEW (Milestone 3.1): secondary rings + secondary roads
+    function generateSecondaryRoads(rng, gates, centre, ring1, ring2) {
+      const secondary = [];
+
+      // ring connectors: gate -> ring1 -> ring2
+      for (const g of gates) {
+        const a = closestPointOnPolyline(g, ring1);
+        const b = closestPointOnPolyline(a, ring2);
+
+        // small jitter so the lines are not perfectly radial, but still stable
+        const j = (rng() - 0.5) * 0.08;
+        const a2 = lerpPoint(a, centre, j);
+        const b2 = lerpPoint(b, centre, j);
+
+        secondary.push([g, a2]);
+        secondary.push([a2, b2]);
+      }
+
+      // a few cross links between ring2 points
+      // pick every Nth gate to avoid clutter
+      const step = Math.max(2, Math.floor(gates.length / 3));
+      for (let i = 0; i < gates.length; i += step) {
+        const g = gates[i];
+        const a = closestPointOnPolyline(g, ring2);
+        const h = gates[(i + step) % gates.length];
+        const b = closestPointOnPolyline(h, ring2);
+        secondary.push([a, b]);
+      }
+
+      return secondary;
+    }
+
+    function lerpPoint(a, b, t) { return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }; }
 
     // ---------- Rendering ----------
     function drawPoly(ctx, poly, close = true) {
@@ -355,38 +379,34 @@
     function render(ctx, model) {
       const {
         footprint, outerBoundary, wall, wallBase, gates,
-        centre, squareR, roads, ditchOuter, ditchInner, glacisOuter,
-        ring, citadel, citCentre, avenue, ravelins,
-        newTown, primaryGate, cx, cy
+        centre, squareR, roads,
+        ring, ring2, // NEW
+        secondaryRoads, // NEW
+        citadel, citCentre, avenue, ravelins,
+        newTown, primaryGate, cx, cy,
+        ditchOuter, ditchInner, glacisOuter
       } = model;
 
-      // Background
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       ctx.fillStyle = "#0f0f0f";
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-      // Footprint fill
       ctx.fillStyle = "#151515";
       drawPoly(ctx, footprint, true);
       ctx.fill();
 
-      // Footprint outline
-      // Outer boundary outline (includes New Town)
       if (outerBoundary && outerBoundary.length >= 3) {
         ctx.strokeStyle = "#2b2b2b";
         ctx.lineWidth = 2;
         drawPoly(ctx, outerBoundary, true);
         ctx.stroke();
       }
-      
-      // New Town area (planned expansion) – draw first (behind the military belts)
+
       if (newTown) {
-        // Fill zone
         ctx.fillStyle = "#131313";
         drawPoly(ctx, newTown.poly, true);
         ctx.fill();
-      
-        // Grid streets
+
         ctx.save();
         ctx.globalAlpha = 0.75;
         ctx.strokeStyle = "#8f8f8f";
@@ -398,8 +418,7 @@
           ctx.stroke();
         }
         ctx.restore();
-      
-        // Main connection (gate -> deep into New Town)
+
         if (newTown.gateOut && primaryGate) {
           ctx.strokeStyle = "#ffffff";
           ctx.lineWidth = 2.5;
@@ -408,15 +427,13 @@
           ctx.lineTo(newTown.mainAve[1].x, newTown.mainAve[1].y);
           ctx.stroke();
         }
-      
-        // Outline
+
         ctx.strokeStyle = "#3a3a3a";
         ctx.lineWidth = 2;
         drawPoly(ctx, newTown.poly, true);
         ctx.stroke();
       }
-      
-      // Glacis belt (no-build zone) – above New Town
+
       if (glacisOuter) {
         ctx.save();
         ctx.globalAlpha = 0.35;
@@ -426,26 +443,24 @@
         ctx.stroke();
         ctx.restore();
       }
-      
-      // Ditch ring – above glacis
+
       if (ditchOuter && ditchInner) {
         ctx.save();
         ctx.globalAlpha = 0.55;
-      
+
         ctx.strokeStyle = "#5a5a5a";
         ctx.lineWidth = 2;
         drawPoly(ctx, ditchOuter, true);
         ctx.stroke();
-      
+
         ctx.strokeStyle = "#3f3f3f";
         ctx.lineWidth = 2;
         drawPoly(ctx, ditchInner, true);
         ctx.stroke();
-      
+
         ctx.restore();
       }
-      
-      // Ravelins (outworks) – above ditch
+
       if (ravelins && ravelins.length) {
         ctx.save();
         ctx.globalAlpha = 0.65;
@@ -458,44 +473,63 @@
         ctx.restore();
       }
 
-
-      // Bastioned wall
       ctx.strokeStyle = "#d9d9d9";
       ctx.lineWidth = 3;
       drawPoly(ctx, wall, true);
       ctx.stroke();
 
-      // Inner base ring (helps readability)
       ctx.strokeStyle = "#9a9a9a";
       ctx.lineWidth = 1.5;
       drawPoly(ctx, wallBase, true);
       ctx.stroke();
 
-      // Ring boulevard
+      // Ring boulevard (primary)
       if (ring) {
         ctx.strokeStyle = "#bdbdbd";
         ctx.lineWidth = 2;
         drawPoly(ctx, ring, true);
         ctx.stroke();
       }
-      
-      // Gates (symbols)
+
+      // NEW: second ring (secondary)
+      if (ring2) {
+        ctx.save();
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = "#bdbdbd";
+        ctx.lineWidth = 1.25;
+        drawPoly(ctx, ring2, true);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // NEW: secondary roads
+      if (secondaryRoads && secondaryRoads.length) {
+        ctx.save();
+        ctx.globalAlpha = 0.70;
+        ctx.strokeStyle = "#cfcfcf";
+        ctx.lineWidth = 1.25;
+        for (const road of secondaryRoads) {
+          ctx.beginPath();
+          ctx.moveTo(road[0].x, road[0].y);
+          for (let i = 1; i < road.length; i++) ctx.lineTo(road[i].x, road[i].y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       for (const g of gates) {
         drawGatehouse(ctx, g, { x: cx, y: cy }, squareR * 0.55);
-      
-        // Optional small dot marker at exact gate point
         ctx.fillStyle = "#ffffff";
         drawCircle(ctx, g, 3.5);
         ctx.fill();
-      } 
-      
+      }
+
       if (primaryGate) {
         ctx.fillStyle = "#ffffff";
         drawCircle(ctx, primaryGate, 6);
         ctx.fill();
       }
 
-      // Primary avenue (square -> citadel)
       if (avenue) {
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 3;
@@ -504,8 +538,8 @@
         for (let i = 1; i < avenue.length; i++) ctx.lineTo(avenue[i].x, avenue[i].y);
         ctx.stroke();
       }
-      
-      // Roads
+
+      // Primary roads (keep thicker)
       ctx.strokeStyle = "#cfcfcf";
       ctx.lineWidth = 2;
       for (const road of roads) {
@@ -515,25 +549,23 @@
         ctx.stroke();
       }
 
-      // Citadel
       if (citadel) {
         ctx.fillStyle = "#101010";
         drawPoly(ctx, citadel, true);
         ctx.fill();
-      
+
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 2;
         drawPoly(ctx, citadel, true);
         ctx.stroke();
-      
+
         if (citCentre) {
           ctx.fillStyle = "#ffffff";
           drawCircle(ctx, citCentre, 2.5);
           ctx.fill();
         }
       }
-      
-      // Central square
+
       ctx.fillStyle = "#1f1f1f";
       drawCircle(ctx, centre, squareR);
       ctx.fill();
@@ -542,43 +574,36 @@
       drawCircle(ctx, centre, squareR);
       ctx.stroke();
 
-      // Centre marker
       ctx.fillStyle = "#efefef";
       drawCircle(ctx, centre, 2.5);
       ctx.fill();
     }
-    
+
     function generateNewTownGrid(gate, cx, cy, wallR, baseR, newTownStartOffset) {
-      // Direction outward from centre through the gate
       const out = normalize({ x: gate.x - cx, y: gate.y - cy });
       const side = normalize(perp(out));
-    
-      // Start outside the wall so the expansion is attached to the gate properly
+
       const gateOut = add(gate, mul(out, newTownStartOffset));
-    
-      // New Town footprint as a 6-point polygon (a tapered expansion)
+
       const depth = wallR * 0.80;
       const wideNear = wallR * 0.20;
       const wideFar  = wallR * 0.50;
-    
+
       const p0 = add(gateOut, mul(side, -wideNear));
       const p1 = add(gateOut, mul(side,  wideNear));
       const p2 = add(add(gateOut, mul(out, depth * 0.55)), mul(side,  wideFar));
       const p3 = add(add(gateOut, mul(out, depth * 1.00)), mul(side,  wideFar));
       const p4 = add(add(gateOut, mul(out, depth * 1.00)), mul(side, -wideFar));
       const p5 = add(add(gateOut, mul(out, depth * 0.55)), mul(side, -wideFar));
-    
+
       const poly = [p0, p1, p2, p3, p4, p5];
-    
-      // Grid parameters
+
       const spacing = baseR * 0.085;
       const cols = 18;
       const rows = 18;
-    
-      // Grid origin starts at the outside edge of the gate apron
+
       const origin = gateOut;
-    
-      // Build grid points in a local coordinate system (out, side)
+
       const points = [];
       for (let r = 0; r <= rows; r++) {
         for (let c = -Math.floor(cols / 2); c <= Math.floor(cols / 2); c++) {
@@ -586,30 +611,25 @@
           if (pointInPoly(pt, poly)) points.push({ r, c, pt });
         }
       }
-    
-      // Index points for adjacency lookup
+
       const key = (r, c) => `${r}|${c}`;
       const map = new Map();
       for (const p of points) map.set(key(p.r, p.c), p.pt);
-    
-      // Create streets as edges between adjacent grid points
+
       const streets = [];
       for (const p of points) {
         const a = p.pt;
-    
-        // Connect forward (out direction)
+
         const b = map.get(key(p.r + 1, p.c));
         if (b) streets.push([a, b]);
-    
-        // Connect sideways (side direction)
+
         const d = map.get(key(p.r, p.c + 1));
         if (d) streets.push([a, d]);
       }
-    
-      // Main avenue from just outside the gate into the new town
+
       const mainEnd = add(gateOut, mul(out, depth * 0.85));
       const mainAve = [gateOut, mainEnd];
-    
+
       return { poly, streets, mainAve, gateOut };
     }
 
@@ -624,54 +644,48 @@
 
     function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly, bastionCount) {
       const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
-    
+
       const theta = bastionAngularOffset(bastionCount);
 
       const forwardFactor = clamp(0.28 - (bastionCount - 5) * (0.10 / 7), 0.18, 0.28);
       const forward = ditchWidth + glacisWidth + wallR * forwardFactor;
-    
+
       const baseW = wallR * 0.10;
       const depth = wallR * 0.12;
-    
+
       function build(sign) {
         const out = rotate(out0, sign * theta);
         const side = normalize(perp(out));
-    
+
         const c0 = add(gate, mul(out, forward));
         const a = add(c0, mul(side, -baseW));
         const b = add(c0, mul(side,  baseW));
         const tip = add(c0, mul(out, depth));
-    
+
         return [a, tip, b];
       }
-    
+
       const rvPos = build(+1);
       const rvNeg = build(-1);
-    
-      // If we have New Town, choose an option that does NOT intersect it.
+
       if (newTownPoly && newTownPoly.length >= 3) {
         const posIn = rvPos.some(p => pointInPoly(p, newTownPoly)) || pointInPoly(centroid(rvPos), newTownPoly);
         const negIn = rvNeg.some(p => pointInPoly(p, newTownPoly)) || pointInPoly(centroid(rvNeg), newTownPoly);
-    
+
         if (posIn && !negIn) return rvNeg;
         if (negIn && !posIn) return rvPos;
-    
-        // If BOTH intersect New Town, delete this ravelin (return null)
         if (posIn && negIn) return null;
       }
-    
-      // Deterministic fallback (stable) if no New Town (or both are fine)
+
       return (gate.idx % 2 === 0) ? rvPos : rvNeg;
     }
 
-    // Add a convex hull
     function convexHull(points) {
-      // Monotonic chain convex hull
       const pts = points.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
       if (pts.length <= 2) return pts;
-    
+
       const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    
+
       const lower = [];
       for (const p of pts) {
         while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
@@ -679,7 +693,7 @@
         }
         lower.push(p);
       }
-    
+
       const upper = [];
       for (let i = pts.length - 1; i >= 0; i--) {
         const p = pts[i];
@@ -688,47 +702,44 @@
         }
         upper.push(p);
       }
-    
+
       upper.pop();
       lower.pop();
       return lower.concat(upper);
     }
 
-    
     // ---------- Model generation ----------
     function generate(seed, bastionCount, gateCount, width, height) {
       const rng = mulberry32(seed);
-    
+
       const cx = width * 0.5;
       const cy = height * 0.55;
       const baseR = Math.min(width, height) * 0.33;
-    
+
       const footprint = generateFootprint(rng, cx, cy, baseR, 22);
-    
+
       const wallR = baseR * 0.78;
-    
-      // ✅ include bastions
+
       const { base: wallBase, wall, bastions } =
         generateBastionedWall(rng, cx, cy, wallR, bastionCount);
-    
+
       const ditchWidth = wallR * 0.035;
       const glacisWidth = wallR * 0.08;
-    
+
       const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
       const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
       const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
-    
+
       const centre = centroid(footprint);
-    
+
       const gates = pickGates(rng, wallBase, gateCount, bastionCount);
       const primaryGate = gates[0];
-    
+
       const newTownStartOffset = (ditchWidth + glacisWidth) * 1.30;
       const newTown = generateNewTownGrid(primaryGate, cx, cy, wallR, baseR, newTownStartOffset);
-    
-      // Flatten bastions that land in New Town
+
       let wallFinal = wall;
-    
+
       if (newTown && newTown.poly && newTown.poly.length >= 3) {
         const bastionsFinal = bastions.map(b => {
           const hitsNewTown = pointInPoly(centroid(b.pts), newTown.poly);
@@ -736,44 +747,47 @@
         });
         wallFinal = bastionsFinal.flatMap(b => b.pts);
       }
-    
-      // Ravelins
+
       const ravelins = gates
         .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
         .filter(Boolean);
-    
+
       const outerBoundary = convexHull([
         ...footprint,
         ...(newTown ? newTown.poly : []),
       ]);
-    
+
+      // Milestone 3.1: two inner rings
       const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
-    
+      const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
+
       const citSize = baseR * 0.10;
       let citCentre = null;
       let citadel = null;
-    
+
       for (let tries = 0; tries < 40; tries++) {
         const citAng = rng() * Math.PI * 2;
         const candidate = polar(cx, cy, citAng, wallR * 0.72);
-    
-        // ✅ test against final wall
+
         const gap = minDistPointToPoly(candidate, wallFinal);
         if (gap < citSize * 1.8) continue;
-    
+
         citCentre = candidate;
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
         break;
       }
-    
+
       if (!citCentre) {
         citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
         citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
       }
-    
+
       const avenue = [centre, citCentre];
       const roads = generateRoadsToCentre(gates, centre);
-    
+
+      // Milestone 3.1: secondary roads
+      const secondaryRoads = generateSecondaryRoads(rng, gates, centre, ring, ring2);
+
       return {
         footprint,
         cx, cy,
@@ -784,6 +798,8 @@
         squareR: baseR * 0.055,
         roads,
         ring,
+        ring2,
+        secondaryRoads,
         citCentre,
         citadel,
         avenue,
