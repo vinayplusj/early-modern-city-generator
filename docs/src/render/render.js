@@ -163,6 +163,30 @@ export function render(ctx, model) {
     drawPoly(ctx, footprint, true);
     ctx.fill();
   }
+  
+  // Blocks (debug)
+if (model.blocks && model.blocks.length) {
+  ctx.save();
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#ffffff";
+
+  for (const b of model.blocks) {
+    if (!b || !b.polygon || b.polygon.length < 3) continue;
+    drawPoly(ctx, b.polygon, true);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1;
+  for (const b of model.blocks) {
+    if (!b || !b.polygon || b.polygon.length < 3) continue;
+    drawPoly(ctx, b.polygon, true);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
 
   // Outer boundary (convex hull) stroke
   if (outerBoundary && outerBoundary.length >= 3) {
