@@ -438,16 +438,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
-  // Debug: add block polygons into landmarks (remove later)
-  for (const b of blocks || []) {
-    landmarks.push({
-      id: `dbg_${b.id}`,
-      pointOrPolygon: b.polygon,
-      kind: "debug_block",
-      label: String(b.id),
-    });
-  }
-
   console.log("MODEL COUNTS", {
     seed,
     newTownStreets: newTown?.streets?.length || 0,
