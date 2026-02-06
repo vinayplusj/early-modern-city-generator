@@ -42,6 +42,7 @@ import { closestPointOnPolyline } from "../geom/nearest.js";
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
 
 const ROAD_EPS = 2.0;
+const polylines = [];
 const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
 
@@ -352,7 +353,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
 
   // ---------------- Road polylines -> road graph ----------------
-  const polylines = [];
+
 
   // Gate -> ring -> square (primary), to avoid cutting through bastions
   for (const g of gates) {
