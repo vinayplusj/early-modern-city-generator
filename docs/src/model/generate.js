@@ -474,6 +474,12 @@ export function generate(seed, bastionCount, gateCount, width, height) {
       label: b.id,
     });
   }
+  console.log("MODEL COUNTS", {
+  seed,
+  newTownStreets: newTown?.streets?.length || 0,
+  roadNodes: roadGraph?.nodes?.length || 0,
+  roadEdges: roadGraph?.edges?.length || 0,
+});
 
   return {
     footprint,
