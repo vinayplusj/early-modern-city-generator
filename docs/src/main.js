@@ -1,3 +1,9 @@
+if (window.__EMCG_BOOTED__) {
+  console.warn("main.js loaded twice");
+}
+window.__EMCG_BOOTED__ = (window.__EMCG_BOOTED__ || 0) + 1;
+console.log("BOOT COUNT", window.__EMCG_BOOTED__);
+
 import { generate } from "./model/generate.js";
 import { render } from "./render/render.js";
 
