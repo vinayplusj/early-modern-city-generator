@@ -844,13 +844,13 @@
       const gates = pickGates(rng, wallBase, gateCount, bastionCount);
     
       // Keep a stable list of bastion polygons to treat as "keep-out".
-      const bastionPolys = bastions.map(b => b.pts);
+      let bastionPolys = bastions.map(b => b.pts);
     
       // Start with the full bastioned wall.
       let wallFinal = wall;
     
       function placeNewTown() {
-        const startOffset0 = (ditchWidth + glacisWidth) * 1.30;
+        const startOffset0 = (ditchWidth + glacisWidth) * 1.60;
     
         // Try gates in order, then try a few scaled variants.
         const scales = [1.0, 0.92, 0.84, 0.76];
@@ -865,19 +865,15 @@
               if (!nt || !nt.poly || nt.poly.length < 3) continue;
     
               // Constraint 1: all vertices must be outside glacisOuter
-              const outsideGlacis = nt.poly.every(p => !pointInPoly(p, glacisOuter));
-              if (!outsideGlacis) continue;
-    
-              // Constraint 2: must not intersect any bastion polygon
-              let hitsBastion = false;
-              for (const bp of bastionPolys) {
-                if (polyIntersectsPolyBuffered(nt.poly, bp, 1.5)) { hitsBastion = true; break; }
-
-              }
-              if (hitsBastion) continue;
+              // Constraint 1: the New Town must be outside the ditch (strong), not necessarily outside the glacis (too strict)
+              const outsideDitch = nt.poly.every(p => !pointInPoly(p, ditchOuter));
+              if (!outsideDitch) continue;
+              
+              // Optional: make sure the starting point is outside glacis (lighter touch)
+             //  if (pointInPoly(nt.gateOut, glacisOuter)) continue;
     
               // Constraint 3 (optional): avoid intersecting the wall polygon itself
-              if (polyIntersectsPoly(nt.poly, wallFinal)) continue;
+              if (polyIntersectsPoly(nt.poly, wallBase)) continue;
     
               return { newTown: nt, primaryGate: g };
             }
@@ -897,16 +893,19 @@
       // With the placement constraints, this should rarely trigger.
       if (newTown && newTown.poly && newTown.poly.length >= 3) {
         const bastionsFinal = bastions.map(b => {
-          const hit = polyIntersectsPoly(b.pts, newTown.poly) || pointInPoly(centroid(b.pts), newTown.poly);
+          const hit =
+            polyIntersectsPolyBuffered(b.pts, newTown.poly, 1.5) ||
+            pointInPolyOrOn(centroid(b.pts), newTown.poly, 1.5);
+      
           return hit ? { ...b, pts: b.shoulders } : b;
         });
+      
         wallFinal = bastionsFinal.flatMap(b => b.pts);
-    
-        // Optional: after flattening, you can re-check and drop newTown if it still intersects wallFinal
-        if (polyIntersectsPoly(newTown.poly, wallFinal)) {
-          newTown = null;
-        }
+      
+        // Update bastion polygons after flattening so the model is consistent.
+        bastionPolys = bastionsFinal.map(b => b.pts);
       }
+
     
       const ravelins = gates
         .map(g => makeRavelin(g, cx, cy, wallR, ditchWidth, glacisWidth, newTown ? newTown.poly : null, bastionCount))
@@ -1001,6 +1000,12 @@
       const gates = clamp(parseInt(gatesInput.value || "3", 10), 2, 6);
 
       const model = generate(seed, bastions, gates, window.innerWidth, window.innerHeight - 60);
+      console.log({
+        seed,
+        newTown: !!model.newTown,
+        streets: model.newTown ? model.newTown.streets.length : 0
+      });
+
       render(ctx, model);
     }
 
