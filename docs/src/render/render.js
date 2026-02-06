@@ -2,21 +2,19 @@
 //
 // Canvas renderer for Milestone 3.4.
 // Expects a model object from docs/src/model/generate.js.
-// This renderer draws:
-// - footprint + outer boundary
-// - New Town polygon + streets + main avenue connector
-// - glacis + ditch rings
-// - ravelins
-// - wall + wallBase + inner rings
-// - road graph (primary and secondary)
-// - gates + primaryGate marker
-// - citadel + landmarks (square + market)
 //
-// Notes:
-// - No external assets.
-// - Uses CSS pixel coordinates (ctx already scaled in main.js).
+// Draw order (important for visibility):
+// 1) background + footprint + outer boundary
+// 2) New Town polygon + streets
+// 3) glacis + ditch rings + ravelins
+// 4) walls + rings
+// 5) road graph
+// 6) gates + primary gate
+// 7) citadel
+// 8) landmarks (square + market) LAST so they are always visible
+// 9) centre marker (reference)
 
-import { pointInPoly } from "../geom/poly.js";
+import { pointInPolyOrOn } from "../geom/poly.js";
 
 // ---------- Basic drawing helpers ----------
 function drawPoly(ctx, poly, close = true) {
@@ -193,7 +191,6 @@ export function render(ctx, model) {
       ctx.save();
       ctx.globalAlpha = 0.9;
       ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2.0;
       strokePolyline(ctx, newTown.mainAve, 2.0);
       ctx.restore();
     }
@@ -335,9 +332,11 @@ export function render(ctx, model) {
   }
 
   if (primaryGate) {
+    ctx.save();
     ctx.fillStyle = "#ffffff";
     drawCircle(ctx, primaryGate, 6);
     ctx.fill();
+    ctx.restore();
   }
 
   // Citadel
@@ -358,37 +357,76 @@ export function render(ctx, model) {
     }
   }
 
-  // Landmarks: Main square + market
-  // Ensure visibility: draw them regardless, but keep them inside wallBase when possible.
-  const squareOk =
+  // ---------- Landmarks (ALWAYS LAST) ----------
+  // Use pointInPolyOrOn so points on the wall line still render.
+  const squareInside =
     squareCentre &&
-    (!wallBase || wallBase.length < 3 || pointInPoly(squareCentre, wallBase));
+    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(squareCentre, wallBase, 1e-6));
 
-  const marketOk =
+  const marketInside =
     marketCentre &&
-    (!wallBase || wallBase.length < 3 || pointInPoly(marketCentre, wallBase));
+    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(marketCentre, wallBase, 1e-6));
 
-  if (squareOk) {
-    ctx.fillStyle = "#222222";
-    drawCircle(ctx, squareCentre, (squareR || 10) * 0.95);
+  // Square (disc + outline + subtle halo)
+  if (squareInside) {
+    const r = (squareR || 10) * 0.95;
+
+    // Halo behind
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "#ffffff";
+    drawCircle(ctx, squareCentre, r * 1.15);
+    ctx.fill();
+    ctx.restore();
+
+    // Main fill
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = "#1a1a1a";
+    drawCircle(ctx, squareCentre, r);
+    ctx.fill();
+
+    // Outline
+    ctx.strokeStyle = "#efefef";
+    ctx.lineWidth = 2.5;
+    drawCircle(ctx, squareCentre, r);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Market (bigger, with outline + halo so it cannot disappear under roads)
+  if (marketInside) {
+    const r = Math.max(4, (squareR || 10) * 0.22);
+
+    // Halo
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = "#ffffff";
+    drawCircle(ctx, marketCentre, r * 1.9);
+    ctx.fill();
+    ctx.restore();
+
+    // Core dot
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = "#0f0f0f";
+    drawCircle(ctx, marketCentre, r);
     ctx.fill();
 
     ctx.strokeStyle = "#efefef";
     ctx.lineWidth = 2;
-    drawCircle(ctx, squareCentre, (squareR || 10) * 0.95);
+    drawCircle(ctx, marketCentre, r);
     ctx.stroke();
-  }
-
-  if (marketOk) {
-    ctx.fillStyle = "#efefef";
-    drawCircle(ctx, marketCentre, 3);
-    ctx.fill();
+    ctx.restore();
   }
 
   // Centre marker (reference)
   if (centre) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
     ctx.fillStyle = "#efefef";
     drawCircle(ctx, centre, 2.5);
     ctx.fill();
+    ctx.restore();
   }
 }
