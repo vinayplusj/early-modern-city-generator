@@ -72,13 +72,19 @@ export function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
     base.push(polar(cx, cy, ang, r));
   }
 
-  const shoulderFactor = clamp(0.30 - (bastionCount - 5) * (0.10 / 7), 0.20, 0.30);
+  // Thinner bastions as bastionCount rises.
+  // At 5 bastions -> about 0.30
+  // At 16 bastions -> about 0.12 (noticeably thinner)
+  const t = clamp((bastionCount - 5) / 11, 0, 1);
+  const shoulderFactor = lerp(0.30, 0.10, t);
+  
   const bastionLen = wallR * 2.0 * shoulderFactor;
   const shoulder = wallR * 0.80 * shoulderFactor;
-
-  const cheekAlongFrac = clamp(0.80 - (bastionCount - 5) * 0.02, 0.65, 0.80);
-  const cheekOutFrac = 0.6;
-
+  
+  // Keep faces from getting too wide at high counts
+  const cheekAlongFrac = lerp(0.80, 0.60, t);
+  const cheekOutFrac = lerp(0.60, 0.40, t);
+  
   const bastions = [];
 
   function pushOutToMinRadial(p, curr, out, minOut) {
