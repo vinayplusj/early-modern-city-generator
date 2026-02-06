@@ -1,18 +1,13 @@
 // docs/src/model/generate.js
 //
-// City model generator (Milestone 3.5).
+// City model generator (Milestone 3.5 + 3.6 debug blocks).
 // This module assembles the full "model" object consumed by rendering.
 //
-// Milestone 3.4 change (already in place):
-// - Road graph construction uses intersection splitting (proper crossings) via
-//   buildRoadGraphWithIntersections().
-//
-// Milestone 3.5 changes:
-// - New Town placement now rejects candidates that collide with bastion polygons
-//   (buffered), instead of relying on “flatten bastions” as the primary fix.
-// - Bastion flattening remains as a last-resort failsafe only.
-console.count("generate() calls");
-
+// Key invariants:
+// - Deterministic: same seed -> same city.
+// - No external deps.
+// - All per-run arrays (polylines, landmarks, etc.) are created INSIDE generate().
+// - Rendering remains read-only; all logic here or in geom/roads modules.
 
 import { mulberry32 } from "../rng/mulberry32.js";
 
@@ -20,10 +15,7 @@ import { polar, add, mul, normalize, perp } from "../geom/primitives.js";
 import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
-import {
-  polyIntersectsPoly,
-  polyIntersectsPolyBuffered,
-} from "../geom/intersections.js";
+import { polyIntersectsPoly, polyIntersectsPolyBuffered } from "../geom/intersections.js";
 
 import { buildRoadGraphWithIntersections } from "../roads/graph.js";
 
@@ -41,14 +33,8 @@ import {
 
 import { closestPointOnPolyline } from "../geom/nearest.js";
 
+// Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
-
-const ROAD_EPS = 2.0;
-const polylines = [];
-console.log("POLYLINES NEW ARRAY", polylines);
-
-const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
-
 
 function dist2(a, b) {
   const dx = a.x - b.x;
@@ -70,7 +56,7 @@ function safeMarketNudge({
   if (!squareCentre || !marketCentre) return marketCentre;
 
   // Minimum separation distance
-  const minSep = baseR * 0.04; // "tiny" but visible
+  const minSep = baseR * 0.04;
   const minSep2 = minSep * minSep;
 
   if (dist2(squareCentre, marketCentre) >= minSep2) return marketCentre;
@@ -111,6 +97,11 @@ function safeMarketNudge({
 }
 
 export function generate(seed, bastionCount, gateCount, width, height) {
+  // ---- Debug (safe to keep; remove later if desired) ----
+  console.count("generate() calls");
+  const runId = `${seed}-${Date.now()}`;
+  console.log("RUN START", runId);
+
   const rng = mulberry32(seed);
 
   const cx = width * 0.5;
@@ -146,47 +137,38 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // Keep bastion polys stable, but we will re-set them if we flatten.
   let bastionPolys = bastions.map((b) => b.pts);
 
-  // ---------------- New Town placement (Milestone 3.5) ----------------
+  // ---------------- New Town placement ----------------
   function placeNewTown() {
     const startOffset0 = (ditchWidth + glacisWidth) * 1.6;
-  
-    // Slightly wider search to reduce cases where we would need flattening.
+
+    // Wider search improves success rate without breaking determinism.
     const scales = [1.0, 0.92, 0.84, 0.76, 0.70, 0.64];
     const offsetMul = [1.0, 1.12, 1.25, 1.40, 1.55, 1.70];
-  
-    // Buffer used to keep New Town off bastion wedges.
+
+    // Bastion buffer (explicit). 0.0 means strict geometry only.
     const bastionBuffer = 0.0;
-  
+
     const stats = {
       tried: 0,
       badPoly: 0,
       centroidInsideDitch: 0,
       crossesDitch: 0,
       hitsWallBase: 0,
-      hitsBastion: 0,
       ok: 0,
     };
-  
+
     for (const g of gates) {
       for (const om of offsetMul) {
         for (const s of scales) {
           stats.tried++;
-  
-          const nt = generateNewTownGrid(
-            g,
-            cx,
-            cy,
-            wallR,
-            baseR,
-            startOffset0 * om,
-            s
-          );
+
+          const nt = generateNewTownGrid(g, cx, cy, wallR, baseR, startOffset0 * om, s);
           if (!nt || !nt.poly || nt.poly.length < 3) {
             stats.badPoly++;
             continue;
           }
-  
-          // Robust ditch test
+
+          // Robust ditch test: centroid outside + no crossing
           const ntC = centroid(nt.poly);
           if (pointInPoly(ntC, ditchOuter)) {
             stats.centroidInsideDitch++;
@@ -196,74 +178,58 @@ export function generate(seed, bastionCount, gateCount, width, height) {
             stats.crossesDitch++;
             continue;
           }
-  
+
           // Avoid intersecting wall base edges.
           if (polyIntersectsPoly(nt.poly, wallBase)) {
             stats.hitsWallBase++;
             continue;
           }
-  
-          // Reject if New Town collides with any bastion polygon.
-          const hitBastions = [];
 
+          // Collect intersecting bastions (do not reject New Town).
+          const hitBastions = [];
           for (let i = 0; i < bastions.length; i++) {
             const b = bastions[i];
             if (!b || !b.pts || b.pts.length < 3) continue;
-          
             if (polyIntersectsPolyBuffered(b.pts, nt.poly, bastionBuffer)) {
               hitBastions.push(i);
             }
           }
-          
-          // Do NOT reject the New Town.
-          // Instead, return which bastions were hit.
-          return {
-            newTown: nt,
-            primaryGate: g,
-            hitBastions,
-            stats,
-          };
-  
+
           stats.ok++;
-          return { newTown: nt, primaryGate: g, stats };
+          return { newTown: nt, primaryGate: g, hitBastions, stats };
         }
       }
     }
-  
-    return { newTown: null, primaryGate: gates[0] || null, stats };
-  }
 
+    return { newTown: null, primaryGate: gates[0] || null, hitBastions: [], stats };
+  }
 
   const placed = placeNewTown();
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
+
   console.log("NewTown placement stats", placed.stats);
 
+  // Targeted bastion removal: if New Town intersects bastion(s),
+  // flatten ONLY those specific bastions.
+  if (
+    newTown &&
+    newTown.poly &&
+    newTown.poly.length >= 3 &&
+    placed.hitBastions &&
+    placed.hitBastions.length > 0
+  ) {
+    const hitSet = new Set(placed.hitBastions);
 
-    // If a collision still happens (rare), flatten just the colliding bastions.
-    // Targeted bastion removal when New Town intersects them
-    if (
-      newTown &&
-      newTown.poly &&
-      newTown.poly.length >= 3 &&
-      placed.hitBastions &&
-      placed.hitBastions.length > 0
-    ) {
-      const hitSet = new Set(placed.hitBastions);
-    
-      const bastionsFinal = bastions.map((b, i) => {
-        if (!b || !b.pts || b.pts.length < 3) return b;
-    
-        // Only flatten bastions that actually intersected the New Town
-        if (hitSet.has(i)) {
-          return { ...b, pts: b.shoulders };
-        }
-        return b;
-      });
-    
-      wallFinal = bastionsFinal.flatMap((b) => b.pts);
-      bastionPolys = bastionsFinal.map((b) => b.pts);
-    }
+    const bastionsFinal = bastions.map((b, i) => {
+      if (!b || !b.pts || b.pts.length < 3) return b;
+      if (hitSet.has(i)) return { ...b, pts: b.shoulders };
+      return b;
+    });
+
+    wallFinal = bastionsFinal.flatMap((b) => b.pts);
+    bastionPolys = bastionsFinal.map((b) => b.pts);
+  }
 
   // ---------------- Outworks ----------------
   const ravelins = gates
@@ -312,7 +278,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
   }
 
-  // ---------------- Milestone 3.3 anchors ----------------
+  // ---------------- Anchors (square + market) ----------------
   function placeSquare() {
     if (!primaryGate) return centre;
 
@@ -345,7 +311,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     return squareCentre;
   })();
 
-  // Nudge if too close to the square (including identical point)
+  // Nudge if too close to the square
   marketCentre = safeMarketNudge({
     squareCentre,
     marketCentre,
@@ -364,8 +330,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  // Primary roads now go to the square (not the old centre).
-  // Keep this for compatibility even if you are drawing from roadGraph now.
+  // Primary roads kept for compatibility
   const roads = generateRoadsToCentre(gates, squareCentre);
 
   const avenue = [squareCentre, citCentre];
@@ -374,12 +339,13 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
 
   // ---------------- Road polylines -> road graph ----------------
-
+  const ROAD_EPS = 2.0;
+  const polylines = [];
+  console.log("RUN POLYLINES INIT", runId, polylines.length);
 
   // Gate -> ring -> square (primary), to avoid cutting through bastions
   for (const g of gates) {
     const path = routeGateToSquareViaRing(g, ring, squareCentre);
-
     if (!path || path.length < 2) continue;
 
     if (path.length === 2) {
@@ -422,12 +388,14 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   // Secondary roads
   for (const r of secondaryRoads || []) {
+    if (!r || r.length < 2) continue;
     polylines.push({ points: r, kind: "secondary", width: 1.25 });
   }
 
   // New Town streets
   if (newTown && newTown.streets) {
     for (const seg of newTown.streets) {
+      if (!seg || seg.length < 2) continue;
       polylines.push({ points: seg, kind: "secondary", width: 1.0 });
     }
 
@@ -455,11 +423,11 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     }
   }
 
-  // Milestone 3.4: split intersections before building graph
-  const ROAD_EPS = 2.0;
+  console.log("RUN POLYLINES FINAL", runId, polylines.length);
+
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
-    // ---------------- Milestone 3.6: blocks (faces) ----------------
+  // ---------------- Milestone 3.6: blocks (debug) ----------------
   const BLOCKS_ANGLE_EPS = 1e-9;
   const BLOCKS_AREA_EPS = 8.0;
   const BLOCKS_MAX_FACE_STEPS = 10000;
@@ -470,60 +438,67 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
-  for (const b of blocks) { // debug polygons into landmarks
+  // Debug: add block polygons into landmarks (remove later)
+  for (const b of blocks || []) {
     landmarks.push({
       id: `dbg_${b.id}`,
       pointOrPolygon: b.polygon,
       kind: "debug_block",
-      label: b.id,
+      label: String(b.id),
     });
   }
+
   console.log("MODEL COUNTS", {
-  seed,
-  newTownStreets: newTown?.streets?.length || 0,
-  roadNodes: roadGraph?.nodes?.length || 0,
-  roadEdges: roadGraph?.edges?.length || 0,
-});
+    seed,
+    newTownStreets: newTown?.streets?.length || 0,
+    roadNodes: roadGraph?.nodes?.length || 0,
+    roadEdges: roadGraph?.edges?.length || 0,
+  });
 
   return {
     footprint,
     cx,
     cy,
+
+    // Walls + moatworks
     wallBase,
     wall: wallFinal,
+    bastionPolys,
     gates,
-
-    centre, // keep original centre for reference
-    squareR: baseR * 0.055,
-
-    roads,
-    ring,
-    ring2,
-    secondaryRoads,
-
-    citCentre,
-    citadel,
-    avenue,
-
-    roadGraph,
-    landmarks,
-    squareCentre,
-    marketCentre,
-    primaryGate,
-    newTown,
-
-    outerBoundary,
+    ravelins,
     ditchOuter,
     ditchInner,
     glacisOuter,
-
     ditchWidth,
     glacisWidth,
-    ravelins,
 
-    bastionPolys,
+    // Anchors
+    centre,
+    squareR: baseR * 0.055,
+    squareCentre,
+    marketCentre,
+    citCentre,
+    citadel,
+    avenue,
+    primaryGate,
+
+    // Roads
+    roads, // legacy
+    ring,
+    ring2,
+    secondaryRoads, // legacy
     roadGraph,
+
+    // New Town
+    newTown,
+
+    // District-ish boundary
+    outerBoundary,
+
+    // Milestone 3.6 debug
     blocks,
+
+    // Markers
     landmarks,
   };
 }
