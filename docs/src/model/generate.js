@@ -11,6 +11,8 @@
 // - New Town placement now rejects candidates that collide with bastion polygons
 //   (buffered), instead of relying on “flatten bastions” as the primary fix.
 // - Bastion flattening remains as a last-resort failsafe only.
+console.count("generate() calls");
+
 
 import { mulberry32 } from "../rng/mulberry32.js";
 
