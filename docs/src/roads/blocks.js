@@ -195,8 +195,12 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
   const nodeIds = Array.from(adj.keys()).sort();
   for (const u of nodeIds) {
     const list = adj.get(u) || [];
-    const neighs = list.map((d) => d.to).slice().sort();
-    for (const v of neighs) {
+    for (const u of nodeIds) {
+      const list = adj.get(u) || [];
+      for (const d of list) {
+        const v = d.to;
+        const k = dirKey(u, v);
+        if (used.has(k)) continue;
       const k = dirKey(u, v);
       if (used.has(k)) continue;
 
@@ -218,6 +222,7 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
         absArea: absA,
       });
     }
+  }
   }
 
   if (faces.length === 0) return [];
