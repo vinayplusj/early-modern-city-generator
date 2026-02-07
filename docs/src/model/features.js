@@ -35,6 +35,9 @@ import {
   closestPointOnPolyline
 } from "../geom/poly.js";
 
+import { polyIntersectsPoly } from "../geom/intersections.js";
+
+
 // ---------- Footprint ----------
 export function generateFootprint(rng, cx, cy, baseR, pointCount = 20) {
   const pts = [];
@@ -319,10 +322,14 @@ export function bastionAngularOffset(bastionCount) {
   return clamp(0.22 - (bastionCount - 5) * (0.13 / 7), 0.09, 0.22);
 }
 
-// ---------- Ravelins ----------
-export function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTownPoly, bastionCount) {
+// ---------- Outworks ----------
+export function makeRavelin(
+  gate, cx, cy, wallR, ditchWidth, glacisWidth,
+  newTownPoly, bastionCount,
+  bastionPolys = null,
+  wallPoly = null
+) {
   const out0 = normalize({ x: gate.x - cx, y: gate.y - cy });
-
   const theta = bastionAngularOffset(bastionCount);
 
   const forwardFactor = clamp(0.28 - (bastionCount - 5) * (0.10 / 7), 0.18, 0.28);
@@ -331,35 +338,92 @@ export function makeRavelin(gate, cx, cy, wallR, ditchWidth, glacisWidth, newTow
   const baseW = wallR * 0.10;
   const depth = wallR * 0.12;
 
-  function build(sign) {
+  function build(sign, fwd) {
     const out = rotate(out0, sign * theta);
     const side = normalize(perp(out));
 
-    const c0 = add(gate, mul(out, forward));
+    const c0 = add(gate, mul(out, fwd));
     const a = add(c0, mul(side, -baseW));
     const b = add(c0, mul(side, baseW));
     const tip = add(c0, mul(out, depth));
-
     return [a, tip, b];
   }
 
-  const rvPos = build(+1);
-  const rvNeg = build(-1);
+  function hitsFort(rv) {
+    if (!rv || rv.length < 3) return true;
 
-  // If New Town exists, try to pick the ravelin orientation that avoids overlapping it.
-  if (newTownPoly && newTownPoly.length >= 3) {
-    const posIn =
-      rvPos.some(p => pointInPoly(p, newTownPoly)) ||
-      pointInPoly(centroid(rvPos), newTownPoly);
+    if (bastionPolys && bastionPolys.length) {
+      for (const b of bastionPolys) {
+        if (!b || b.length < 3) continue;
+        if (polyIntersectsPoly(rv, b)) return true;
+      }
+    }
 
-    const negIn =
-      rvNeg.some(p => pointInPoly(p, newTownPoly)) ||
-      pointInPoly(centroid(rvNeg), newTownPoly);
+    if (wallPoly && wallPoly.length >= 3) {
+      if (polyIntersectsPoly(rv, wallPoly)) return true;
+    }
 
-    if (posIn && !negIn) return rvNeg;
-    if (negIn && !posIn) return rvPos;
-    if (posIn && negIn) return null;
+    return false;
   }
 
-  return (gate.idx % 2 === 0) ? rvPos : rvNeg;
+  function hitsNewTown(rv) {
+    if (!newTownPoly || newTownPoly.length < 3) return false;
+    return (
+      rv.some((p) => pointInPoly(p, newTownPoly)) ||
+      pointInPoly(centroid(rv), newTownPoly)
+    );
+  }
+
+  // Build initial candidates
+  const rvPos = build(+1, forward);
+  const rvNeg = build(-1, forward);
+
+  // Candidate preference (parity) but respecting New Town
+  let preferred = (gate.idx % 2 === 0) ? rvPos : rvNeg;
+  let alternate = (gate.idx % 2 === 0) ? rvNeg : rvPos;
+
+  // If New Town exists, prefer the one that does NOT overlap it
+  if (newTownPoly && newTownPoly.length >= 3) {
+    const prefBad = hitsNewTown(preferred);
+    const altBad = hitsNewTown(alternate);
+
+    if (prefBad && !altBad) {
+      const tmp = preferred;
+      preferred = alternate;
+      alternate = tmp;
+    } else if (prefBad && altBad) {
+      return null;
+    }
+  }
+
+  // Now enforce fort intersection constraints
+  if (!hitsFort(preferred)) return preferred;
+  if (!hitsFort(alternate)) return alternate;
+
+  // Shrink forward deterministically and retry both sides
+  for (const m of [0.85, 0.72, 0.60]) {
+    const fwd2 = forward * m;
+
+    const p2 = build(+1, fwd2);
+    const n2 = build(-1, fwd2);
+
+    const pref2 = (gate.idx % 2 === 0) ? p2 : n2;
+    const alt2  = (gate.idx % 2 === 0) ? n2 : p2;
+
+    // Preserve New Town constraint
+    if (newTownPoly && newTownPoly.length >= 3) {
+      const prefBad = hitsNewTown(pref2);
+      const altBad = hitsNewTown(alt2);
+      if (prefBad && altBad) continue;
+      if (!prefBad && !hitsFort(pref2)) return pref2;
+      if (!altBad && !hitsFort(alt2)) return alt2;
+      continue;
+    }
+
+    if (!hitsFort(pref2)) return pref2;
+    if (!hitsFort(alt2)) return alt2;
+  }
+
+  return null;
 }
+
