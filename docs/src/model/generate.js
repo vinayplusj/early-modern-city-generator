@@ -235,6 +235,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   // ---------------- Outworks ----------------
   const ravelins = gates
+    .filter((g) => !(primaryGate && g.idx === primaryGate.idx)) // skip New Town gatehouse
     .map((g) =>
       makeRavelin(
         g,
@@ -244,7 +245,9 @@ export function generate(seed, bastionCount, gateCount, width, height) {
         ditchWidth,
         glacisWidth,
         newTown ? newTown.poly : null,
-        bastionCount
+        bastionCount,
+        bastionPolys,     // NEW
+        wallFinal         // optional, but recommended
       )
     )
     .filter(Boolean);
