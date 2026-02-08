@@ -12,6 +12,7 @@ export function buildFortWarp({
   params,
 }) {
   if (!enabled) return null;
+  if (!wallPoly || !Array.isArray(wallPoly) || wallPoly.length < 3) return null;
 
   const tmp = buildWarpField({
     centre,
