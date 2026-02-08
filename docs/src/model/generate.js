@@ -37,7 +37,8 @@ import {
 
 import { snapGatesToWall } from "./generate_helpers/snap.js";
 import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
-import { placeNewTownAndMaybeFlatten } from "./generate_helpers/new_town.js";
+import { placeNewTown } from "./generate_helpers/new_town.js";
+
 import { buildFortWarp } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
 
