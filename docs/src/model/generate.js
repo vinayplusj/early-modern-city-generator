@@ -105,7 +105,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   let bastionPolys = bastions.map((b) => b.pts);
 
   // ---------------- New Town placement ----------------
-  const placed = placeNewTownAndMaybeFlatten({
+  const placed = placeNewTown({
     rng,
     gates,
     bastions,
