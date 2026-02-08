@@ -11,6 +11,27 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   const rFort = new Array(N);
   const rTarget = new Array(N);
 
+  // ---- DEBUG: check whether wall vertices fall inside the warp band ----
+  if (params.debug) {
+    let inside = 0;
+    let outside = 0;
+  
+    for (const p of wallPoly) {
+      const rr = Math.hypot(p.x - centre.x, p.y - centre.y);
+      if (rr >= params.bandInner && rr <= params.bandOuter) inside++;
+      else outside++;
+    }
+  
+    console.log("WARP BAND TEST", {
+      bandInner: params.bandInner,
+      bandOuter: params.bandOuter,
+      wallVertsInsideBand: inside,
+      wallVertsOutsideBand: outside,
+      wallVertexCount: wallPoly.length,
+    });
+  }
+
+
   for (let i = 0; i < N; i++) {
     const theta = (i / N) * Math.PI * 2;
     thetas[i] = theta;
@@ -41,16 +62,32 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   for (let i = 0; i < N; i++) {
     const raw = rTarget[i] - rFort[i];
     const clamped = clamp(raw, -params.maxIn, params.maxOut);
-    delta[i] = clamped;
+    // delta[i] = clamped;
+    delta[i] = 30;
   }
+  
+  // ---- DEBUG: delta range ----
+  if (params.debug) {
+    let minD = Infinity;
+    let maxD = -Infinity;
+  
+    for (let i = 0; i < delta.length; i++) {
+      if (!Number.isFinite(delta[i])) continue;
+      minD = Math.min(minD, delta[i]);
+      maxD = Math.max(maxD, delta[i]);
+    }
+  
+    console.log("WARP DELTA RANGE", { minD, maxD });
+  }
+
   for (let i = 0; i < N; i++) {
     if (!Number.isFinite(delta[i])) delta[i] = 0;
   }
 
-    const mask = buildBastionLockMask(thetas, centre, bastions, params);
-    for (let i = 0; i < N; i++) {
-      delta[i] *= mask[i];
-    }
+    // const mask = buildBastionLockMask(thetas, centre, bastions, params);
+    // for (let i = 0; i < N; i++) {
+      // delta[i] *= mask[i];
+    // }
 
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
@@ -68,25 +105,6 @@ export function warpPointRadial(p, centre, field, params) {
   const dr = sampleDelta(field, theta);
 
   const w = radialBandWeight(r, params.bandInner, params.bandOuter);
-  // ---- DEBUG: check whether wall vertices fall inside the warp band ----
-  if (params.debug) {
-    let inside = 0;
-    let outside = 0;
-  
-    for (const p of wallPoly) {
-      const r = Math.hypot(p.x - centre.x, p.y - centre.y);
-      if (r >= params.bandInner && r <= params.bandOuter) inside++;
-      else outside++;
-    }
-  
-    console.log("WARP BAND TEST", {
-      bandInner: params.bandInner,
-      bandOuter: params.bandOuter,
-      wallVertsInsideBand: inside,
-      wallVertsOutsideBand: outside,
-      wallVertexCount: wallPoly.length,
-    });
-  }
 
   const scale = 1 + (w * dr) / r;
 
@@ -94,8 +112,25 @@ export function warpPointRadial(p, centre, field, params) {
 }
 
 export function warpPolylineRadial(poly, centre, field, params) {
-  return poly.map((p) => warpPointRadial(p, centre, field, params));
+  const warpedPoly = poly.map((p) => warpPointRadial(p, centre, field, params));
+
+  // ---- DEBUG: wall displacement magnitude ----
+  if (params.debug && poly.length > 0) {
+    let maxShift = 0;
+
+    for (let i = 0; i < poly.length; i++) {
+      const dx = warpedPoly[i].x - poly[i].x;
+      const dy = warpedPoly[i].y - poly[i].y;
+      const d = Math.hypot(dx, dy);
+      if (d > maxShift) maxShift = d;
+    }
+
+    console.log("WARP WALL MAX SHIFT", maxShift);
+  }
+
+  return warpedPoly;
 }
+
 
 /* ---------- helpers ---------- */
 
