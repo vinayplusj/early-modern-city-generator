@@ -19,7 +19,12 @@ export function placeNewTown({
   wallBase,
   ditchWidth,
   glacisWidth,
+  wallFinal: wallFinalIn,
+  bastionPolys: bastionPolysIn,
 }) {
+  
+  let wallFinal = wallFinalIn;
+  let bastionPolys = bastionPolysIn;
   const startOffset0 = (ditchWidth + glacisWidth) * 1.6;
 
   // Wider search improves success rate without breaking determinism.
@@ -37,6 +42,10 @@ export function placeNewTown({
     hitsWallBase: 0,
     ok: 0,
   };
+
+  if (!Array.isArray(gates) || gates.length === 0) {
+    return { newTown: null, primaryGate: null, hitBastions: [], stats, wallFinal, bastionPolys };
+  }
 
   for (const g of gates) {
     for (const om of offsetMul) {
@@ -77,12 +86,27 @@ export function placeNewTown({
         }
 
         stats.ok++;
-        return { newTown: nt, primaryGate: g, hitBastions, stats };
+        return {
+          newTown: nt,
+          primaryGate: g,
+          hitBastions,
+          stats,
+          wallFinal,
+          bastionPolys,
+        };
+
       }
     }
   }
 
-  return { newTown: null, primaryGate: gates[0] || null, hitBastions: [], stats };
+  return {
+    newTown: null,
+    primaryGate: gates[0] || null,
+    hitBastions: [],
+    stats,
+    wallFinal,
+    bastionPolys,
+  };
 }
 
 export function flattenHitBastions({ bastions, hitBastions }) {
