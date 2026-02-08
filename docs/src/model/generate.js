@@ -123,8 +123,9 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
-  wallFinal = placed.wallFinal;
-  bastionPolys = placed.bastionPolys;
+  wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
+  bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
+
   console.log("NewTown placement stats", placed.stats);
 
   // ---------------- Overall boundary ----------------
@@ -157,7 +158,12 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     const citAng = rng() * Math.PI * 2;
     const candidate = polar(cx, cy, citAng, wallR * 0.72);
 
-    const gap = minDistPointToPoly(candidate, wallFinal);
+    const wallForGap = (wallFinal && Array.isArray(wallFinal) && wallFinal.length >= 3)
+      ? wallFinal
+      : wallBase;
+    
+    const gap = minDistPointToPoly(candidate, wallForGap);
+
     if (gap < citSize * 1.8) continue;
 
     citCentre = candidate;
