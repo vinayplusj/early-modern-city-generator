@@ -192,6 +192,29 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   }
 
   const squareCentre = placeSquare();
+  
+  // Tag the district facing the primary gate as "new_town" BEFORE role assignment.
+  if (primaryGate) {
+    const gAng = Math.atan2(primaryGate.y - cy, primaryGate.x - cx);
+    const t = ((gAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  
+    for (const d of districts) {
+      const a0 = d._debug?.a0;
+      const a1 = d._debug?.a1;
+      if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+  
+      const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
+  
+      if (inSector && d.kind !== "plaza" && d.kind !== "citadel") {
+        d.kind = "new_town";
+        d.name = "New Town";
+        if (WARP_FORT.debug) {
+          console.log("DISTRICT KINDS", districts.map(d => d.kind));
+        }
+        break;
+      }
+    }
+  }
 
   // Roles depend on square + citadel.
   assignDistrictRoles(
@@ -201,23 +224,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     { squareCentre, citCentre },
     { INNER_COUNT: 3 }
   );
-  
-  if (primaryGateWarped) {
-    const gAng = Math.atan2(primaryGateWarped.y - cy, primaryGateWarped.x - cx);
-    const t = ((gAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-  
-    for (const d of districts) {
-      const a0 = d._debug?.a0 ?? 0;
-      const a1 = d._debug?.a1 ?? 0;
-      // Reuse the same wrap logic as warp.js if you prefer.
-      const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
-      if (inSector && d.kind !== "plaza" && d.kind !== "citadel") {
-        d.kind = "new_town";
-        d.name = "New Town";
-        break;
-      }
-    }
-  }
+
+  if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
@@ -230,11 +238,12 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   params: WARP_FORT,
 });
 
-
   const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
-  const wallForDraw = wallWarped || wallFinal;
 
+  const wallForDraw = wallWarped || wallFinal;
+  
   const gatesWarped = wallWarped ? snapGatesToWall(gates, cx, cy, wallWarped) : gates;
+  
   const primaryGateWarped = (primaryGate && wallWarped)
     ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
     : primaryGate;
