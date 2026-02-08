@@ -1,6 +1,4 @@
 // docs/src/model/generate_helpers/warp_stage.js
-//
-// Fortification warp stage.
 
 import { buildWarpField, warpPolylineRadial } from "../warp.js";
 
@@ -9,6 +7,7 @@ export function buildFortWarp({
   centre,
   wallPoly,
   districts,
+  bastions,   // NEW
   params,
 }) {
   if (!enabled) return null;
@@ -18,6 +17,7 @@ export function buildFortWarp({
     centre,
     wallPoly,
     districts,
+    bastions, // NEW
     params: { ...params, bandInner: 0, bandOuter: 0 },
   });
 
@@ -35,6 +35,7 @@ export function buildFortWarp({
     centre,
     wallPoly,
     districts,
+    bastions, // NEW
     params: tuned,
   });
 
