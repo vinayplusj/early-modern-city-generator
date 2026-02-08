@@ -1,0 +1,171 @@
+// docs/src/model/warp.js
+import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
+
+export function buildWarpField({ centre, wallPoly, districts, params }) {
+  const N = params.samples;
+  const thetas = new Array(N);
+  const rFort = new Array(N);
+  const rTarget = new Array(N);
+
+  for (let i = 0; i < N; i++) {
+    const theta = (i / N) * Math.PI * 2;
+    thetas[i] = theta;
+    rFort[i] = sampleRadiusAtAngle(centre, theta, wallPoly);
+    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i], params);
+  }
+
+  const delta = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const raw = rTarget[i] - rFort[i];
+    const clamped = clamp(raw, -params.maxIn, params.maxOut);
+    delta[i] = clamped;
+  }
+
+  const deltaSmooth = smoothCircular(delta, params.smoothRadius);
+  const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
+
+  return { N, thetas, rFort, rTarget, delta: deltaSafe };
+}
+
+export function warpPointRadial(p, centre, field, params) {
+  const vx = p.x - centre.x;
+  const vy = p.y - centre.y;
+  const r = Math.hypot(vx, vy);
+  if (r < 1e-6) return p;
+
+  const theta = Math.atan2(vy, vx);
+  const dr = sampleDelta(field, theta);
+
+  const w = radialBandWeight(r, params.bandInner, params.bandOuter);
+  const scale = 1 + (w * dr) / r;
+
+  return { x: centre.x + vx * scale, y: centre.y + vy * scale };
+}
+
+export function warpPolylineRadial(poly, centre, field, params) {
+  return poly.map((p) => warpPointRadial(p, centre, field, params));
+}
+
+/* ---------- helpers ---------- */
+
+function sampleRadiusAtAngle(centre, theta, poly) {
+  // Ray from centre: centre + t * dir, t > 0
+  const dx = Math.cos(theta);
+  const dy = Math.sin(theta);
+
+  let bestT = Infinity;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const t = raySegHit(centre, { x: dx, y: dy }, a, b);
+    if (t != null && t > 0 && t < bestT) bestT = t;
+  }
+
+  // Fallback if something goes wrong
+  if (!Number.isFinite(bestT)) return 0;
+  return bestT;
+}
+
+function raySegHit(o, d, a, b) {
+  // Use your existing intersection util if present.
+  // Otherwise implement a deterministic 2D ray-segment intersection.
+  return raySegmentIntersection(o, d, a, b);
+}
+
+function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
+  // First safe version: per-district scalar target, derived from current rFort and district role.
+  // You can replace this later with real boundary curves.
+
+  const d = districtAtAngle(theta, districts);
+  if (!d) return rFort;
+
+  const role = d.role; // You already have deterministic roles
+  const margin = params.targetMargin ?? 0;
+
+  const offset =
+    role === "NewTown" ? (params.newTownFortOffset ?? 30) :
+    role === "Citadel" ? (params.citadelFortOffset ?? -10) :
+    (params.defaultFortOffset ?? 0);
+
+  return rFort + offset - margin;
+}
+
+function districtAtAngle(theta, districts) {
+  // You have angular sectors. Use the same wrap logic you use now.
+  // Expect districts to carry startAngle, endAngle in radians.
+  const t = wrapAngle(theta);
+  for (const d of districts) {
+    if (angleInInterval(t, d.startAngle, d.endAngle)) return d;
+  }
+  return null;
+}
+
+function smoothCircular(values, radius) {
+  const N = values.length;
+  const out = new Array(N);
+
+  for (let i = 0; i < N; i++) {
+    let sum = 0;
+    let wsum = 0;
+
+    for (let k = -radius; k <= radius; k++) {
+      const j = (i + k + N) % N;
+      const w = (radius + 1) - Math.abs(k); // triangular kernel
+      sum += values[j] * w;
+      wsum += w;
+    }
+    out[i] = sum / wsum;
+  }
+  return out;
+}
+
+function clampCircularSlope(values, maxStep) {
+  const N = values.length;
+  const out = values.slice();
+
+  // One forward pass and one backward pass is usually enough.
+  for (let i = 1; i < N; i++) out[i] = clampToNeighbour(out[i], out[i - 1], maxStep);
+  out[0] = clampToNeighbour(out[0], out[N - 1], maxStep);
+  for (let i = N - 2; i >= 0; i--) out[i] = clampToNeighbour(out[i], out[i + 1], maxStep);
+
+  return out;
+}
+
+function clampToNeighbour(v, n, maxStep) {
+  return clamp(v, n - maxStep, n + maxStep);
+}
+
+function sampleDelta(field, theta) {
+  const t = wrapAngle(theta);
+  const u = (t / (Math.PI * 2)) * field.N;
+  const i0 = Math.floor(u) % field.N;
+  const i1 = (i0 + 1) % field.N;
+  const f = u - Math.floor(u);
+  return field.delta[i0] * (1 - f) + field.delta[i1] * f;
+}
+
+function radialBandWeight(r, bandInner, bandOuter) {
+  if (r <= bandInner) return 0;
+  if (r >= bandOuter) return 1;
+  const x = (r - bandInner) / (bandOuter - bandInner);
+  // Smoothstep for gentle transition
+  return x * x * (3 - 2 * x);
+}
+
+function wrapAngle(theta) {
+  let t = theta % (Math.PI * 2);
+  if (t < 0) t += Math.PI * 2;
+  return t;
+}
+
+function angleInInterval(t, a0, a1) {
+  const start = wrapAngle(a0);
+  const end = wrapAngle(a1);
+  if (start <= end) return t >= start && t < end;
+  return t >= start || t < end; // wrap interval
+}
+
+function clamp(x, lo, hi) {
+  return Math.max(lo, Math.min(hi, x));
+}
