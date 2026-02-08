@@ -12,7 +12,7 @@
 import { mulberry32 } from "../rng/mulberry32.js";
 
 import { polar, add, mul, normalize, perp } from "../geom/primitives.js";
-import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
+import { centroid, pointInPoly } from "../geom/poly.js";
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
 import { polyIntersectsPoly, polyIntersectsPolyBuffered, raySegmentIntersection } from "../geom/intersections.js";
@@ -164,6 +164,9 @@ function safeMarketNudge({
 }
 
 export function generate(seed, bastionCount, gateCount, width, height) {
+  // Must be declared before ANY usage in this function.
+  let warp = null;
+
   // ---- Debug (safe to keep; remove later if desired) ----
   console.count("generate() calls");
   const runId = `${seed}-${Date.now()}`;
@@ -365,7 +368,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   );
   
   // ---------------- Warp field ----------------
-  let warp = null;
   
   if (WARP_FORT.enabled) {
     const fortCentre = { x: cx, y: cy };
@@ -413,25 +415,26 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     : primaryGate;
 
     // ---------------- Outworks ----------------
-  const wallForOutworks = (warp && warp.wallWarped) ? warp.wallWarped : wallFinal;
-
-  const ravelins = (gatesWarped || [])
-    .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx)) // skip New Town gate
-    .map((g) =>
-      makeRavelin(
-        g,
-        cx,
-        cy,
-        wallR,
-        ditchWidth,
-        glacisWidth,
-        newTown ? newTown.poly : null,
-        bastionCount,
-        bastionPolys,
-        wallForOutworks
+    const wallForOutworks = (warp && warp.wallWarped) ? warp.wallWarped : wallFinal;
+    
+    const ravelins = (gatesWarped || [])
+      .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
+      .map((g) =>
+        makeRavelin(
+          g,
+          cx,
+          cy,
+          wallR,
+          ditchWidth,
+          glacisWidth,
+          newTown ? newTown.poly : null,
+          bastionCount,
+          bastionPolys,
+          wallForOutworks
+        )
       )
-    )
-    .filter(Boolean);
+      .filter(Boolean);
+
 
     let marketCentre = (() => {
       if (!primaryGateWarped) {
