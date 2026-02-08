@@ -104,7 +104,7 @@ export function warpPointRadial(p, centre, field, params) {
   const theta = Math.atan2(vy, vx);
   const dr = sampleDelta(field, theta);
 
-  const w = radialBandWeight(r, params.bandInner, params.bandOuter);
+  const w = params.ignoreBand ? 1 : radialBandWeight(r, params.bandInner, params.bandOuter);
 
   const scale = 1 + (w * dr) / r;
 
