@@ -1,7 +1,7 @@
 // docs/src/model/warp.js
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
 
-export function buildWarpField({ centre, wallPoly, districts, params }) {
+export function buildWarpField({ centre, wallPoly, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
@@ -47,6 +47,10 @@ export function buildWarpField({ centre, wallPoly, districts, params }) {
     if (!Number.isFinite(delta[i])) delta[i] = 0;
   }
 
+    const mask = buildBastionLockMask(thetas, centre, bastions, params);
+    for (let i = 0; i < N; i++) {
+      delta[i] *= mask[i];
+    }
 
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
@@ -108,12 +112,12 @@ function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
   const d = districtAtAngle(theta, districts);
   if (!d) return rFort;
 
-  const role = d.role; // You already have deterministic roles
+  const kind = d.kind; // You already have deterministic roles
   const margin = params.targetMargin ?? 0;
 
   const offset =
-    role === "NewTown" ? (params.newTownFortOffset ?? 30) :
-    role === "Citadel" ? (params.citadelFortOffset ?? -10) :
+    kind === "new_town" ? (params.newTownFortOffset ?? 30) :
+    kind === "citadel"  ? (params.citadelFortOffset ?? -10) :
     (params.defaultFortOffset ?? 0);
 
   return rFort + offset - margin;
@@ -197,3 +201,79 @@ function angleInInterval(t, a0, a1) {
 function clamp(x, lo, hi) {
   return Math.max(lo, Math.min(hi, x));
 }
+
+function buildBastionLockMask(thetas, centre, bastions, params) {
+  const N = thetas.length;
+  const out = new Array(N).fill(1);
+
+  if (!bastions || !Array.isArray(bastions) || bastions.length === 0) return out;
+
+  const lockPad = params.bastionLockPad ?? 0.10;         // radians
+  const lockFeather = params.bastionLockFeather ?? 0.08; // radians
+
+  for (const b of bastions) {
+    if (!b || !Array.isArray(b.shoulders) || b.shoulders.length < 2) continue;
+
+    const a0 = angleOfPoint(centre, b.shoulders[0]);
+    const a1 = angleOfPoint(centre, b.shoulders[1]);
+
+    // Expand the locked interval a little past the shoulders.
+    const start = a0 - lockPad;
+    const end   = a1 + lockPad;
+
+    for (let i = 0; i < N; i++) {
+      const t = thetas[i];
+
+      // Weight is 0 inside [start,end], ramps to 1 across lockFeather.
+      const w = intervalLockWeight(t, start, end, lockFeather);
+
+      // Combine locks conservatively: once locked, it stays locked.
+      out[i] = Math.min(out[i], w);
+    }
+  }
+
+  return out;
+}
+
+function angleOfPoint(centre, p) {
+  return Math.atan2(p.y - centre.y, p.x - centre.x);
+}
+
+// Returns 0 in the locked interior, 1 far outside, smooth at edges.
+function intervalLockWeight(theta, a0, a1, feather) {
+  const t = wrapAngle(theta);
+  const start = wrapAngle(a0);
+  const end = wrapAngle(a1);
+
+  if (feather <= 1e-6) {
+    return angleInInterval(t, start, end) ? 0 : 1;
+  }
+
+  // Distance in radians to the nearest boundary of the interval.
+  const d = angularDistanceToInterval(t, start, end);
+
+  // Inside interval => d = 0 => lock (0)
+  // Outside => ramp up to 1 over 'feather'
+  return smoothstep01(d / feather);
+}
+
+function angularDistanceToInterval(t, start, end) {
+  if (angleInInterval(t, start, end)) return 0;
+
+  // Compute distance to each boundary along the circle.
+  const d0 = angularDistance(t, start);
+  const d1 = angularDistance(t, end);
+  return Math.min(d0, d1);
+}
+
+function angularDistance(a, b) {
+  let d = Math.abs(wrapAngle(a) - wrapAngle(b));
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+function smoothstep01(x) {
+  const u = clamp(x, 0, 1);
+  return u * u * (3 - 2 * u);
+}
+
