@@ -68,6 +68,26 @@ export function warpPointRadial(p, centre, field, params) {
   const dr = sampleDelta(field, theta);
 
   const w = radialBandWeight(r, params.bandInner, params.bandOuter);
+  // ---- DEBUG: check whether wall vertices fall inside the warp band ----
+  if (params.debug) {
+    let inside = 0;
+    let outside = 0;
+  
+    for (const p of wallPoly) {
+      const r = Math.hypot(p.x - centre.x, p.y - centre.y);
+      if (r >= params.bandInner && r <= params.bandOuter) inside++;
+      else outside++;
+    }
+  
+    console.log("WARP BAND TEST", {
+      bandInner: params.bandInner,
+      bandOuter: params.bandOuter,
+      wallVertsInsideBand: inside,
+      wallVertsOutsideBand: outside,
+      wallVertexCount: wallPoly.length,
+    });
+  }
+
   const scale = 1 + (w * dr) / r;
 
   return { x: centre.x + vx * scale, y: centre.y + vy * scale };
