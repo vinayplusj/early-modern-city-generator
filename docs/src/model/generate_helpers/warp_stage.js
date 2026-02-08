@@ -26,20 +26,23 @@ export function buildFortWarp({
   const rMean = sum / tmp.rFort.length;
 
   const tuned = {
-    ...params,
-    bandOuter: rMean,
-    bandInner: Math.max(0, rMean - params.bandThickness),
-  };
-
+      ...params,
+      bandOuter: rMean,
+      bandInner: Math.max(0, rMean - params.bandThickness),
+    };
+  
+  const tunedForWall = { ...tuned, ignoreBand: true }; // NEW
+  
   const field = buildWarpField({
-    centre,
-    wallPoly,
-    districts,
-    bastions, // NEW
-    params: tuned,
-  });
-
-  const wallWarped = warpPolylineRadial(wallPoly, centre, field, tuned);
+      centre,
+      wallPoly,
+      districts,
+      bastions,
+      params: tunedForWall, // NEW
+    });
+  
+    const wallWarped = warpPolylineRadial(wallPoly, centre, field, tunedForWall); // NEW
+  
 
   for (const p of wallWarped) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
