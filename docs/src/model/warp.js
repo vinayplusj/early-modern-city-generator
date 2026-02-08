@@ -2,6 +2,10 @@
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
 
 export function buildWarpField({ centre, wallPoly, districts, params }) {
+  if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
+    throw new Error("warp: invalid params.samples");
+  }
+
   const N = params.samples;
   const thetas = new Array(N);
   const rFort = new Array(N);
@@ -11,7 +15,26 @@ export function buildWarpField({ centre, wallPoly, districts, params }) {
     const theta = (i / N) * Math.PI * 2;
     thetas[i] = theta;
     rFort[i] = sampleRadiusAtAngle(centre, theta, wallPoly);
-    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i], params);
+
+    // Stable fallback: carry previous, else use next later
+    if (rFort[i] == null) {
+      rFort[i] = (i > 0) ? rFort[i - 1] : null;
+    }
+
+    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i] ?? 0, params);
+
+  }
+
+  // If rFort[0] is still null, find first non-null and backfill.
+  if (rFort[0] == null) {
+    let first = -1;
+    for (let i = 0; i < N; i++) {
+      if (rFort[i] != null) { first = i; break; }
+    }
+    const fallback = (first >= 0) ? rFort[first] : 0;
+    for (let i = 0; i < N; i++) {
+      if (rFort[i] == null) rFort[i] = fallback;
+    }
   }
 
   const delta = new Array(N);
@@ -20,6 +43,10 @@ export function buildWarpField({ centre, wallPoly, districts, params }) {
     const clamped = clamp(raw, -params.maxIn, params.maxOut);
     delta[i] = clamped;
   }
+  for (let i = 0; i < N; i++) {
+    if (!Number.isFinite(delta[i])) delta[i] = 0;
+  }
+
 
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
@@ -63,19 +90,20 @@ function sampleRadiusAtAngle(centre, theta, poly) {
   }
 
   // Fallback if something goes wrong
-  if (!Number.isFinite(bestT)) return 0;
+  if (!Number.isFinite(bestT)) return null;
   return bestT;
 }
 
 function raySegHit(o, d, a, b) {
-  // Use your existing intersection util if present.
-  // Otherwise implement a deterministic 2D ray-segment intersection.
-  return raySegmentIntersection(o, d, a, b);
+  const hit = raySegmentIntersection(o, d, a, b);
+  if (!hit || hit.type !== "hit") return null;
+  return hit.tRay;
 }
 
 function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
   // First safe version: per-district scalar target, derived from current rFort and district role.
   // You can replace this later with real boundary curves.
+  if (!Number.isFinite(rFort)) rFort = 0;
 
   const d = districtAtAngle(theta, districts);
   if (!d) return rFort;
