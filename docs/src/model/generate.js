@@ -64,8 +64,8 @@ const WARP_FORT = {
   citadelFortOffset: -10,
 
   targetMargin: 0,
-  bastionLockPad: 0.10,      // radians, about 5.7 degrees
-  bastionLockFeather: 0.08,  // radians, smooth edge
+  bastionLockPad: 0.0,      // radians, about 5.7 degrees
+  bastionLockFeather: 0.0,  // radians, smooth edge
 };
 
 export function generate(seed, bastionCount, gateCount, width, height) {
