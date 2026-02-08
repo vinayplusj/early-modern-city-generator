@@ -15,7 +15,7 @@ import { polar, add, mul, normalize, perp } from "../geom/primitives.js";
 import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
-import { polyIntersectsPoly, polyIntersectsPolyBuffered } from "../geom/intersections.js";
+import { polyIntersectsPoly, polyIntersectsPolyBuffered, raySegmentIntersection } from "../geom/intersections.js";
 
 import { buildRoadGraphWithIntersections } from "../roads/graph.js";
 
@@ -66,6 +66,47 @@ function dist2(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return dx * dx + dy * dy;
+}
+
+function gateAngle(g, cx, cy) {
+  return Math.atan2(g.y - cy, g.x - cx);
+}
+
+function snapPointToPolyRay(centre, theta, poly) {
+  const dir = { x: Math.cos(theta), y: Math.sin(theta) };
+
+  let bestT = Infinity;
+  let bestP = null;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+
+    const hit = raySegmentIntersection(centre, dir, a, b);
+    if (!hit || hit.type !== "hit") continue;
+
+    const t = hit.tRay;
+    if (t > 1e-6 && t < bestT) {
+      bestT = t;
+      bestP = hit.p;
+    }
+  }
+
+  return bestP;
+}
+
+function snapGatesToWall(gates, cx, cy, wallPoly) {
+  if (!gates || !gates.length || !wallPoly || wallPoly.length < 3) return gates;
+
+  const centre = { x: cx, y: cy };
+
+  return gates.map((g) => {
+    const theta = Number.isFinite(g.theta) ? g.theta : gateAngle(g, cx, cy);
+
+    const p = snapPointToPolyRay(centre, theta, wallPoly);
+    if (!p) return { ...g, theta }; // keep theta for debug
+    return { ...g, x: p.x, y: p.y, theta };
+  });
 }
 
 function safeMarketNudge({
@@ -258,23 +299,25 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   }
 
   // ---------------- Outworks ----------------
-  const ravelins = gates
-    .filter((g) => !(primaryGate && g.idx === primaryGate.idx)) // skip New Town gatehouse
-    .map((g) =>
-      makeRavelin(
-        g,
-        cx,
-        cy,
-        wallR,
-        ditchWidth,
-        glacisWidth,
-        newTown ? newTown.poly : null,
-        bastionCount,
-        bastionPolys,     // NEW
-        wallFinal         // optional, but recommended
+    const wallForOutworks = (warp && warp.wallWarped) ? warp.wallWarped : wallFinal;
+  
+    const ravelins = (gatesWarped || [])
+      .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
+      .map((g) =>
+        makeRavelin(
+          g,
+          cx,
+          cy,
+          wallR,
+          ditchWidth,
+          glacisWidth,
+          newTown ? newTown.poly : null,
+          bastionCount,
+          bastionPolys,
+          wallForOutworks
+        )
       )
-    )
-    .filter(Boolean);
+      .filter(Boolean);
 
   const outerBoundary = convexHull([
     ...footprint,
@@ -539,6 +582,14 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     }
   }
 
+    const gatesWarped = (warp && warp.wallWarped)
+    ? snapGatesToWall(gates, cx, cy, warp.wallWarped)
+    : gates;
+
+  const primaryGateWarped = (primaryGate && warp && warp.wallWarped)
+    ? snapGatesToWall([primaryGate], cx, cy, warp.wallWarped)[0]
+    : primaryGate;
+
   console.log("BLOCK COUNTS", {
     blocks: blocks?.length || 0,
     firstArea: blocks?.[0]?._debug?.absArea || 0,
@@ -561,7 +612,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     wallBase,
     wall: wallFinal,
     bastionPolys,
-    gates,
+    gates: gatesWarped,
     ravelins,
     ditchOuter,
     ditchInner,
@@ -579,7 +630,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     citCentre,
     citadel,
     avenue,
-    primaryGate,
+    primaryGate: primaryGateWarped,
 
     // Roads
     roads, // legacy
@@ -595,6 +646,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     outerBoundary,
 
     // Markers
+    gatesOriginal: gates,
     landmarks,
   };
 }
