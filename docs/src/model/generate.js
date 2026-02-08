@@ -203,12 +203,14 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
   const warp = buildFortWarp({
-    enabled: WARP_FORT.enabled,
-    centre: fortCentre,
-    wallPoly: wallFinal,
-    districts,
-    params: WARP_FORT,
-  });
+  enabled: WARP_FORT.enabled,
+  centre: fortCentre,
+  wallPoly: wallFinal,
+  districts,
+  bastions,          // NEW
+  params: WARP_FORT,
+});
+
 
   const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
