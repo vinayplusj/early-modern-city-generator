@@ -62,8 +62,7 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   for (let i = 0; i < N; i++) {
     const raw = rTarget[i] - rFort[i];
     const clamped = clamp(raw, -params.maxIn, params.maxOut);
-    // delta[i] = clamped;
-    delta[i] = 30;
+    delta[i] = clamp(raw, -params.maxIn, params.maxOut);
   }
   
   // ---- DEBUG: delta range ----
@@ -84,10 +83,10 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
     if (!Number.isFinite(delta[i])) delta[i] = 0;
   }
 
-    // const mask = buildBastionLockMask(thetas, centre, bastions, params);
-    // for (let i = 0; i < N; i++) {
-      // delta[i] *= mask[i];
-    // }
+   const mask = buildBastionLockMask(thetas, centre, bastions, params);
+    for (let i = 0; i < N; i++) {
+       delta[i] *= mask[i];
+     }
 
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
