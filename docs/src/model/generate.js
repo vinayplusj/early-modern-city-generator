@@ -36,7 +36,31 @@ import { closestPointOnPolyline } from "../geom/poly.js";
 // Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
 import { buildRadialDistricts, assignBlocksToDistricts, assignDistrictRoles } from "./districts.js";
+import { buildWarpField, warpPolylineRadial } from "./warp.js";
 
+const WARP_FORT = {
+  enabled: true,
+  debug: true,
+
+  samples: 720,
+  smoothRadius: 10,
+  maxStep: 1.5,
+
+  maxOut: 40,
+  maxIn: 20,
+
+  // These are computed per-run from the wall radius
+  bandInner: 0,
+  bandOuter: 0,
+  bandThickness: 120,
+
+  // Phase 0: role offsets only
+  defaultFortOffset: 0,
+  newTownFortOffset: 30,
+  citadelFortOffset: -10,
+
+  targetMargin: 0
+};
 
 function dist2(a, b) {
   const dx = a.x - b.x;
@@ -464,6 +488,57 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   assignBlocksToDistricts(blocks, districts, cx, cy);
 
+    // ---------------- Warp field (Phase 0: debug wall overlay only) ----------------
+  let warp = null;
+
+  if (WARP_FORT.enabled) {
+    const fortCentre = { x: cx, y: cy };
+
+    // Use the final wall after New Town flattening
+    const wallOriginal = wallFinal;
+
+    // Temp field to estimate a representative wall radius
+    const tmp = buildWarpField({
+      centre: fortCentre,
+      wallPoly: wallOriginal,
+      districts,
+      params: {
+        ...WARP_FORT,
+        bandInner: 0,
+        bandOuter: 0
+      }
+    });
+
+    let sum = 0;
+    for (let i = 0; i < tmp.rFort.length; i++) sum += tmp.rFort[i];
+    const rMean = sum / tmp.rFort.length;
+
+    const params = {
+      ...WARP_FORT,
+      bandOuter: rMean,
+      bandInner: Math.max(0, rMean - WARP_FORT.bandThickness)
+    };
+
+    const field = buildWarpField({
+      centre: fortCentre,
+      wallPoly: wallOriginal,
+      districts,
+      params
+    });
+
+    const wallWarped = warpPolylineRadial(wallOriginal, fortCentre, field, params);
+
+    // Fail closed if anything goes non-finite
+    let ok = true;
+    for (const p of wallWarped) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) { ok = false; break; }
+    }
+
+    if (ok) {
+      warp = { centre: fortCentre, params, field, wallOriginal, wallWarped };
+    }
+  }
+
   console.log("BLOCK COUNTS", {
     blocks: blocks?.length || 0,
     firstArea: blocks?.[0]?._debug?.absArea || 0,
@@ -495,6 +570,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     glacisWidth,
     districts,
     blocks,
+    warp,
     // Anchors
     centre,
     squareR: baseR * 0.055,
