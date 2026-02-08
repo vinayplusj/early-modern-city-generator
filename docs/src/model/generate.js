@@ -298,27 +298,6 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     bastionPolys = bastionsFinal.map((b) => b.pts);
   }
 
-  // ---------------- Outworks ----------------
-    const wallForOutworks = (warp && warp.wallWarped) ? warp.wallWarped : wallFinal;
-  
-    const ravelins = (gatesWarped || [])
-      .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
-      .map((g) =>
-        makeRavelin(
-          g,
-          cx,
-          cy,
-          wallR,
-          ditchWidth,
-          glacisWidth,
-          newTown ? newTown.poly : null,
-          bastionCount,
-          bastionPolys,
-          wallForOutworks
-        )
-      )
-      .filter(Boolean);
-
   const outerBoundary = convexHull([
     ...footprint,
     ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
@@ -327,6 +306,17 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
+
+  // ---------------- Districts (needed for warp) ----------------
+  const DISTRICT_COUNT = 8;
+  const DISTRICT_JITTER = 0.12;
+  const DISTRICT_MIN_SPAN = 0.35;
+  
+  const districts = buildRadialDistricts(rng, outerBoundary, cx, cy, {
+    COUNT: DISTRICT_COUNT,
+    JITTER: DISTRICT_JITTER,
+    MIN_SPAN: DISTRICT_MIN_SPAN,
+  });
 
   // ---------------- Citadel ----------------
   const citSize = baseR * 0.1;
@@ -365,36 +355,114 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
   const squareCentre = placeSquare();
 
-  let marketCentre = (() => {
-    if (!primaryGate) {
-      const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
-      return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
-    }
-
-    const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-    const side = normalize(perp(out));
-
-    const c1 = add(squareCentre, mul(side, baseR * 0.07));
-    if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
-
-    const c2 = add(squareCentre, mul(side, -baseR * 0.07));
-    if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
-
-    return squareCentre;
-  })();
-
-  // Nudge if too close to the square
-  marketCentre = safeMarketNudge({
-    squareCentre,
-    marketCentre,
-    centre,
-    primaryGate,
+  // Now roles are safe to assign (square/citadel exist)
+  assignDistrictRoles(
+    districts,
     cx,
     cy,
-    baseR,
-    footprint,
-    wallBase,
-  });
+    { squareCentre, citCentre },
+    { INNER_COUNT: 3 }
+  );
+  
+  // ---------------- Warp field ----------------
+  let warp = null;
+  
+  if (WARP_FORT.enabled) {
+    const fortCentre = { x: cx, y: cy };
+    const wallOriginal = wallFinal;
+  
+    const tmp = buildWarpField({
+      centre: fortCentre,
+      wallPoly: wallOriginal,
+      districts,
+      params: { ...WARP_FORT, bandInner: 0, bandOuter: 0 }
+    });
+  
+    let sum = 0;
+    for (let i = 0; i < tmp.rFort.length; i++) sum += tmp.rFort[i];
+    const rMean = sum / tmp.rFort.length;
+  
+    const params = {
+      ...WARP_FORT,
+      bandOuter: rMean,
+      bandInner: Math.max(0, rMean - WARP_FORT.bandThickness)
+    };
+  
+    const field = buildWarpField({
+      centre: fortCentre,
+      wallPoly: wallOriginal,
+      districts,
+      params
+    });
+  
+    const wallWarped = warpPolylineRadial(wallOriginal, fortCentre, field, params);
+  
+    let ok = true;
+    for (const p of wallWarped) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) { ok = false; break; }
+    }
+    if (ok) warp = { centre: fortCentre, params, field, wallOriginal, wallWarped };
+  }
+  
+  const gatesWarped = (warp && warp.wallWarped)
+    ? snapGatesToWall(gates, cx, cy, warp.wallWarped)
+    : gates;
+  
+  const primaryGateWarped = (primaryGate && warp && warp.wallWarped)
+    ? snapGatesToWall([primaryGate], cx, cy, warp.wallWarped)[0]
+    : primaryGate;
+
+    // ---------------- Outworks ----------------
+  const wallForOutworks = (warp && warp.wallWarped) ? warp.wallWarped : wallFinal;
+
+  const ravelins = (gatesWarped || [])
+    .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx)) // skip New Town gate
+    .map((g) =>
+      makeRavelin(
+        g,
+        cx,
+        cy,
+        wallR,
+        ditchWidth,
+        glacisWidth,
+        newTown ? newTown.poly : null,
+        bastionCount,
+        bastionPolys,
+        wallForOutworks
+      )
+    )
+    .filter(Boolean);
+
+    let marketCentre = (() => {
+      if (!primaryGateWarped) {
+        const c0 = add(squareCentre, { x: baseR * 0.07, y: 0 });
+        return (pointInPoly(c0, footprint) && pointInPoly(c0, wallBase)) ? c0 : squareCentre;
+      }
+  
+      const out = normalize({ x: primaryGateWarped.x - cx, y: primaryGateWarped.y - cy });
+      const side = normalize(perp(out));
+  
+      const c1 = add(squareCentre, mul(side, baseR * 0.07));
+      if (pointInPoly(c1, footprint) && pointInPoly(c1, wallBase)) return c1;
+  
+      const c2 = add(squareCentre, mul(side, -baseR * 0.07));
+      if (pointInPoly(c2, footprint) && pointInPoly(c2, wallBase)) return c2;
+  
+      return squareCentre;
+    })();
+
+  // Nudge if too close to the square
+    marketCentre = safeMarketNudge({
+      squareCentre,
+      marketCentre,
+      centre,
+      primaryGate: primaryGateWarped,
+      cx,
+      cy,
+      baseR,
+      footprint,
+      wallBase,
+    });
 
   const landmarks = [
     { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
@@ -403,12 +471,12 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   ];
 
   // Primary roads kept for compatibility
-  const roads = generateRoadsToCentre(gates, squareCentre);
+  const roads = generateRoadsToCentre(gatesWarped, squareCentre);
 
   const avenue = [squareCentre, citCentre];
 
   // Secondary roads
-  const secondaryRoads = generateSecondaryRoads(rng, gates, ring, ring2);
+  const secondaryRoads = generateSecondaryRoads(rng, gatesWarped, ring, ring2);
 
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
@@ -416,7 +484,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   console.log("RUN POLYLINES INIT", runId, polylines.length);
 
   // Gate -> ring -> square (primary), to avoid cutting through bastions
-  for (const g of gates) {
+  for (const g of gatesWarped) {
     const path = routeGateToSquareViaRing(g, ring, squareCentre);
     if (!path || path.length < 2) continue;
 
@@ -510,85 +578,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
-  const DISTRICT_COUNT = 8;
-  const DISTRICT_JITTER = 0.12;
-  const DISTRICT_MIN_SPAN = 0.35;
-  
-  const districts = buildRadialDistricts(rng, outerBoundary, cx, cy, {
-    COUNT: DISTRICT_COUNT,
-    JITTER: DISTRICT_JITTER,
-    MIN_SPAN: DISTRICT_MIN_SPAN,
-  });
-
-  // NEW: deterministic roles
-  assignDistrictRoles(
-    districts,
-    cx,
-    cy,
-    { squareCentre, citCentre },
-    { INNER_COUNT: 3 }
-  );
-
   assignBlocksToDistricts(blocks, districts, cx, cy);
-
-    // ---------------- Warp field (Phase 0: debug wall overlay only) ----------------
-  let warp = null;
-
-  if (WARP_FORT.enabled) {
-    const fortCentre = { x: cx, y: cy };
-
-    // Use the final wall after New Town flattening
-    const wallOriginal = wallFinal;
-
-    // Temp field to estimate a representative wall radius
-    const tmp = buildWarpField({
-      centre: fortCentre,
-      wallPoly: wallOriginal,
-      districts,
-      params: {
-        ...WARP_FORT,
-        bandInner: 0,
-        bandOuter: 0
-      }
-    });
-
-    let sum = 0;
-    for (let i = 0; i < tmp.rFort.length; i++) sum += tmp.rFort[i];
-    const rMean = sum / tmp.rFort.length;
-
-    const params = {
-      ...WARP_FORT,
-      bandOuter: rMean,
-      bandInner: Math.max(0, rMean - WARP_FORT.bandThickness)
-    };
-
-    const field = buildWarpField({
-      centre: fortCentre,
-      wallPoly: wallOriginal,
-      districts,
-      params
-    });
-
-    const wallWarped = warpPolylineRadial(wallOriginal, fortCentre, field, params);
-
-    // Fail closed if anything goes non-finite
-    let ok = true;
-    for (const p of wallWarped) {
-      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) { ok = false; break; }
-    }
-
-    if (ok) {
-      warp = { centre: fortCentre, params, field, wallOriginal, wallWarped };
-    }
-  }
-
-    const gatesWarped = (warp && warp.wallWarped)
-    ? snapGatesToWall(gates, cx, cy, warp.wallWarped)
-    : gates;
-
-  const primaryGateWarped = (primaryGate && warp && warp.wallWarped)
-    ? snapGatesToWall([primaryGate], cx, cy, warp.wallWarped)[0]
-    : primaryGate;
 
   console.log("BLOCK COUNTS", {
     blocks: blocks?.length || 0,
@@ -610,7 +600,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
     // Walls + moatworks
     wallBase,
-    wall: wallFinal,
+    wall: (warp && warp.wallWarped) ? warp.wallWarped : wallFinal,
     bastionPolys,
     gates: gatesWarped,
     ravelins,
