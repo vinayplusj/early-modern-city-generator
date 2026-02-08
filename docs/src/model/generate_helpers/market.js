@@ -91,3 +91,6 @@ export function computeMarketCentre({
   // Fallback: the square.
   return squareCentre;
 }
+
+// Alias for call sites that import the old name.
+export const computeInitialMarketCentre = computeMarketCentre;
