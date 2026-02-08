@@ -64,6 +64,8 @@ const WARP_FORT = {
   citadelFortOffset: -10,
 
   targetMargin: 0,
+  bastionLockPad: 0.10,      // radians, about 5.7 degrees
+  bastionLockFeather: 0.08,  // radians, smooth edge
 };
 
 export function generate(seed, bastionCount, gateCount, width, height) {
@@ -199,6 +201,23 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     { squareCentre, citCentre },
     { INNER_COUNT: 3 }
   );
+  
+  if (primaryGateWarped) {
+    const gAng = Math.atan2(primaryGateWarped.y - cy, primaryGateWarped.x - cx);
+    const t = ((gAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  
+    for (const d of districts) {
+      const a0 = d._debug?.a0 ?? 0;
+      const a1 = d._debug?.a1 ?? 0;
+      // Reuse the same wrap logic as warp.js if you prefer.
+      const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
+      if (inSector && d.kind !== "plaza" && d.kind !== "citadel") {
+        d.kind = "new_town";
+        d.name = "New Town";
+        break;
+      }
+    }
+  }
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
