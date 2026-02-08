@@ -45,6 +45,44 @@ function cross2(a, b) {
   return a.x * b.y - a.y * b.x;
 }
 
+// ---------- Ray vs segment intersection ----------
+//
+// Ray: O + t * D, with t >= 0 (D should be unit length for "t" to be distance)
+// Segment: A + u * (B - A), with u in [0,1]
+//
+// Returns:
+//  { type: "hit", tRay, uSeg, p }  or  { type: "none" | "parallel" | "collinear" }
+//
+// Notes:
+// - Collinear overlaps intentionally return "collinear" and are treated as no hit by callers.
+// - Endpoint hits are allowed (caller can exclude if needed).
+export function raySegmentIntersection(O, D, A, B, eps = 1e-9) {
+  const r = D;          // ray direction
+  const s = sub(B, A);  // segment direction
+
+  const rxs = cross2(r, s);
+  const q_p = sub(A, O);
+  const qpxr = cross2(q_p, r);
+
+  // Parallel
+  if (Math.abs(rxs) < eps) {
+    if (Math.abs(qpxr) < eps) {
+      return { type: "collinear" };
+    }
+    return { type: "parallel" };
+  }
+
+  // Solve O + t r = A + u s
+  const t = cross2(q_p, s) / rxs; // along ray
+  const u = cross2(q_p, r) / rxs; // along segment
+
+  if (t < -eps) return { type: "none" };
+  if (u < -eps || u > 1 + eps) return { type: "none" };
+
+  const p = add(O, mul(r, t));
+  return { type: "hit", tRay: t, uSeg: clamp(u, 0, 1), p };
+}
+
 // ---------- Segment intersection ----------
 //
 // Returns a rich result:
