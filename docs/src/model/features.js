@@ -310,6 +310,8 @@ export function generateNewTownGrid(gate, cx, cy, wallR, baseR, newTownStartOffs
 
 // ---------- Misc helpers ----------
 export function minDistPointToPoly(pt, poly) {
+  // Guard: avoid crashing if caller passes undefined/null.
+  if (!poly || !Array.isArray(poly) || poly.length < 2) return Infinity;
   let best = Infinity;
   for (const p of poly) {
     const d = Math.hypot(pt.x - p.x, pt.y - p.y);
