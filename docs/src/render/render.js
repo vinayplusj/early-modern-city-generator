@@ -110,7 +110,7 @@ export function render(ctx, model) {
   const {
     footprint,
     outerBoundary,
-
+    
     // Walls
     wall,
     wallBase,
@@ -143,6 +143,7 @@ export function render(ctx, model) {
     // New Town
     newTown,
     blocks,
+    warp,
   } = model || {};
 
   // Background (robust clear even if caller applied transforms)
@@ -332,6 +333,28 @@ export function render(ctx, model) {
     ctx.lineWidth = 3;
     drawPoly(ctx, wall, true);
     ctx.stroke();
+  }
+
+    // Warp overlay (debug)
+  if (warp && warp.params && warp.params.debug && warp.wallOriginal && warp.wallWarped) {
+    ctx.save();
+
+    ctx.lineWidth = 2;
+
+    // Original wall (dashed)
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = "#ffffff";
+    ctx.setLineDash([6, 4]);
+    drawPoly(ctx, warp.wallOriginal, true);
+    ctx.stroke();
+
+    // Warped wall (solid)
+    ctx.globalAlpha = 0.9;
+    ctx.setLineDash([]);
+    drawPoly(ctx, warp.wallWarped, true);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   // Wall base (inner line)
