@@ -32,7 +32,7 @@ export function placeNewTown({
   const offsetMul = [1.0, 1.12, 1.25, 1.40, 1.55, 1.70];
 
   // Bastion buffer (explicit). 0.0 means strict geometry only.
-  const bastionBuffer = 0.0;
+  const bastionBuffer = 1.5;
 
   const stats = {
     tried: 0,
