@@ -331,12 +331,19 @@ function buildBastionLockMask(thetas, centre, bastions, params) {
   for (const b of bastions) {
     if (!b || !Array.isArray(b.shoulders) || b.shoulders.length < 2) continue;
 
-    const a0 = angleOfPoint(centre, b.shoulders[0]);
-    const a1 = angleOfPoint(centre, b.shoulders[1]);
-
-    // Expand the locked interval a little past the shoulders.
-    const start = a0 - lockPad;
-    const end   = a1 + lockPad;
+  let a0 = wrapAngle(angleOfPoint(centre, b.shoulders[0]));
+  let a1 = wrapAngle(angleOfPoint(centre, b.shoulders[1]));
+  
+  // Force the smaller arc between the two shoulders.
+  // If the forward span a0 -> a1 is bigger than PI, swap them.
+  if (angularSpan(a0, a1) > Math.PI) {
+    const tmp = a0;
+    a0 = a1;
+    a1 = tmp;
+  }
+  
+  const start = a0 - lockPad;
+  const end   = a1 + lockPad;
 
     for (let i = 0; i < N; i++) {
       const t = thetas[i];
@@ -369,17 +376,35 @@ function buildBastionClearMask(thetas, centre, bastions, params) {
   for (const b of bastions) {
     if (!b || !Array.isArray(b.shoulders) || b.shoulders.length < 2) continue;
 
-    const a0 = angleOfPoint(centre, b.shoulders[0]);
-    const a1 = angleOfPoint(centre, b.shoulders[1]);
+  let a0 = wrapAngle(angleOfPoint(centre, b.shoulders[0]));
+  let a1 = wrapAngle(angleOfPoint(centre, b.shoulders[1]));
+  
+  // Force the smaller arc between the two shoulders.
+  // If the forward span a0 -> a1 is bigger than PI, swap them.
+  if (angularSpan(a0, a1) > Math.PI) {
+    const tmp = a0;
+    a0 = a1;
+    a1 = tmp;
+  }
 
     const start = a0 - pad;
     const end   = a1 + pad;
-
+    
     for (let i = 0; i < N; i++) {
       const t = thetas[i];
       const w = intervalLockWeight(t, start, end, feather);
       out[i] = Math.min(out[i], w);
     }
+  }
+  
+  if (params.debug) {
+    let zeros = 0;
+    for (const w of out) if (w <= 1e-6) zeros++;
+  
+    let minW = 1, maxW = 0;
+    for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
+  
+    console.log("WARP BASTION CLEAR MASK", { zeros, N, minW, maxW });
   }
 
   if (params.debug) {
