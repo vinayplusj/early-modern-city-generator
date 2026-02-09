@@ -53,24 +53,24 @@ const WARP_FORT = {
   maxOut: 40,
   maxIn: 20,
 
-  // These are computed per-run from the wall radius
   bandInner: 0,
   bandOuter: 0,
   bandThickness: 120,
 
-  // Phase 0: role offsets only
   defaultFortOffset: 0,
   newTownFortOffset: 30,
+  outerWardFortOffset: 10,
   citadelFortOffset: -10,
 
   targetMargin: 0,
-  // NEW (Option A): extra “clearance” zone that blocks outward bulge near bastions
-  bastionClearPad: 0.16,
+
+  // Bastion protection
+  bastionLockPad: 0.12,
+  bastionLockFeather: 0.10,
+
+  // Option A: blocks outward bulge near bastion tips only
   bastionClearHalfWidth: 0.05,
   bastionClearFeather: 0.06,
-
-
-  outerWardFortOffset: 10,
 };
 
 export function generate(seed, bastionCount, gateCount, width, height) {
