@@ -43,6 +43,10 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
     }
 
     rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i] ?? 0, params);
+    if (params.debug && i % 120 === 0) {
+      const d = districtAtAngle(theta, districts);
+      console.log("WARP DISTRICT SAMPLE", { i, theta, kind: d?.kind ?? null });
+}
 
   }
 
@@ -61,7 +65,6 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   const delta = new Array(N);
   for (let i = 0; i < N; i++) {
     const raw = rTarget[i] - rFort[i];
-    const clamped = clamp(raw, -params.maxIn, params.maxOut);
     delta[i] = clamp(raw, -params.maxIn, params.maxOut);
   }
   
@@ -187,24 +190,27 @@ function districtAtAngle(theta, districts) {
   return null;
 }
 
-function smoothCircular(values, radius) {
-  const N = values.length;
-  const out = new Array(N);
+function districtAtAngle(theta, districts) {
+  const t = wrapAngle(theta);
 
-  for (let i = 0; i < N; i++) {
-    let sum = 0;
-    let wsum = 0;
+  for (const d of districts) {
+    // Prefer first-class fields if they exist.
+    const a0 =
+      Number.isFinite(d.startAngle) ? d.startAngle :
+      d._debug?.a0;
 
-    for (let k = -radius; k <= radius; k++) {
-      const j = (i + k + N) % N;
-      const w = (radius + 1) - Math.abs(k); // triangular kernel
-      sum += values[j] * w;
-      wsum += w;
-    }
-    out[i] = sum / wsum;
+    const a1 =
+      Number.isFinite(d.endAngle) ? d.endAngle :
+      d._debug?.a1;
+
+    if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+
+    if (angleInInterval(t, a0, a1)) return d;
   }
-  return out;
+
+  return null;
 }
+
 
 function clampCircularSlope(values, maxStep) {
   const N = values.length;
