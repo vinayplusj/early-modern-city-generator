@@ -65,8 +65,9 @@ const WARP_FORT = {
 
   targetMargin: 0,
   // NEW (Option A): extra “clearance” zone that blocks outward bulge near bastions
-  bastionClearPad: 0.28,        // start larger than lockPad
-  bastionClearFeather: 0.18,    // start larger than lockFeather
+  bastionClearPad: 0.16,
+  bastionClearFeather: 0.10,
+
   outerWardFortOffset: 10,
 };
 
