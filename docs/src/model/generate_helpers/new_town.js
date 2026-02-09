@@ -85,26 +85,43 @@ export function placeNewTown({
           }
         }
 
-        // If a bastion overlaps the New Town, hide its polygon so it does not render over it.
-        // (Fast Option A. Clipping can be added later.)
-        const hitSet = new Set(hitBastions);
-        
-        const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
-          if (!Array.isArray(poly) || poly.length < 3) return poly;
-          return hitSet.has(i) ? null : poly; // hide intersecting bastions
-        });
-        
-        console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
-        
-        stats.ok++;
-        return {
-          newTown: nt,
-          primaryGate: g,
-          hitBastions,
-          stats,
-          wallFinal,
-          bastionPolys: bastionPolysOut,
-        };
+      // If a bastion overlaps the New Town, delete it.
+      // Deletion has two parts:
+      // 1) Hide its bastion polygon (bastionPolysOut[i] = null)
+      // 2) Flatten its wall protrusion back to a straight shoulder-to-shoulder segment
+      const hitSet = new Set(hitBastions);
+      
+      // 1) Hide intersecting bastion polygons (render-layer fix)
+      const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
+        if (!Array.isArray(poly) || poly.length < 3) return poly;
+        return hitSet.has(i) ? null : poly;
+      });
+      
+      // 2) Remove intersecting bastion protrusions from the wall polyline (geometry-layer fix)
+      const wallFinalOut = (bastions || []).flatMap((b, i) => {
+        if (!b || !Array.isArray(b.pts) || b.pts.length < 2) return [];
+      
+        if (!hitSet.has(i)) return b.pts;
+      
+        // Flatten: keep only the two shoulder points.
+        // Fallback to endpoints if shoulders are missing.
+        const s0 = (Array.isArray(b.shoulders) && b.shoulders[0]) ? b.shoulders[0] : b.pts[0];
+        const s1 = (Array.isArray(b.shoulders) && b.shoulders[1]) ? b.shoulders[1] : b.pts[b.pts.length - 1];
+        return [s0, s1];
+      });
+      
+      console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
+      
+      stats.ok++;
+      return {
+        newTown: nt,
+        primaryGate: g,
+        hitBastions,
+        stats,
+        wallFinal: wallFinalOut,
+        bastionPolys: bastionPolysOut,
+      };
+
       }
     }
   }  
