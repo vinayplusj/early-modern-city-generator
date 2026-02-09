@@ -224,25 +224,28 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     { squareCentre, citCentre },
     { INNER_COUNT: 3 }
   );
-  // Ensure new_town tag survives role assignment.
-if (primaryGate && !districts.some(d => d.kind === "new_town")) {
-  const gAng = Math.atan2(primaryGate.y - cy, primaryGate.x - cx);
-  const t = ((gAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+function tagNewTownDistrictByGate(districts, gate, cx, cy) {
+  if (!gate) return;
+  if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(d => d.kind));
+  const t = ((Math.atan2(gate.y - cy, gate.x - cx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
   for (const d of districts) {
-    const a0 = d._debug?.a0;
-    const a1 = d._debug?.a1;
+    const a0 = Number.isFinite(d.startAngle) ? d.startAngle : d._debug?.a0;
+    const a1 = Number.isFinite(d.endAngle) ? d.endAngle : d._debug?.a1;
     if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
 
     const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
-    if (inSector && d.kind !== "plaza" && d.kind !== "citadel") {
-      d.kind = "new_town";
-      d.name = "New Town";
-      break;
-    }
+    if (!inSector) continue;
+
+    // Do not overwrite these.
+    if (d.kind === "plaza" || d.kind === "citadel") return;
+
+    d.kind = "new_town";
+    d.name = "New Town";
+    return;
   }
 }
-
 
   if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
