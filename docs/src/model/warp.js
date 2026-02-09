@@ -370,51 +370,45 @@ function buildBastionClearMask(thetas, centre, bastions, params) {
 
   if (!bastions || !Array.isArray(bastions) || bastions.length === 0) return out;
 
-  const pad = params.bastionClearPad ?? (params.bastionLockPad ?? 0.10);
-  const feather = params.bastionClearFeather ?? (params.bastionLockFeather ?? 0.08);
+  // Make this much smaller than lockPad, by design.
+  const halfWidth = params.bastionClearHalfWidth ?? 0.05;   // radians
+  const feather   = params.bastionClearFeather   ?? 0.06;   // radians
 
   for (const b of bastions) {
-    if (!b || !Array.isArray(b.shoulders) || b.shoulders.length < 2) continue;
+    if (!b || !Array.isArray(b.pts) || b.pts.length === 0) continue;
 
-  let a0 = wrapAngle(angleOfPoint(centre, b.shoulders[0]));
-  let a1 = wrapAngle(angleOfPoint(centre, b.shoulders[1]));
-  
-  // Force the smaller arc between the two shoulders.
-  // If the forward span a0 -> a1 is bigger than PI, swap them.
-  if (angularSpan(a0, a1) > Math.PI) {
-    const tmp = a0;
-    a0 = a1;
-    a1 = tmp;
-  }
+    // Bastion mid angle: use the average of the bastion polygon points.
+    let mx = 0, my = 0;
+    for (const p of b.pts) { mx += p.x; my += p.y; }
+    mx /= b.pts.length;
+    my /= b.pts.length;
 
-    const start = a0 - pad;
-    const end   = a1 + pad;
-    
+    const mid = wrapAngle(angleOfPoint(centre, { x: mx, y: my }));
+
+    const start = mid - halfWidth;
+    const end   = mid + halfWidth;
+
     for (let i = 0; i < N; i++) {
       const t = thetas[i];
       const w = intervalLockWeight(t, start, end, feather);
       out[i] = Math.min(out[i], w);
     }
   }
-  
-  if (params.debug) {
-    let zeros = 0;
-    for (const w of out) if (w <= 1e-6) zeros++;
-  
-    let minW = 1, maxW = 0;
-    for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
-  
-    console.log("WARP BASTION CLEAR MASK", { zeros, N, minW, maxW });
-  }
 
   if (params.debug) {
+    let zeros = 0;
     let minW = 1, maxW = 0;
-    for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
-    console.log("WARP BASTION CLEAR MASK RANGE", { minW, maxW });
+    for (const w of out) {
+      if (w <= 1e-6) zeros++;
+      minW = Math.min(minW, w);
+      maxW = Math.max(maxW, w);
+    }
+    console.log("WARP BASTION CLEAR MASK", { zeros, N, minW, maxW });
   }
 
   return out;
 }
+
 
 function angleOfPoint(centre, p) {
   return Math.atan2(p.y - centre.y, p.x - centre.x);
