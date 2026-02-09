@@ -2,7 +2,7 @@
 
 import { drawPoly } from "../helpers/draw.js";
 
-export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, ring, ring2, warp }) {
+export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, bastionPolys, ring, ring2, warp }) {
   // Bastioned wall (final)
   if (wall && wall.length >= 3) {
     ctx.strokeStyle = "#d9d9d9";
@@ -11,7 +11,21 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, ring, ring2, war
     ctx.stroke();
   }
 
-  // Warp overlay (debug)
+    // Bastions (polygons). Some may be null if hidden due to New Town overlap.
+  if (bastionPolys && Array.isArray(bastionPolys)) {
+    ctx.save();
+    ctx.strokeStyle = "#d9d9d9";
+    ctx.lineWidth = 2;
+
+    for (const poly of bastionPolys) {
+      if (!Array.isArray(poly) || poly.length < 3) continue; // skips nulls
+      drawPoly(ctx, poly, true);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+// Warp overlay (debug)
   if (warp && warp.params && warp.params.debug && warp.wallOriginal && warp.wallWarped) {
     ctx.save();
 
