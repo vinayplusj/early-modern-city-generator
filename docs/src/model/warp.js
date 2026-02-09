@@ -101,10 +101,21 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
     if (!Number.isFinite(delta[i])) delta[i] = 0;
   }
 
-   const mask = buildBastionLockMask(thetas, centre, bastions, params);
+    // 1) Hard lock (your current behaviour): damp both in/out near bastions
+    const lockMask = buildBastionLockMask(thetas, centre, bastions, params);
+  
+    // 2) Clearance mask (new): only damp outward (positive) delta near bastions
+    const clearMask = buildBastionClearMask(thetas, centre, bastions, params);
+  
     for (let i = 0; i < N; i++) {
-       delta[i] *= mask[i];
-     }
+      // Apply lock to everything
+      let d = delta[i] * lockMask[i];
+  
+      // Apply clearance only to outward bulge
+      if (d > 0) d *= clearMask[i];
+  
+      delta[i] = d;
+    }
 
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
@@ -342,6 +353,40 @@ function buildBastionLockMask(thetas, centre, bastions, params) {
   for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
   console.log("WARP BASTION MASK RANGE", { minW, maxW });
 }
+
+  return out;
+}
+
+function buildBastionClearMask(thetas, centre, bastions, params) {
+  const N = thetas.length;
+  const out = new Array(N).fill(1);
+
+  if (!bastions || !Array.isArray(bastions) || bastions.length === 0) return out;
+
+  const pad = params.bastionClearPad ?? (params.bastionLockPad ?? 0.10);
+  const feather = params.bastionClearFeather ?? (params.bastionLockFeather ?? 0.08);
+
+  for (const b of bastions) {
+    if (!b || !Array.isArray(b.shoulders) || b.shoulders.length < 2) continue;
+
+    const a0 = angleOfPoint(centre, b.shoulders[0]);
+    const a1 = angleOfPoint(centre, b.shoulders[1]);
+
+    const start = a0 - pad;
+    const end   = a1 + pad;
+
+    for (let i = 0; i < N; i++) {
+      const t = thetas[i];
+      const w = intervalLockWeight(t, start, end, feather);
+      out[i] = Math.min(out[i], w);
+    }
+  }
+
+  if (params.debug) {
+    let minW = 1, maxW = 0;
+    for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
+    console.log("WARP BASTION CLEAR MASK RANGE", { minW, maxW });
+  }
 
   return out;
 }
