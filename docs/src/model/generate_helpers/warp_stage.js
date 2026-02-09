@@ -1,5 +1,4 @@
 // docs/src/model/generate_helpers/warp_stage.js
-
 import { buildWarpField, warpPolylineRadial } from "../warp.js";
 
 export function buildFortWarp({
@@ -7,7 +6,7 @@ export function buildFortWarp({
   centre,
   wallPoly,
   districts,
-  bastions,   // NEW
+  bastions,   // ADD
   params,
 }) {
   if (!enabled) return null;
@@ -17,7 +16,7 @@ export function buildFortWarp({
     centre,
     wallPoly,
     districts,
-    bastions, // NEW
+    bastions, // ADD
     params: { ...params, bandInner: 0, bandOuter: 0 },
   });
 
@@ -26,23 +25,20 @@ export function buildFortWarp({
   const rMean = sum / tmp.rFort.length;
 
   const tuned = {
-      ...params,
-      bandOuter: rMean,
-      bandInner: Math.max(0, rMean - params.bandThickness),
-    };
-  
-  const tunedForWall = { ...tuned, ignoreBand: true }; // NEW
-  
+    ...params,
+    bandOuter: rMean,
+    bandInner: Math.max(0, rMean - params.bandThickness),
+  };
+
   const field = buildWarpField({
-      centre,
-      wallPoly,
-      districts,
-      bastions,
-      params: tunedForWall, // NEW
-    });
-  
-    const wallWarped = warpPolylineRadial(wallPoly, centre, field, tunedForWall); // NEW
-  
+    centre,
+    wallPoly,
+    districts,
+    bastions, // ADD
+    params: tuned,
+  });
+
+  const wallWarped = warpPolylineRadial(wallPoly, centre, field, tuned);
 
   for (const p of wallWarped) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
