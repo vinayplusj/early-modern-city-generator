@@ -155,9 +155,13 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
   bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
 
-  bastionPolys = (bastionPolys || []).filter(Boolean);
+  console.log(
+  "BASTION POLYS AFTER NEW TOWN",
+  (bastionPolys || []).filter(p => Array.isArray(p) && p.length >= 3).length,
+  "/",
+  bastionPolys?.length ?? 0
+);
 
-  console.log("BASTION POLYS AFTER NEW TOWN", bastionPolys.length);
 
   console.log("NewTown placement stats", placed.stats);
 
