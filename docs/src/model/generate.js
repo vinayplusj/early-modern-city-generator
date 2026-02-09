@@ -224,6 +224,25 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     { squareCentre, citCentre },
     { INNER_COUNT: 3 }
   );
+  // Ensure new_town tag survives role assignment.
+if (primaryGate && !districts.some(d => d.kind === "new_town")) {
+  const gAng = Math.atan2(primaryGate.y - cy, primaryGate.x - cx);
+  const t = ((gAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+  for (const d of districts) {
+    const a0 = d._debug?.a0;
+    const a1 = d._debug?.a1;
+    if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+
+    const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
+    if (inSector && d.kind !== "plaza" && d.kind !== "citadel") {
+      d.kind = "new_town";
+      d.name = "New Town";
+      break;
+    }
+  }
+}
+
 
   if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
