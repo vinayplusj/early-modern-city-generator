@@ -188,8 +188,9 @@ function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
   const margin = params.targetMargin ?? 0;
 
   const offset =
-    kind === "new_town" ? (params.newTownFortOffset ?? 30) :
-    kind === "citadel"  ? (params.citadelFortOffset ?? -10) :
+    kind === "new_town"   ? (params.newTownFortOffset ?? 30) :
+    kind === "outer_ward" ? (params.outerWardFortOffset ?? 10) :
+    kind === "citadel"    ? (params.citadelFortOffset ?? -10) :
     (params.defaultFortOffset ?? 0);
 
   return rFort + offset - margin;
