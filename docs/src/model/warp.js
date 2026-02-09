@@ -46,7 +46,7 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
     if (params.debug && i % 120 === 0) {
       const d = districtAtAngle(theta, districts);
       console.log("WARP DISTRICT SAMPLE", { i, theta, kind: d?.kind ?? null });
-}
+    }
 
   }
 
@@ -181,16 +181,6 @@ function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
 }
 
 function districtAtAngle(theta, districts) {
-  // You have angular sectors. Use the same wrap logic you use now.
-  // Expect districts to carry startAngle, endAngle in radians.
-  const t = wrapAngle(theta);
-  for (const d of districts) {
-    if (angleInInterval(t, d.startAngle, d.endAngle)) return d;
-  }
-  return null;
-}
-
-function districtAtAngle(theta, districts) {
   const t = wrapAngle(theta);
 
   for (const d of districts) {
@@ -211,6 +201,24 @@ function districtAtAngle(theta, districts) {
   return null;
 }
 
+function smoothCircular(values, radius) {
+  const N = values.length;
+  const out = new Array(N);
+
+  for (let i = 0; i < N; i++) {
+    let sum = 0;
+    let wsum = 0;
+
+    for (let k = -radius; k <= radius; k++) {
+      const j = (i + k + N) % N;
+      const w = (radius + 1) - Math.abs(k); // triangular kernel
+      sum += values[j] * w;
+      wsum += w;
+    }
+    out[i] = sum / wsum;
+  }
+  return out;
+}
 
 function clampCircularSlope(values, maxStep) {
   const N = values.length;
