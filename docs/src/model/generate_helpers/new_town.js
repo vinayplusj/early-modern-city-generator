@@ -89,6 +89,9 @@ export function placeNewTown({
         // (Fast Option A. Clipping can be added later.)
         const hitSet = new Set(hitBastions);
 
+        console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
+
+
         const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
           if (!Array.isArray(poly) || poly.length < 3) return poly;
           return hitSet.has(i) ? null : poly;
@@ -101,14 +104,12 @@ export function placeNewTown({
           hitBastions,
           stats,
           wallFinal,
-          bastionPolys,
+          bastionPolys: bastionPolysOut,
         };
 
       }
     }
   }
-
-  console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
   
   
   return {
@@ -117,6 +118,6 @@ export function placeNewTown({
     hitBastions: [],
     stats,
     wallFinal,
-    bastionPolys: bastionPolysOut,,
+    bastionPolys,
   };
 }
