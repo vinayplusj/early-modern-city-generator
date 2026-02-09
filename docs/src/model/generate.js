@@ -64,8 +64,8 @@ const WARP_FORT = {
   citadelFortOffset: -10,
 
   targetMargin: 0,
-  bastionLockPad: 0.0,      // radians, about 5.7 degrees
-  bastionLockFeather: 0.0,  // radians, smooth edge
+  bastionLockPad: 0.12,      // radians, about 5.7 degrees
+  bastionLockFeather: 0.10,  // radians, smooth edge
   outerWardFortOffset: 10,
 };
 
@@ -92,6 +92,28 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     wallR,
     bastionCount
   );
+
+  if (WARP_FORT.debug) {
+    console.log("BASTIONS COUNT", bastions?.length ?? 0);
+  
+    const b0 = bastions?.[0];
+    console.log("BASTION[0] KEYS", b0 ? Object.keys(b0) : null);
+  
+    console.log("BASTION[0].shoulders", b0?.shoulders ?? null);
+    console.log("BASTION[0].ptsLen", Array.isArray(b0?.pts) ? b0.pts.length : null);
+  
+    // Quick summary across all bastions
+    let withShoulders = 0;
+    let validShoulders = 0;
+  
+    for (const b of bastions || []) {
+      if (b && "shoulders" in b) withShoulders++;
+      if (Array.isArray(b?.shoulders) && b.shoulders.length >= 2) validShoulders++;
+    }
+  
+    console.log("BASTION SHOULDERS SUMMARY", { withShoulders, validShoulders });
+  }
+
 
   const ditchWidth = wallR * 0.035;
   const glacisWidth = wallR * 0.08;
