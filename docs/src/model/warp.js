@@ -47,7 +47,19 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
       const d = districtAtAngle(theta, districts);
       console.log("WARP DISTRICT SAMPLE", { i, theta, kind: d?.kind ?? null });
     }
+  }
 
+  if (params.debug) {
+      let nullCount = 0;
+      for (let i = 0; i < N; i++) {
+        const d = districtAtAngle(thetas[i], districts);
+        if (!d) nullCount++;
+      }
+      console.log("WARP DISTRICT COVERAGE", { nullCount, N });
+    }
+
+  if (params.debug && nullCount > 0) {
+    console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
   }
 
   // If rFort[0] is still null, find first non-null and backfill.
@@ -197,8 +209,30 @@ function districtAtAngle(theta, districts) {
 
     if (angleInInterval(t, a0, a1)) return d;
   }
+    // Fallback: if due to boundary gaps nothing matched, pick nearest sector midpoint.
+  let best = null;
+  let bestDist = Infinity;
 
-  return null;
+  for (const d of districts) {
+    const a0 =
+      Number.isFinite(d.startAngle) ? d.startAngle :
+      d._debug?.a0;
+    const a1 =
+      Number.isFinite(d.endAngle) ? d.endAngle :
+      d._debug?.a1;
+
+    if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+
+    const mid = wrapAngle(a0 + angularSpan(a0, a1) * 0.5);
+    const dist = angularDistance(t, mid);
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = d;
+    }
+  }
+
+  return best;
 }
 
 function smoothCircular(values, radius) {
@@ -332,6 +366,14 @@ function angularDistanceToInterval(t, start, end) {
   const d0 = angularDistance(t, start);
   const d1 = angularDistance(t, end);
   return Math.min(d0, d1);
+}
+
+function angularSpan(a0, a1) {
+  const start = wrapAngle(a0);
+  const end = wrapAngle(a1);
+  let span = end - start;
+  if (span < 0) span += Math.PI * 2;
+  return span;
 }
 
 function angularDistance(a, b) {
