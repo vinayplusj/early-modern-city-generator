@@ -77,13 +77,22 @@ export function placeNewTown({
 
         // Collect intersecting bastions (do not reject New Town).
         const hitBastions = [];
-        for (let i = 0; i < bastions.length; i++) {
+        for (let i = 0; i < (bastions?.length || 0); i++) {
           const b = bastions[i];
           if (!b || !b.pts || b.pts.length < 3) continue;
           if (polyIntersectsPolyBuffered(b.pts, nt.poly, bastionBuffer)) {
             hitBastions.push(i);
           }
         }
+
+        // If a bastion overlaps the New Town, hide its polygon so it does not render over it.
+        // (Fast Option A. Clipping can be added later.)
+        const hitSet = new Set(hitBastions);
+
+        const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
+          if (!Array.isArray(poly) || poly.length < 3) return poly;
+          return hitSet.has(i) ? null : poly;
+        });
 
         stats.ok++;
         return {
@@ -99,23 +108,15 @@ export function placeNewTown({
     }
   }
 
+  console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
+  
+  
   return {
     newTown: null,
     primaryGate: gates[0] || null,
     hitBastions: [],
     stats,
     wallFinal,
-    bastionPolys,
+    bastionPolys: bastionPolysOut,,
   };
-}
-
-export function flattenHitBastions({ bastions, hitBastions }) {
-  if (!hitBastions || hitBastions.length === 0) return { bastionsFinal: bastions, hitSet: null };
-  const hitSet = new Set(hitBastions);
-  const bastionsFinal = bastions.map((b, i) => {
-    if (!b || !b.pts || b.pts.length < 3) return b;
-    if (hitSet.has(i)) return { ...b, pts: b.shoulders };
-    return b;
-  });
-  return { bastionsFinal, hitSet };
 }
