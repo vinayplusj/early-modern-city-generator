@@ -21,8 +21,19 @@ export function buildFortWarp({
   });
 
   let sum = 0;
-  for (let i = 0; i < tmp.rFort.length; i++) sum += tmp.rFort[i];
-  const rMean = sum / tmp.rFort.length;
+  let count = 0;
+  
+  for (const r of tmp.rFort) {
+    if (Number.isFinite(r)) {
+      sum += r;
+      count++;
+    }
+  }
+  
+  if (count === 0) return null;
+  
+  const rMean = sum / count;
+
 
   const tuned = {
     ...params,
