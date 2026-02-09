@@ -155,6 +155,9 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
   bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
 
+  const hitBastionSet = new Set(placed.hitBastions || []);
+  const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
+
   console.log(
   "BASTION POLYS AFTER NEW TOWN",
   (bastionPolys || []).filter(p => Array.isArray(p) && p.length >= 3).length,
@@ -279,7 +282,7 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     centre: fortCentre,
     wallPoly: wallFinal,
     districts,
-    bastions,          // NEW
+    bastions: bastionsForWarp,          // NEW
     params: WARP_FORT,
   });
 
