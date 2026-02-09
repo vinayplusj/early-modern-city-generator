@@ -70,7 +70,7 @@ const WARP_FORT = {
 
   // Option A: blocks outward bulge near bastion tips only
   bastionClearHalfWidth: 0.05,
-  bastionClearFeather: 0.02,
+  bastionClearFeather: 0.06, 
 };
 
 export function generate(seed, bastionCount, gateCount, width, height) {
@@ -275,13 +275,13 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
   const warp = buildFortWarp({
-  enabled: WARP_FORT.enabled,
-  centre: fortCentre,
-  wallPoly: wallFinal,
-  districts,
-  bastions,          // NEW
-  params: WARP_FORT,
-});
+    enabled: WARP_FORT.enabled,
+    centre: fortCentre,
+    wallPoly: wallFinal,
+    districts,
+    bastions,          // NEW
+    params: WARP_FORT,
+  });
 
   const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
 
