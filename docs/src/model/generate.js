@@ -227,7 +227,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
 
 function tagNewTownDistrictByGate(districts, gate, cx, cy) {
   if (!gate) return;
-  if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(d => d.kind));
+
   const t = ((Math.atan2(gate.y - cy, gate.x - cx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
   for (const d of districts) {
@@ -238,14 +238,16 @@ function tagNewTownDistrictByGate(districts, gate, cx, cy) {
     const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
     if (!inSector) continue;
 
-    // Do not overwrite these.
     if (d.kind === "plaza" || d.kind === "citadel") return;
 
     d.kind = "new_town";
     d.name = "New Town";
+
+    if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(x => x.kind));
     return;
   }
 }
+
 
   if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
