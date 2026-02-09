@@ -88,21 +88,14 @@ export function placeNewTown({
         // If a bastion overlaps the New Town, hide its polygon so it does not render over it.
         // (Fast Option A. Clipping can be added later.)
         const hitSet = new Set(hitBastions);
-
+        
         const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
           if (!Array.isArray(poly) || poly.length < 3) return poly;
           return hitSet.has(i) ? null : poly; // hide intersecting bastions
         });
-
-
         
-        const bastionPolysOut = (bastionPolys || []).map((poly, i) => {
-          if (!Array.isArray(poly) || poly.length < 3) return poly;
-          return hitSet.has(i) ? null : poly;
-        });
-
         console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
-
+        
         stats.ok++;
         return {
           newTown: nt,
@@ -112,11 +105,9 @@ export function placeNewTown({
           wallFinal,
           bastionPolys: bastionPolysOut,
         };
-
       }
     }
-  }
-  
+  }  
   
   return {
     newTown: null,
