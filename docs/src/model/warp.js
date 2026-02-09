@@ -10,6 +10,8 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   const thetas = new Array(N);
   const rFort = new Array(N);
   const rTarget = new Array(N);
+  let nullCount = 0;
+
 
   // ---- DEBUG: check whether wall vertices fall inside the warp band ----
   if (params.debug) {
@@ -50,17 +52,18 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   }
 
   if (params.debug) {
-      let nullCount = 0;
-      for (let i = 0; i < N; i++) {
-        const d = districtAtAngle(thetas[i], districts);
-        if (!d) nullCount++;
-      }
-      console.log("WARP DISTRICT COVERAGE", { nullCount, N });
+    nullCount = 0;
+    for (let j = 0; j < N; j++) {
+      const d = districtAtAngle(thetas[j], districts);
+      if (!d) nullCount++;
     }
-
-  if (params.debug && nullCount > 0) {
-    console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
+    console.log("WARP DISTRICT COVERAGE", { nullCount, N });
+  
+    if (nullCount > 0) {
+      console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
+    }
   }
+
 
   // If rFort[0] is still null, find first non-null and backfill.
   if (rFort[0] == null) {
