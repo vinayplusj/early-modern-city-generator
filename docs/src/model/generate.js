@@ -64,8 +64,9 @@ const WARP_FORT = {
   citadelFortOffset: -10,
 
   targetMargin: 0,
-  bastionLockPad: 0.12,      // radians, about 5.7 degrees
-  bastionLockFeather: 0.10,  // radians, smooth edge
+  // NEW (Option A): extra “clearance” zone that blocks outward bulge near bastions
+  bastionClearPad: 0.28,        // start larger than lockPad
+  bastionClearFeather: 0.18,    // start larger than lockFeather
   outerWardFortOffset: 10,
 };
 
