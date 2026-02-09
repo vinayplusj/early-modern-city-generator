@@ -134,9 +134,19 @@ function cyclicDistance(a, b, n) {
   return (b - a + n) % n;
 }
 
+function nextIndex(i, n) {
+  return (i + 1) % n;
+}
+
+function prevIndex(i, n) {
+  return (i - 1 + n) % n;
+}
+
 export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) {
   const {
     INNER_COUNT = 3,
+    NEW_TOWN_COUNT = 1,
+    OUTER_WARD_COUNT = 2,
     OUTER_PATTERN = ["slums", "farms", "plains", "woods"],
   } = opts;
 
@@ -144,6 +154,7 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
 
   const squareCentre = anchors.squareCentre || null;
   const citCentre = anchors.citCentre || null;
+  const primaryGate = anchors.primaryGate || null;
 
   const plazaIndex = findDistrictIndexForPoint(
     districts,
@@ -161,46 +172,134 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
 
   const n = districts.length;
 
+  // ---------------- Base roles (same structure as before) ----------------
+
   const innerSet = new Set();
   for (let k = 1; k <= Math.min(INNER_COUNT, n - 1); k++) {
     innerSet.add((plazaIndex + k) % n);
   }
 
+  // Reset all districts first.
+  for (let i = 0; i < n; i++) {
+    const d = districts[i];
+    d.kind = "generic";
+    d.name = `District ${i}`;
+  }
+
+  // Plaza
+  districts[plazaIndex].kind = "plaza";
+  districts[plazaIndex].name = "Plaza";
+
+  // Citadel (if it is not the plaza)
+  if (citadelIndex !== plazaIndex) {
+    districts[citadelIndex].kind = "citadel";
+    districts[citadelIndex].name = "Citadel Quarter";
+  }
+
+  // Inner wards (skip plaza and citadel)
+  for (let i = 0; i < n; i++) {
+    if (i === plazaIndex) continue;
+    if (i === citadelIndex) continue;
+    if (!innerSet.has(i)) continue;
+
+    districts[i].kind = "inner_ward";
+    districts[i].name = `Inner Ward ${cyclicDistance(plazaIndex, i, n)}`;
+  }
+
+  // ---------------- Milestone 3.7: new_town + outer_ward ----------------
+
+  // Pick a new_town district from the primary gate direction.
+  // If no primaryGate is provided, we skip new_town.
+  let newTownIndex = null;
+
+  if (primaryGate) {
+    const gateIndex = findDistrictIndexForPoint(districts, cx, cy, primaryGate);
+
+    // Do not allow plaza or citadel to become new_town.
+    if (gateIndex !== plazaIndex && gateIndex !== citadelIndex) {
+      newTownIndex = gateIndex;
+    } else {
+      // Fallback: walk outward until we find a non-plaza, non-citadel sector.
+      for (let step = 1; step < n; step++) {
+        const a = (gateIndex + step) % n;
+        const b = (gateIndex - step + n) % n;
+
+        if (a !== plazaIndex && a !== citadelIndex) {
+          newTownIndex = a;
+          break;
+        }
+        if (b !== plazaIndex && b !== citadelIndex) {
+          newTownIndex = b;
+          break;
+        }
+      }
+    }
+  }
+
+  if (newTownIndex != null && NEW_TOWN_COUNT >= 1) {
+    // Set new_town.
+    districts[newTownIndex].kind = "new_town";
+    districts[newTownIndex].name = "New Town";
+
+    // Pick outer_ward neighbours around new_town.
+    // Default is 2: one clockwise and one counter-clockwise, skipping plaza/citadel.
+    const outerWardSet = new Set();
+
+    const want = Math.max(0, OUTER_WARD_COUNT | 0);
+
+    // First pass: immediate neighbours.
+    let left = prevIndex(newTownIndex, n);
+    let right = nextIndex(newTownIndex, n);
+
+    // Helper to add if valid.
+    function tryAddOuter(i) {
+      if (outerWardSet.size >= want) return;
+      if (i === plazaIndex || i === citadelIndex || i === newTownIndex) return;
+      if (innerSet.has(i)) return; // keep inner wards intact
+      outerWardSet.add(i);
+    }
+
+    tryAddOuter(left);
+    tryAddOuter(right);
+
+    // If plaza/citadel blocked a neighbour, expand outward until filled.
+    let expand = 2;
+    while (outerWardSet.size < want && expand < n + 2) {
+      tryAddOuter((newTownIndex - expand + n) % n);
+      tryAddOuter((newTownIndex + expand) % n);
+      expand++;
+    }
+
+    for (const idx of outerWardSet) {
+      districts[idx].kind = "outer_ward";
+      districts[idx].name = "Outer Ward";
+    }
+  }
+
+  // ---------------- Fill remaining outer districts ----------------
+
   for (let i = 0; i < n; i++) {
     const d = districts[i];
 
-    d.kind = "generic";
-    d.name = `District ${i}`;
-
-    if (i === plazaIndex) {
-      d.kind = "plaza";
-      d.name = "Plaza";
-      continue;
-    }
-
-    if (i === citadelIndex && i !== plazaIndex) {
-      d.kind = "citadel";
-      d.name = "Citadel Quarter";
-      continue;
-    }
-
-    if (innerSet.has(i) && i !== citadelIndex) {
-      d.kind = "inner_ward";
-      d.name = `Inner Ward ${cyclicDistance(plazaIndex, i, n)}`;
-      continue;
-    }
+    // Anything already assigned stays assigned.
+    if (d.kind !== "generic") continue;
 
     const distFromPlaza = cyclicDistance(plazaIndex, i, n);
-    const label = OUTER_PATTERN[(distFromPlaza - 1 + OUTER_PATTERN.length) % OUTER_PATTERN.length];
+    const label =
+      OUTER_PATTERN[(distFromPlaza - 1 + OUTER_PATTERN.length) % OUTER_PATTERN.length];
+
     d.kind = label;
     d.name = label.charAt(0).toUpperCase() + label.slice(1);
   }
 
+  // Debug tags
   for (let i = 0; i < n; i++) {
     districts[i]._debug = districts[i]._debug || {};
     districts[i]._debug.plazaIndex = plazaIndex;
     districts[i]._debug.citadelIndex = citadelIndex;
+    districts[i]._debug.newTownIndex = newTownIndex;
   }
 
   return districts;
 }
+
