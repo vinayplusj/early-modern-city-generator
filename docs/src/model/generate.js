@@ -70,7 +70,7 @@ const WARP_FORT = {
 
   // Option A: blocks outward bulge near bastion tips only
   bastionClearHalfWidth: 0.05,
-  bastionClearFeather: 0.06,
+  bastionClearFeather: 0.02,
 };
 
 export function generate(seed, bastionCount, gateCount, width, height) {
