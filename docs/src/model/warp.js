@@ -337,6 +337,11 @@ function buildBastionLockMask(thetas, centre, bastions, params) {
       out[i] = Math.min(out[i], w);
     }
   }
+  if (params.debug) {
+  let minW = 1, maxW = 0;
+  for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
+  console.log("WARP BASTION MASK RANGE", { minW, maxW });
+}
 
   return out;
 }
