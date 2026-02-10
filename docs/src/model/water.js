@@ -63,7 +63,12 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
   if (kind === "none") {
-    return { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null };
+    return { kind: "none", 
+            river: null, 
+            coast: null, 
+            shoreline: null, 
+            bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null
+     };
   }
 
   const raw = buildWater({ rng, siteWater: kind, outerBoundary, cx, cy, baseR }) || {};
