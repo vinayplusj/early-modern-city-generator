@@ -41,6 +41,9 @@ import { placeNewTown } from "./generate_helpers/new_town.js";
 
 import { buildFortWarp } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
+import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
+import { assignWardRoles } from "./wards/ward_roles.js";
+
 
 const WARP_FORT = {
   enabled: true,
@@ -173,6 +176,35 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     ...footprint,
     ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
   ]);
+
+  // ---------------- Wards (Voronoi) + deterministic roles ----------------
+  // Commit 1 goal: generate wards in parallel and store on the model.
+  // This does not replace radial districts yet.
+
+  const WARDS_PARAMS = {
+    seedCount: 24,
+    spiralScale: baseR * 0.14,
+    jitterRadius: baseR * 0.03,
+    jitterAngle: 0.25,
+    bboxPadding: baseR * 1.2,
+    clipToFootprint: false, // keep false until you wire a real polygon clipper
+  };
+
+  const { wardSeeds, wards } = buildWardsVoronoi({
+    rng,
+    centre: { x: cx, y: cy },
+    footprintPoly: outerBoundary,
+    params: WARDS_PARAMS,
+  });
+
+  const { wards: wardsWithRoles, indices: wardRoleIndices } = assignWardRoles({
+    wards,
+    centre: { x: cx, y: cy },
+    params: {
+      innerCount: 8,
+      // Optional: override outsideBands later
+    },
+  });
 
   // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
@@ -408,6 +440,9 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     districts,
     blocks,
     warp,
+    wards: wardsWithRoles,
+    wardSeeds,
+    wardRoleIndices,
 
     // Anchors
     centre,
