@@ -87,11 +87,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
 
-  // ---- Debug (safe to keep; remove later if desired) ----
-  console.count("generate() calls");
-  const runId = `${seed}-${Date.now()}`;
-  console.log("RUN START", runId);
-
   const rng = mulberry32(seed);
 
   const cx = width * 0.5;
@@ -109,26 +104,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     wallR,
     bastionCount
   );
-
-  if (WARP_FORT.debug) {
-    console.log("BASTIONS COUNT", bastions?.length ?? 0);
-
-    const b0 = bastions?.[0];
-    console.log("BASTION[0] KEYS", b0 ? Object.keys(b0) : null);
-
-    console.log("BASTION[0].shoulders", b0?.shoulders ?? null);
-    console.log("BASTION[0].ptsLen", Array.isArray(b0?.pts) ? b0.pts.length : null);
-
-    let withShoulders = 0;
-    let validShoulders = 0;
-
-    for (const b of bastions || []) {
-      if (b && "shoulders" in b) withShoulders++;
-      if (Array.isArray(b?.shoulders) && b.shoulders.length >= 2) validShoulders++;
-    }
-
-    console.log("BASTION SHOULDERS SUMMARY", { withShoulders, validShoulders });
-  }
 
   const ditchWidth = wallR * 0.035;
   const glacisWidth = wallR * 0.08;
@@ -179,15 +154,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   const hitBastionSet = new Set(placed.hitBastions || []);
   const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
-
-  console.log(
-    "BASTION POLYS AFTER NEW TOWN",
-    (bastionPolys || []).filter(p => Array.isArray(p) && p.length >= 3).length,
-    "/",
-    bastionPolys?.length ?? 0
-  );
-
-  console.log("NewTown placement stats", placed.stats);
 
   // ---------------- Overall boundary ----------------
   const outerBoundary = convexHull([
@@ -330,7 +296,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       d.kind = "new_town";
       d.name = "New Town";
 
-      if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(x => x.kind));
       return;
     }
   }
@@ -511,8 +476,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     newTown,
   });
 
-  console.log("RUN POLYLINES FINAL", runId, polylines.length);
-
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
   // ---------------- Milestone 3.6: blocks (debug) ----------------
@@ -527,18 +490,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   });
 
   assignBlocksToDistricts(blocks, districts, cx, cy);
-
-  console.log("BLOCK COUNTS", {
-    blocks: blocks?.length || 0,
-    firstArea: blocks?.[0]?._debug?.absArea || 0,
-  });
-
-  console.log("MODEL COUNTS", {
-    seed,
-    newTownStreets: newTown?.streets?.length || 0,
-    roadNodes: roadGraph?.nodes?.length || 0,
-    roadEdges: roadGraph?.edges?.length || 0,
-  });
 
   return {
     footprint,
