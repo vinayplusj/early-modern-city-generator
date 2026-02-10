@@ -11,8 +11,9 @@
 
 import { mulberry32 } from "../rng/mulberry32.js";
 
-import { polar, add, mul, normalize } from "../geom/primitives.js";
-import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
+import { add, mul, normalize } from "../geom/primitives.js";
+import { centroid, pointInPoly } from "../geom/poly.js";
+
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
 
@@ -24,8 +25,7 @@ import {
   pickGates,
   generateRoadsToCentre,
   makeRavelin,
-  minDistPointToPoly,
-} from "./features.js";
+ } from "./features.js";
 
 // Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
@@ -197,16 +197,15 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
     // ---------------- Water (river/coast) ----------------
   const waterModel = (waterKind === "none")
-  ? { kind: "none", polyline: null, polygon: null, shoreline: null, bankPoint: null }
+  ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
   : buildWaterModel({
-    rng,
-    siteWater: waterKind,
-    outerBoundary,
-    cx,
-    cy,
-    baseR,
-  });
-
+      rng,
+      siteWater: waterKind,
+      outerBoundary,
+      cx,
+      cy,
+      baseR,
+    });
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
