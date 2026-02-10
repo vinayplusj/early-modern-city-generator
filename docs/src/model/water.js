@@ -2,8 +2,6 @@
 //
 // Model-level wrapper around generate_helpers/water.js.
 // Normalizes the output so generate.js and render code have a stable shape.
-//
-
 
 import { buildWater } from "./generate_helpers/water.js";
 
@@ -35,6 +33,7 @@ function dist2PointToSeg(p, a, b) {
   return dx * dx + dy * dy;
 }
 
+// Picks the polygon edge closest to nearPoint, and returns it as a 2-point polyline.
 function pickBestEdge(poly, nearPoint) {
   if (!Array.isArray(poly) || poly.length < 3 || !isPoint(nearPoint)) return null;
 
@@ -57,7 +56,6 @@ function pickBestEdge(poly, nearPoint) {
   const b = poly[(bestI + 1) % poly.length];
   if (!isPoint(a) || !isPoint(b)) return null;
 
-  // Shoreline as a 2-point segment for snapping.
   return [a, b];
 }
 
@@ -65,13 +63,7 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
   if (kind === "none") {
-    return {
-      kind: "none",
-      river: null,
-      coast: null,
-      shoreline: null,
-      bankPoint: null,
-    };
+    return { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null };
   }
 
   const raw = buildWater({ rng, siteWater: kind, outerBoundary, cx, cy, baseR }) || {};
@@ -86,26 +78,23 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
     };
   }
 
-  // Coast
   if (raw.kind === "coast" && Array.isArray(raw.polygon) && raw.polygon.length >= 3) {
     const bankPoint = isPoint(raw.bankPoint) ? raw.bankPoint : { x: cx, y: cy };
     const shoreline = pickBestEdge(raw.polygon, bankPoint);
-  
+
     return {
       kind: "coast",
       river: null,
       coast: { polygon: raw.polygon },
-      shoreline,     // <-- shoreline edge segment (2 points)
+      shoreline,              // shoreline is now the cut edge, not the full sea polygon
       bankPoint,
     };
   }
 
-  // Fallback
-  return {
-    kind: "none",
-    river: null,
-    coast: null,
-    shoreline: null,
-    bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null,
-  };
+  return { 
+    kind: "none", 
+    river: null, 
+    coast: null, 
+    shoreline: null, 
+    bankPoint: null };
 }
