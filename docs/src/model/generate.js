@@ -329,73 +329,56 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     // Deterministic docks point, created only when the UI enables it.
     // Invariant: anchors.docks is null unless hasDock is true.
     anchors.docks = null;
-  
-    function snapPointToPolyline(p, line) {
-      if (!p || !Array.isArray(line) || line.length < 2) return p;
-  
-      let best = line[0];
-      let bestD2 = Infinity;
-  
-      for (let i = 0; i < line.length - 1; i++) {
-        const a = line[i];
-        const b = line[i + 1];
-        if (!a || !b) continue;
-  
-        const abx = b.x - a.x;
-        const aby = b.y - a.y;
-        const apx = p.x - a.x;
-        const apy = p.y - a.y;
-  
-        const ab2 = abx * abx + aby * aby;
-        let t = 0;
-        if (ab2 > 1e-12) {
-          t = (apx * abx + apy * aby) / ab2;
-          t = Math.max(0, Math.min(1, t));
-        }
-  
-        const cxp = a.x + abx * t;
-        const cyp = a.y + aby * t;
-  
-        const dx = p.x - cxp;
-        const dy = p.y - cyp;
-        const d2 = dx * dx + dy * dy;
-  
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          best = { x: cxp, y: cyp };
-        }
-      }
-  
-      return best;
+    
+    function pickPointOnShoreline(shoreline, dir) {
+      if (!Array.isArray(shoreline) || shoreline.length < 2) return null;
+    
+      // Shoreline is expected to be a polyline. For coast it is typically a 2-point segment.
+      const a = shoreline[0];
+      const b = shoreline[shoreline.length - 1];
+      if (!a || !b) return null;
+    
+      const da = a.x * dir.x + a.y * dir.y;
+      const db = b.x * dir.x + b.y * dir.y;
+    
+      // Pick the endpoint most aligned with dir, but bias toward the midpoint for stability.
+      const end = (db > da) ? b : a;
+      const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+    
+      return {
+        x: mid.x * 0.75 + end.x * 0.25,
+        y: mid.y * 0.75 + end.y * 0.25,
+      };
     }
-  
+    
     if (
       hasDock &&
-      newTown?.poly &&
-      newTown.poly.length >= 3 &&
       anchors.primaryGate &&
       waterModel &&
       waterModel.kind !== "none" &&
       Array.isArray(waterModel.shoreline) &&
       waterModel.shoreline.length >= 2
     ) {
-      // Start from the outward direction (centre -> primary gate) to pick a stable edge of New Town.
-      const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
-      const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : normalize({ x: 1, y: 0 });
-  
-      const v = supportPoint(newTown.poly, dir);
-  
-      if (v) {
-        // Snap to shoreline (river polyline or coast edge polyline), so docks never float.
-        const snapped = snapPointToPolyline(v, waterModel.shoreline);
-  
+      // Stable direction: centre -> primary gate
+      const raw = {
+        x: anchors.primaryGate.x - centre.x,
+        y: anchors.primaryGate.y - centre.y,
+      };
+    
+      const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : { x: 1, y: 0 };
+    
+      // Pick a point on shoreline in that direction (shore-first).
+      const shorePick = pickPointOnShoreline(waterModel.shoreline, dir);
+    
+      if (shorePick) {
         // Nudge slightly toward the city centre so the marker does not sit exactly on the water line.
-        const iv = { x: centre.x - snapped.x, y: centre.y - snapped.y };
+        const iv = { x: centre.x - shorePick.x, y: centre.y - shorePick.y };
         const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
-        anchors.docks = add(snapped, mul(inward, 6));
-
+    
+        anchors.docks = add(shorePick, mul(inward, 6));
       }
     }
+
 
 
   // ---------------- Outworks ----------------
