@@ -25,22 +25,42 @@ function resizeCanvasToDevicePixels() {
 }
 
 function getInputs() {
+  const water = String(document.getElementById("water").value || "none");
+  const dock = Boolean(document.getElementById("dock").checked);
+
   return {
-    seed: Number(document.getElementById("seed").value) || 1,
-    bastions: Number(document.getElementById("bastions").value) || 8,
-    gates: Number(document.getElementById("gates").value) || 3,
+    seed: Number(getElementById("seed").value) || 1,
+    bastions: Number(getElementById("bastions").value) || 8,
+    gates: Number(getElementById("gates").value) || 3,
+
+    site: {
+      water,                 // "none" | "river" | "coast"
+      hasDock: water !== "none" && dock,
+    },
   };
+}
+
+function syncDockControl() {
+  const water = String(getElementById("water").value || "none");
+  const dockEl = getElementById("dock");
+
+  const enabled = water !== "none";
+  dockEl.disabled = !enabled;
+
+  // If there is no water, docks cannot exist.
+  if (!enabled) dockEl.checked = false;
 }
 
 let model = null;
 
 function regenerate() {
+  syncDockControl();
   const { w, h } = resizeCanvasToDevicePixels();
-  const { seed, bastions, gates } = getInputs();
+  const { seed, bastions, gates, site } = getInputs();
 
   console.log("REGEN", { seed, bastions, gates, w, h });
 
-  model = generate(seed, bastions, gates, w, h);
+  model = generate(seed, bastions, gates, w, h, site);
   window.model = model; // debug
   render(ctx, model);
 }
@@ -50,6 +70,9 @@ document.getElementById("regen").addEventListener("click", regenerate);
 document.getElementById("seed").addEventListener("change", regenerate);
 document.getElementById("bastions").addEventListener("change", regenerate);
 document.getElementById("gates").addEventListener("change", regenerate);
+document.getElementById("water").addEventListener("change", regenerate);
+document.getElementById("dock").addEventListener("change", regenerate);
+
 
 // Debounced resize (prevents 3–5 regen calls during layout settle)
 let resizeTimer = null;
