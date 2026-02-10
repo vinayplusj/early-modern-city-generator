@@ -3,40 +3,39 @@
 import { pointInPolyOrOn } from "../../geom/poly.js";
 import { drawCircle } from "../helpers/draw.js";
 
-export function drawLandmarksAndCentre(ctx, { wallBase, centre, squareR, squareCentre, marketCentre }) {
-  // ---------- Landmarks (ALWAYS LAST) ----------
+export function drawLandmarksAndCentre(ctx, { wallBase, centre, squareR, squareCentre, marketCentre, anchors }) {
+  const plaza = anchors?.plaza || squareCentre;
+  const market = anchors?.market || marketCentre;
+
   // Use pointInPolyOrOn so points on the wall line still render.
   const squareInside =
-    squareCentre &&
-    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(squareCentre, wallBase, 1e-6));
+    plaza &&
+    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(plaza, wallBase, 1e-6));
 
   const marketInside =
-    marketCentre &&
-    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(marketCentre, wallBase, 1e-6));
+    market &&
+    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(market, wallBase, 1e-6));
 
   // Square (disc + outline + subtle halo)
   if (squareInside) {
     const r = (squareR || 10) * 0.95;
 
-    // Halo behind
     ctx.save();
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = "#ffffff";
-    drawCircle(ctx, squareCentre, r * 1.15);
+    drawCircle(ctx, plaza, r * 1.15);
     ctx.fill();
     ctx.restore();
 
-    // Main fill
     ctx.save();
     ctx.globalAlpha = 1.0;
     ctx.fillStyle = "#1a1a1a";
-    drawCircle(ctx, squareCentre, r);
+    drawCircle(ctx, plaza, r);
     ctx.fill();
 
-    // Outline
     ctx.strokeStyle = "#efefef";
     ctx.lineWidth = 2.5;
-    drawCircle(ctx, squareCentre, r);
+    drawCircle(ctx, plaza, r);
     ctx.stroke();
     ctx.restore();
   }
@@ -45,24 +44,22 @@ export function drawLandmarksAndCentre(ctx, { wallBase, centre, squareR, squareC
   if (marketInside) {
     const r = Math.max(4, (squareR || 10) * 0.22);
 
-    // Halo
     ctx.save();
     ctx.globalAlpha = 0.55;
     ctx.fillStyle = "#ffffff";
-    drawCircle(ctx, marketCentre, r * 1.9);
+    drawCircle(ctx, market, r * 1.9);
     ctx.fill();
     ctx.restore();
 
-    // Core dot
     ctx.save();
     ctx.globalAlpha = 1.0;
     ctx.fillStyle = "#0f0f0f";
-    drawCircle(ctx, marketCentre, r);
+    drawCircle(ctx, market, r);
     ctx.fill();
 
     ctx.strokeStyle = "#efefef";
     ctx.lineWidth = 2;
-    drawCircle(ctx, marketCentre, r);
+    drawCircle(ctx, market, r);
     ctx.stroke();
     ctx.restore();
   }
