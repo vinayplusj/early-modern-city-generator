@@ -27,6 +27,39 @@ function pointAtId(wards, id) {
   return w?.seed || w?.centroid || null;
 }
 
+function drawLabel(ctx, text, x, y) {
+  ctx.save();
+
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Measure for background box
+  const padX = 6;
+  const padY = 3;
+  const m = ctx.measureText(text);
+  const w = Math.ceil(m.width) + padX * 2;
+  const h = 14 + padY * 2;
+
+  // Background (halo box)
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(x - w / 2, y - h / 2, w, h);
+
+  // Stroke text (thin outline)
+  ctx.globalAlpha = 0.95;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#000000";
+  ctx.strokeText(text, x, y);
+
+  // Fill text
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x, y);
+
+  ctx.restore();
+}
+
 export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
   const hasWards = Array.isArray(wards) && wards.length > 0;
   const hasSeeds = Array.isArray(wardSeeds) && wardSeeds.length > 0;
@@ -116,9 +149,24 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
       // Keep labels sparse: only key roles by default.
       if (w.role !== "plaza" && w.role !== "citadel") continue;
 
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(w.role.toUpperCase(), c.x, c.y);
+      // 4) Optional role labels at centroids (now with halo for legibility)
+      if (hasWards) {
+        ctx.save();
+      
+        for (const w of wards) {
+          const c = w?.centroid;
+          if (!c) continue;
+          if (!w.role) continue;
+      
+          // Keep labels sparse: only key roles by default.
+          if (w.role !== "plaza" && w.role !== "citadel") continue;
+      
+          drawLabel(ctx, w.role.toUpperCase(), c.x, c.y);
+        }
+      
+        ctx.restore();
+      }
+
     }
 
     ctx.restore();
