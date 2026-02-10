@@ -44,6 +44,11 @@ import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
 import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
 import { assignWardRoles } from "./wards/ward_roles.js";
 
+import {
+  ensureInside,
+  pushAwayFromWall,
+  enforceMinSeparation,
+} from "./anchors/anchor_constraints.js";
 
 const WARP_FORT = {
   enabled: true,
@@ -232,7 +237,31 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   anchors.plaza = plazaWard.centroid;
   anchors.citadel = citadelWard.centroid;
 
-  // ---------------- Inner rings ----------------
+  // ---------------- Anchor constraints ----------------
+// Use a stable centre hint for deterministic "inward" direction.
+const anchorCentreHint = centre;
+
+// Keep anchors inside the fort interior (use wallBase as the stable interior loop).
+anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
+anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
+
+// Keep anchors a minimum distance away from the wall.
+const MIN_WALL_CLEAR = ditchWidth * 1.25;
+anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
+anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
+
+// Optional: enforce separation between plaza and citadel, then re-validate.
+const MIN_ANCHOR_SEP = baseR * 0.12;
+{
+  const sep = enforceMinSeparation(anchors.plaza, anchors.citadel, MIN_ANCHOR_SEP);
+  anchors.plaza = ensureInside(wallBase, sep.a, anchorCentreHint, 1.0);
+  anchors.citadel = ensureInside(wallBase, sep.b, anchorCentreHint, 1.0);
+
+  anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
+  anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
+}
+  
+// ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
@@ -266,9 +295,9 @@ export function generate(seed, bastionCount, gateCount, width, height) {
    //  break;
 //   }
   const citSize = baseR * 0.1;
-  let citCentre = anchors.citadel;
+  const citCentre = anchors.citadel;
   
-  let citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+  const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
 
   // ---------------- Anchors (square + market) ----------------
   function placeSquare() {
