@@ -45,8 +45,8 @@ function getInputs() {
 }
 
 function syncDockControl() {
-  const water = String(getElementById("water").value || "none");
-  const dockEl = getElementById("dock");
+  const water = String(document.getElementById("water").value || "none");
+  const dockEl = document.getElementById("dock");
 
   const enabled = water !== "none";
   dockEl.disabled = !enabled;
