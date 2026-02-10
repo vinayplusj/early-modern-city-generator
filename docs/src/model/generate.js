@@ -12,7 +12,7 @@
 import { mulberry32 } from "../rng/mulberry32.js";
 
 import { polar, add, mul, normalize } from "../geom/primitives.js";
-import { centroid, pointInPoly } from "../geom/poly.js";
+import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
 
@@ -80,8 +80,10 @@ const WARP_FORT = {
   bastionClearHalfWidth: 0.05,
   bastionClearFeather: 0.06, 
 };
+export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
+  const water = (site && typeof site.water === "string") ? site.water : "none";
+  const hasDock = Boolean(site && site.hasDock) && water !== "none";
 
-export function generate(seed, bastionCount, gateCount, width, height) {
   // ---- Debug (safe to keep; remove later if desired) ----
   console.count("generate() calls");
   const runId = `${seed}-${Date.now()}`;
@@ -359,6 +361,19 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
 
   if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
+  function supportPoint(poly, dir) {
+    if (!poly || poly.length < 1) return null;
+    let best = poly[0];
+    let bestDot = best.x * dir.x + best.y * dir.y;
+  
+    for (let i = 1; i < poly.length; i++) {
+      const p = poly[i];
+      const d = p.x * dir.x + p.y * dir.y;
+      if (d > bestDot) { bestDot = d; best = p; }
+    }
+    return best;
+  }
+
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
   const warp = buildFortWarp({
@@ -383,6 +398,25 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
   anchors.gates = gatesWarped; // or gates (pick one and keep consistent)
   anchors.primaryGate = primaryGateWarped; // after snapping
   
+  // ---------------- Docks ----------------
+  // Deterministic docks point, created only when the UI enables it.
+  // Invariant: anchors.docks is null unless hasDock is true.
+  anchors.docks = null;
+  
+  if (hasDock && newTown?.poly && newTown.poly.length >= 3 && anchors.primaryGate) {
+    const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
+    const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : normalize({ x: 1, y: 0 });
+  
+    const v = supportPoint(newTown.poly, dir);
+  
+    if (v) {
+      // Nudge inward to avoid landing exactly on boundary.
+      const nudged = add(v, mul(normalize({ x: centre.x - v.x, y: centre.y - v.y }), 4));
+  
+      anchors.docks = pointInPolyOrOn(nudged, newTown.poly, 1e-6) ? nudged : v;
+    }
+  }
+
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
   const ravelins = (gatesWarped || [])
@@ -510,7 +544,7 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     citadel,
     avenue,
     primaryGate: primaryGateWarped,
-
+    site: { water, hasDock },
     // Roads
     roads, // legacy
     ring,
