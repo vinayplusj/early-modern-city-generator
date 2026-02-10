@@ -23,6 +23,8 @@ import { drawRoadGraph } from "./stages/roads.js";
 import { drawGatesAndPrimaryGate } from "./stages/gates.js";
 import { drawCitadel } from "./stages/citadel.js";
 import { drawLandmarksAndCentre } from "./stages/landmarks.js";
+import { drawWardsDebug } from "./stages/wards_debug.js";
+
 
 // ---------- Public render ----------
 export function render(ctx, model) {
@@ -75,6 +77,13 @@ export function render(ctx, model) {
     outerBoundary,
     districts: model?.districts,
     blocks,
+  });
+
+  // 1.5) wards (debug overlay)
+  drawWardsDebug(ctx, {
+    wards: model?.wards,
+    wardSeeds: model?.wardSeeds,
+    wardRoleIndices: model?.wardRoleIndices,
   });
 
   // 2) New Town polygon + streets + main avenue
