@@ -143,6 +143,5 @@ export function render(ctx, model) {
     marketCentre,
     anchors: model?.anchors,
     site,
-    newTown,
   });
 }
