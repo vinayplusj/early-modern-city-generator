@@ -38,6 +38,7 @@ import {
 import { snapGatesToWall } from "./generate_helpers/snap.js";
 import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
 import { placeNewTown } from "./generate_helpers/new_town.js";
+import { buildWater } from "./generate_helpers/water.js";
 
 import { buildFortWarp } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
@@ -78,11 +79,12 @@ const WARP_FORT = {
 
   // Option A: blocks outward bulge near bastion tips only
   bastionClearHalfWidth: 0.05,
-  bastionClearFeather: 0.06, 
+  bastionClearFeather: 0.06,
 };
+
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
-  const water = (site && typeof site.water === "string") ? site.water : "none";
-  const hasDock = Boolean(site && site.hasDock) && water !== "none";
+  const waterKind = (site && typeof site.water === "string") ? site.water : "none";
+  const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
 
   // ---- Debug (safe to keep; remove later if desired) ----
   console.count("generate() calls");
@@ -109,25 +111,23 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   if (WARP_FORT.debug) {
     console.log("BASTIONS COUNT", bastions?.length ?? 0);
-  
+
     const b0 = bastions?.[0];
     console.log("BASTION[0] KEYS", b0 ? Object.keys(b0) : null);
-  
+
     console.log("BASTION[0].shoulders", b0?.shoulders ?? null);
     console.log("BASTION[0].ptsLen", Array.isArray(b0?.pts) ? b0.pts.length : null);
-  
-    // Quick summary across all bastions
+
     let withShoulders = 0;
     let validShoulders = 0;
-  
+
     for (const b of bastions || []) {
       if (b && "shoulders" in b) withShoulders++;
       if (Array.isArray(b?.shoulders) && b.shoulders.length >= 2) validShoulders++;
     }
-  
+
     console.log("BASTION SHOULDERS SUMMARY", { withShoulders, validShoulders });
   }
-
 
   const ditchWidth = wallR * 0.035;
   const glacisWidth = wallR * 0.08;
@@ -150,8 +150,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
 
-  
-
   // Start with the full bastioned wall.
   let wallFinal = wall;
   let bastionPolys = bastions.map((b) => b.pts);
@@ -173,7 +171,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     bastionPolys,
   });
 
-
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
@@ -183,12 +180,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
 
   console.log(
-  "BASTION POLYS AFTER NEW TOWN",
-  (bastionPolys || []).filter(p => Array.isArray(p) && p.length >= 3).length,
-  "/",
-  bastionPolys?.length ?? 0
-);
-
+    "BASTION POLYS AFTER NEW TOWN",
+    (bastionPolys || []).filter(p => Array.isArray(p) && p.length >= 3).length,
+    "/",
+    bastionPolys?.length ?? 0
+  );
 
   console.log("NewTown placement stats", placed.stats);
 
@@ -198,17 +194,24 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
   ]);
 
-  // ---------------- Wards (Voronoi) + deterministic roles ----------------
-  // Commit 1 goal: generate wards in parallel and store on the model.
-  // This does not replace radial districts yet.
+  // ---------------- Water geometry (river/coast/none) ----------------
+  const water = buildWater({
+    rng,
+    siteWater: waterKind,
+    outerBoundary,
+    cx,
+    cy,
+    baseR,
+  });
 
+  // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
     seedCount: 24,
     spiralScale: baseR * 0.14,
     jitterRadius: baseR * 0.03,
     jitterAngle: 0.25,
     bboxPadding: baseR * 1.2,
-    clipToFootprint: true, // convex clipper
+    clipToFootprint: true,
   };
 
   const { wardSeeds, wards } = buildWardsVoronoi({
@@ -221,53 +224,45 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const { wards: wardsWithRoles, indices: wardRoleIndices } = assignWardRoles({
     wards,
     centre: { x: cx, y: cy },
-    params: {
-      innerCount: 8,
-      // Optional: override outsideBands later
-    },
+    params: { innerCount: 8 },
   });
 
   const plazaWard = wardsWithRoles.find(w => w.role === "plaza");
   const citadelWard = wardsWithRoles.find(w => w.role === "citadel");
 
-  
   if (!plazaWard) throw new Error("No plaza ward found");
   if (!citadelWard) throw new Error("No citadel ward found");
   if (!plazaWard.centroid) throw new Error("Plaza ward centroid missing");
   if (!citadelWard.centroid) throw new Error("Citadel ward centroid missing");
-  
+
   anchors.plaza = plazaWard.centroid;
   anchors.citadel = citadelWard.centroid;
 
   // ---------------- Anchor constraints ----------------
-// Use a stable centre hint for deterministic "inward" direction.
-const anchorCentreHint = centre;
+  const anchorCentreHint = centre;
 
-// Keep anchors inside the fort interior (use wallBase as the stable interior loop).
-anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
-anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
+  anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
+  anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
 
-// Keep anchors a minimum distance away from the wall.
-const MIN_WALL_CLEAR = ditchWidth * 1.25;
-anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
-anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
-
-// Optional: enforce separation between plaza and citadel, then re-validate.
-const MIN_ANCHOR_SEP = baseR * 0.12;
-{
-  const sep = enforceMinSeparation(anchors.plaza, anchors.citadel, MIN_ANCHOR_SEP);
-  anchors.plaza = ensureInside(wallBase, sep.a, anchorCentreHint, 1.0);
-  anchors.citadel = ensureInside(wallBase, sep.b, anchorCentreHint, 1.0);
-
+  const MIN_WALL_CLEAR = ditchWidth * 1.25;
   anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
   anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
-}
-  
-// ---------------- Inner rings ----------------
+
+  const MIN_ANCHOR_SEP = baseR * 0.12;
+  {
+    const sep = enforceMinSeparation(anchors.plaza, anchors.citadel, MIN_ANCHOR_SEP);
+    anchors.plaza = ensureInside(wallBase, sep.a, anchorCentreHint, 1.0);
+    anchors.citadel = ensureInside(wallBase, sep.b, anchorCentreHint, 1.0);
+
+    anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
+    anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
+  }
+
+  // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
-  // ---------------- Districts (needed for warp + roles) ----------------
+  // ---------------- Districts ----------------
   const DISTRICT_COUNT = 8;
   const DISTRICT_JITTER = 0.12;
   const DISTRICT_MIN_SPAN = 0.35;
@@ -279,26 +274,8 @@ const MIN_ANCHOR_SEP = baseR * 0.12;
   });
 
   // ---------------- Citadel ----------------
-
-  // for (let tries = 0; tries < 40; tries++) {
-   //  const citAng = rng() * Math.PI * 2;
-    // const candidate = polar(cx, cy, citAng, wallR * 0.72);
-
-    // const wallForGap = (wallFinal && Array.isArray(wallFinal) && wallFinal.length >= 3)
-     //  ? wallFinal
-   //    : wallBase;
-    
-   //  const gap = minDistPointToPoly(candidate, wallForGap);
-
-   //  if (gap < citSize * 1.8) continue;
-
-   //  citCentre = candidate;
-    // citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-   //  break;
-//   }
   const citSize = baseR * 0.1;
   const citCentre = anchors.citadel;
-  
   const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
 
   // ---------------- Anchors (square + market) ----------------
@@ -314,65 +291,48 @@ const MIN_ANCHOR_SEP = baseR * 0.12;
     return candidate;
   }
 
-  // const squareCentre = placeSquare();
   const squareCentre = anchors.plaza;
 
-  // Roles depend on square + citadel.
   assignDistrictRoles(
-  districts,
-  cx,
-  cy,
-  { squareCentre, citCentre, primaryGate },
-  {
-    INNER_COUNT: 3,
-    NEW_TOWN_COUNT: 1,
-    OUTER_WARD_COUNT: 2,
-  }
-);
+    districts,
+    cx,
+    cy,
+    { squareCentre, citCentre, primaryGate },
+    {
+      INNER_COUNT: 3,
+      NEW_TOWN_COUNT: 1,
+      OUTER_WARD_COUNT: 2,
+    }
+  );
 
-// Optional safety net
-if (primaryGate && !districts.some(d => d.kind === "new_town")) {
-  tagNewTownDistrictByGate(districts, primaryGate, cx, cy);
-}
-  
+  if (primaryGate && !districts.some(d => d.kind === "new_town")) {
+    tagNewTownDistrictByGate(districts, primaryGate, cx, cy);
+  }
+
   function tagNewTownDistrictByGate(districts, gate, cx, cy) {
-  if (!gate) return;
+    if (!gate) return;
 
-  const t = ((Math.atan2(gate.y - cy, gate.x - cx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const t = ((Math.atan2(gate.y - cy, gate.x - cx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
-  for (const d of districts) {
-    const a0 = Number.isFinite(d.startAngle) ? d.startAngle : d._debug?.a0;
-    const a1 = Number.isFinite(d.endAngle) ? d.endAngle : d._debug?.a1;
-    if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+    for (const d of districts) {
+      const a0 = Number.isFinite(d.startAngle) ? d.startAngle : d._debug?.a0;
+      const a1 = Number.isFinite(d.endAngle) ? d.endAngle : d._debug?.a1;
+      if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
 
-    const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
-    if (!inSector) continue;
+      const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
+      if (!inSector) continue;
 
-    if (d.kind === "plaza" || d.kind === "citadel") return;
+      if (d.kind === "plaza" || d.kind === "citadel") return;
 
-    d.kind = "new_town";
-    d.name = "New Town";
+      d.kind = "new_town";
+      d.name = "New Town";
 
-    if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(x => x.kind));
-    return;
+      if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-RETAG", districts.map(x => x.kind));
+      return;
+    }
   }
-}
-
 
   if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
-
-  function supportPoint(poly, dir) {
-    if (!poly || poly.length < 1) return null;
-    let best = poly[0];
-    let bestDot = best.x * dir.x + best.y * dir.y;
-  
-    for (let i = 1; i < poly.length; i++) {
-      const p = poly[i];
-      const d = p.x * dir.x + p.y * dir.y;
-      if (d > bestDot) { bestDot = d; best = p; }
-    }
-    return best;
-  }
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
@@ -381,38 +341,46 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     centre: fortCentre,
     wallPoly: wallFinal,
     districts,
-    bastions: bastionsForWarp,          // NEW
+    bastions: bastionsForWarp,
     params: WARP_FORT,
   });
 
   const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
-
   const wallForDraw = wallWarped || wallFinal;
-  
+
   const gatesWarped = wallWarped ? snapGatesToWall(gates, cx, cy, wallWarped) : gates;
-  
+
   const primaryGateWarped = (primaryGate && wallWarped)
     ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
     : primaryGate;
-    
-  anchors.gates = gatesWarped; // or gates (pick one and keep consistent)
-  anchors.primaryGate = primaryGateWarped; // after snapping
-  
+
+  anchors.gates = gatesWarped;
+  anchors.primaryGate = primaryGateWarped;
+
   // ---------------- Docks ----------------
-  // Deterministic docks point, created only when the UI enables it.
-  // Invariant: anchors.docks is null unless hasDock is true.
   anchors.docks = null;
-  
+
   if (hasDock && newTown?.poly && newTown.poly.length >= 3 && anchors.primaryGate) {
     const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
     const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : normalize({ x: 1, y: 0 });
-  
-    const v = supportPoint(newTown.poly, dir);
-  
+
+    // Simple deterministic choice for now: farthest vertex in the gate direction.
+    let best = newTown.poly[0];
+    let bestDot = best.x * dir.x + best.y * dir.y;
+
+    for (let i = 1; i < newTown.poly.length; i++) {
+      const p = newTown.poly[i];
+      const d = p.x * dir.x + p.y * dir.y;
+      if (d > bestDot) {
+        bestDot = d;
+        best = p;
+      }
+    }
+
+    const v = best;
+
     if (v) {
-      // Nudge inward to avoid landing exactly on boundary.
       const nudged = add(v, mul(normalize({ x: centre.x - v.x, y: centre.y - v.y }), 4));
-  
       anchors.docks = pointInPolyOrOn(nudged, newTown.poly, 1e-6) ? nudged : v;
     }
   }
@@ -458,16 +426,15 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     footprint,
     wallBase,
   });
-  
+
   anchors.market = marketCentre;
-  
+
   const landmarks = [
     { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
     { id: "market", pointOrPolygon: marketCentre, kind: "market", label: "Market" },
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  // Legacy primary roads kept for compatibility
   const roads = generateRoadsToCentre(gatesWarped, squareCentre);
   const avenue = [squareCentre, citCentre];
 
@@ -528,12 +495,17 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     glacisOuter,
     ditchWidth,
     glacisWidth,
+
     districts,
     blocks,
     warp,
+
     wards: wardsWithRoles,
     wardSeeds,
     wardRoleIndices,
+
+    // Water
+    water,
 
     // Anchors
     centre,
@@ -544,12 +516,14 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     citadel,
     avenue,
     primaryGate: primaryGateWarped,
-    site: { water, hasDock },
+
+    site: { water: waterKind, hasDock },
+
     // Roads
-    roads, // legacy
+    roads,
     ring,
     ring2,
-    secondaryRoads: secondaryRoadsLegacy, // legacy
+    secondaryRoads: secondaryRoadsLegacy,
     roadGraph,
 
     // New Town
