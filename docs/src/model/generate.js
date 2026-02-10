@@ -187,7 +187,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     jitterRadius: baseR * 0.03,
     jitterAngle: 0.25,
     bboxPadding: baseR * 1.2,
-    clipToFootprint: false, // keep false until you wire a real polygon clipper
+    clipToFootprint: true, // convex clipper
   };
 
   const { wardSeeds, wards } = buildWardsVoronoi({
