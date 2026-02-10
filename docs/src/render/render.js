@@ -83,7 +83,8 @@ export function render(ctx, model) {
   drawWardsDebug(ctx, {
     wards: model?.wards,
     wardSeeds: model?.wardSeeds,
-    wardRoleIndices: model?.wardRoleIndices,
+    wardRoleIndices: model?.wardRoleIndices, // keep for fallback/debug
+    anchors: model?.anchors,
   });
 
   // 2) New Town polygon + streets + main avenue
@@ -135,5 +136,6 @@ export function render(ctx, model) {
     squareR,
     squareCentre,
     marketCentre,
+    anchors: model?.anchors,
   });
 }
