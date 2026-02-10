@@ -19,7 +19,7 @@
 // - bboxPadding: padding for Voronoi bounding box
 // - clipToFootprint: if true, try to clip cells to footprintPoly when a clipper exists
 
-import { Delaunay } from "../../../vendor/d3-delaunay.js"; // must vendor this file in docs/vendor/.
+import { Delaunay } from "https://esm.sh/d3-delaunay@6"; // must vendor this file in docs/vendor/.
 
 /**
  * @typedef {{x:number, y:number}} Point
