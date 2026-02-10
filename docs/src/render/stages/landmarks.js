@@ -80,7 +80,8 @@ export function drawLandmarksAndCentre(ctx, {
     const dockInside =
       dockEnabled &&
       docks &&
-      (!newTown?.poly || newTown.poly.length < 3 || pointInPolyOrOn(docks, newTown.poly, 1e-6));
+      (newTown?.poly && newTown.poly.length >= 3) &&
+      pointInPolyOrOn(docks, newTown.poly, 1e-6);
   
     if (dockInside) {
       const r = Math.max(4, (squareR || 10) * 0.26);
