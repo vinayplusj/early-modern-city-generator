@@ -4,17 +4,18 @@
 // Expects a model object from docs/src/model/generate.js.
 //
 // Draw order (important for visibility):
-// 1) background + footprint + outer boundary
+// 1) background + water + footprint + outer boundary
 // 2) New Town polygon + streets
 // 3) glacis + ditch rings + ravelins
 // 4) walls + rings
 // 5) road graph
 // 6) gates + primary gate
 // 7) citadel
-// 8) landmarks (square + market) LAST so they are always visible
+// 8) landmarks (square + market + docks) LAST so they are always visible
 // 9) centre marker (reference)
 
 import { drawBackground } from "./stages/background.js";
+import { drawWater } from "./stages/water.js";
 import { drawFootprintAndDebugOverlays } from "./stages/footprint_debug.js";
 import { drawBoundaryAndNewTown } from "./stages/boundary_newtown.js";
 import { drawMoatworksAndRavelins } from "./stages/moatworks_ravelins.js";
@@ -25,13 +26,14 @@ import { drawCitadel } from "./stages/citadel.js";
 import { drawLandmarksAndCentre } from "./stages/landmarks.js";
 import { drawWardsDebug } from "./stages/wards_debug.js";
 
-
 // ---------- Public render ----------
 export function render(ctx, model) {
   const {
     footprint,
     outerBoundary,
     site,
+    water,
+
     // Walls
     wall,
     wallBase,
@@ -71,7 +73,10 @@ export function render(ctx, model) {
   // 1) background
   drawBackground(ctx);
 
-  // 1) footprint + debug overlays (districts + blocks) + outer boundary stroke
+  // 1.0) water (under footprint fill)
+  drawWater(ctx, { water });
+
+  // 1.1) footprint + debug overlays (districts + blocks) + outer boundary stroke
   drawFootprintAndDebugOverlays(ctx, {
     footprint,
     outerBoundary,
@@ -138,6 +143,6 @@ export function render(ctx, model) {
     marketCentre,
     anchors: model?.anchors,
     site,
-    newTown
+    newTown,
   });
 }
