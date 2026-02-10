@@ -12,7 +12,7 @@
 import { mulberry32 } from "../rng/mulberry32.js";
 
 import { add, mul, normalize } from "../geom/primitives.js";
-import { centroid, pointInPoly } from "../geom/poly.js";
+import { centroid } from "../geom/poly.js";
 
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
@@ -246,19 +246,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const citSize = baseR * 0.1;
   const citCentre = anchors.citadel;
   const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-
-  // ---------------- Anchors (square + market) ----------------
-  function placeSquare() {
-    if (!primaryGate) return centre;
-
-    const out = normalize({ x: primaryGate.x - cx, y: primaryGate.y - cy });
-    const candidate = add(centre, mul(out, baseR * 0.1));
-
-    if (!pointInPoly(candidate, footprint)) return centre;
-    if (!pointInPoly(candidate, wallBase)) return centre;
-
-    return candidate;
-  }
 
   const squareCentre = anchors.plaza;
 
