@@ -266,11 +266,7 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
     tryAddOuter(left);
     tryAddOuter(right);
 
-    if (!validIndex(idx, districts.length)) {
-      console.warn("assignDistrictRoles: invalid idx", { idx, n: districts.length });
-      continue;
-    }
-    // If plaza/citadel blocked a neighbour, expand outward until filled.
+        // If plaza/citadel blocked a neighbour, expand outward until filled.
     let expand = 2;
     while (outerWardSet.size < want && expand < n + 2) {
       tryAddOuter((newTownIndex - expand + n) % n);
@@ -279,29 +275,30 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
     }
 
     for (const idx of outerWardSet) {
-      if (validIndex(idx, districts.length) && districts[idx]) {
-        districts[idx].kind = "outer_ward";
-      }
-      if (validIndex(idx, districts.length) && districts[idx]) {
-        districts[idx].kind = "Outer Ward";
-      }
+      if (!validIndex(idx, n)) continue;
+    
+      const d = districts[idx];
+      if (!d) continue;
+    
+      d.kind = "outer_ward";
+      d.name = "Outer Ward";
     }
+
   }
 
   // ---------------- Fill remaining outer districts ----------------
 
   for (let i = 0; i < n; i++) {
-    if (!validIndex(idx, districts.length)) continue;
+    if (!validIndex(i, n)) continue;
     const d = districts[i];
-
-    // Anything already assigned stays assigned.
+  
     if (!d) continue;
     if (d.kind !== "generic") continue;
-
+  
     const distFromPlaza = cyclicDistance(plazaIndex, i, n);
     const label =
       OUTER_PATTERN[(distFromPlaza - 1 + OUTER_PATTERN.length) % OUTER_PATTERN.length];
-
+  
     d.kind = label;
     d.name = label.charAt(0).toUpperCase() + label.slice(1);
   }
