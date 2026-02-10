@@ -31,7 +31,7 @@ export function render(ctx, model) {
   const {
     footprint,
     outerBoundary,
-
+    site,
     // Walls
     wall,
     wallBase,
@@ -137,5 +137,7 @@ export function render(ctx, model) {
     squareCentre,
     marketCentre,
     anchors: model?.anchors,
+    site,
+    newTown
   });
 }
