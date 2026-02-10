@@ -31,12 +31,18 @@ function getInputs() {
   const water = String(document.getElementById("water").value || "none");
   const dock = Boolean(document.getElementById("dock").checked);
 
+  // Ensure gates max and current value are valid before reading.
+  syncGateControl();
+
+  const bastions = Number(document.getElementById("bastions").value) || 8;
+  const gatesRaw = Number(document.getElementById("gates").value) || 3;
+  const maxGates = Math.max(1, Math.floor(bastions / 2));
+  const gates = Math.min(Math.max(1, gatesRaw), maxGates);
+
   return {
     seed: Number(document.getElementById("seed").value) || 1331,
-    bastions: Number(document.getElementById("bastions").value) || 8,
-    gates: Number(document.getElementById("gates").value) || 3,
-
-
+    bastions,
+    gates,
     site: {
       water,                 // "none" | "river" | "coast"
       hasDock: water !== "none" && dock,
@@ -53,6 +59,27 @@ function syncDockControl() {
 
   // If there is no water, docks cannot exist.
   if (!enabled) dockEl.checked = false;
+}
+
+function syncGateControl() {
+  const bastionsEl = document.getElementById("bastions");
+  const gatesEl = document.getElementById("gates");
+
+  const bastions = Number(bastionsEl.value) || 0;
+
+  // Rule: gates <= floor(bastions / 2), with a minimum of 1.
+  const maxGates = Math.max(1, Math.floor(bastions / 2));
+
+  // Enforce spinner limit.
+  gatesEl.max = String(maxGates);
+
+  // Clamp current value (covers typing and stale state).
+  const gates = Number(gatesEl.value) || 1;
+  const clamped = Math.min(Math.max(1, gates), maxGates);
+
+  if (clamped !== gates) {
+    gatesEl.value = String(clamped);
+  }
 }
 
 let model = null;
@@ -72,8 +99,14 @@ function regenerate() {
 // Wire events ONCE
 document.getElementById("regen").addEventListener("click", regenerate);
 document.getElementById("seed").addEventListener("change", regenerate);
-document.getElementById("bastions").addEventListener("change", regenerate);
-document.getElementById("gates").addEventListener("change", regenerate);
+document.getElementById("bastions").addEventListener("change", () => {
+  syncGateControl();
+  regenerate();
+});
+document.getElementById("gates").addEventListener("change", () => {
+  syncGateControl();
+  regenerate();
+});
 document.getElementById("water").addEventListener("change", regenerate);
 document.getElementById("dock").addEventListener("change", regenerate);
 
@@ -86,4 +119,5 @@ window.addEventListener("resize", () => {
 });
 
 // Initial render
+syncGateControl();
 regenerate();
