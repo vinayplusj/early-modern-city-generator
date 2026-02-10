@@ -34,25 +34,21 @@ function drawLabel(ctx, text, x, y) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  // Measure for background box
   const padX = 6;
   const padY = 3;
   const m = ctx.measureText(text);
   const w = Math.ceil(m.width) + padX * 2;
   const h = 14 + padY * 2;
 
-  // Background (halo box)
   ctx.globalAlpha = 0.75;
   ctx.fillStyle = "#000000";
   ctx.fillRect(x - w / 2, y - h / 2, w, h);
 
-  // Stroke text (thin outline)
   ctx.globalAlpha = 0.95;
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#000000";
   ctx.strokeText(text, x, y);
 
-  // Fill text
   ctx.globalAlpha = 0.95;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(text, x, y);
@@ -60,7 +56,7 @@ function drawLabel(ctx, text, x, y) {
   ctx.restore();
 }
 
-export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
+export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors }) {
   const hasWards = Array.isArray(wards) && wards.length > 0;
   const hasSeeds = Array.isArray(wardSeeds) && wardSeeds.length > 0;
 
@@ -71,7 +67,6 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
     ctx.save();
     ctx.lineWidth = 1;
 
-    // Fill pass
     for (const w of wards) {
       if (!w || !w.poly || w.poly.length < 3) continue;
       const st = styleForRole(w.role);
@@ -81,7 +76,6 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
       ctx.fill();
     }
 
-    // Stroke pass
     for (const w of wards) {
       if (!w || !w.poly || w.poly.length < 3) continue;
       const st = styleForRole(w.role);
@@ -109,11 +103,16 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
     ctx.restore();
   }
 
-  // 3) Highlight plaza and citadel seed points (if available)
-  if (hasWards && wardRoleIndices) {
-    const plazaP = pointAtId(wards, wardRoleIndices.plaza);
-    const citadelP = pointAtId(wards, wardRoleIndices.citadel);
+  // 3) Highlight plaza and citadel (anchors first, fallback to wardRoleIndices)
+  const plazaP =
+    (anchors && anchors.plaza) ||
+    (hasWards && wardRoleIndices ? pointAtId(wards, wardRoleIndices.plaza) : null);
 
+  const citadelP =
+    (anchors && anchors.citadel) ||
+    (hasWards && wardRoleIndices ? pointAtId(wards, wardRoleIndices.citadel) : null);
+
+  if (plazaP || citadelP) {
     ctx.save();
     ctx.lineWidth = 2;
 
@@ -122,6 +121,7 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
       ctx.strokeStyle = ROLE_STYLES.plaza.stroke;
       drawCircle(ctx, plazaP, 7);
       ctx.stroke();
+      drawLabel(ctx, "PLAZA", plazaP.x, plazaP.y);
     }
 
     if (citadelP) {
@@ -129,44 +129,7 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices }) {
       ctx.strokeStyle = ROLE_STYLES.citadel.stroke;
       drawCircle(ctx, citadelP, 7);
       ctx.stroke();
-    }
-
-    ctx.restore();
-  }
-
-  // 4) Optional role labels at centroids (kept subtle)
-  if (hasWards) {
-    ctx.save();
-    ctx.font = "10px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    for (const w of wards) {
-      const c = w?.centroid;
-      if (!c) continue;
-      if (!w.role) continue;
-
-      // Keep labels sparse: only key roles by default.
-      if (w.role !== "plaza" && w.role !== "citadel") continue;
-
-      // 4) Optional role labels at centroids (now with halo for legibility)
-      if (hasWards) {
-        ctx.save();
-      
-        for (const w of wards) {
-          const c = w?.centroid;
-          if (!c) continue;
-          if (!w.role) continue;
-      
-          // Keep labels sparse: only key roles by default.
-          if (w.role !== "plaza" && w.role !== "citadel") continue;
-      
-          drawLabel(ctx, w.role.toUpperCase(), c.x, c.y);
-        }
-      
-        ctx.restore();
-      }
-
+      drawLabel(ctx, "CITADEL", citadelP.x, citadelP.y);
     }
 
     ctx.restore();
