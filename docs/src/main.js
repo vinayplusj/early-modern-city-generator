@@ -1,7 +1,10 @@
 if (window.__EMCG_BOOTED__) {
   console.warn("main.js loaded twice");
+  // Prevent duplicate listeners and double rendering loops.
+  throw new Error("main.js loaded twice");
 }
-window.__EMCG_BOOTED__ = (window.__EMCG_BOOTED__ || 0) + 1;
+window.__EMCG_BOOTED__ = 1;
+
 console.log("BOOT COUNT", window.__EMCG_BOOTED__);
 
 import { generate } from "./model/generate.js";
@@ -29,9 +32,10 @@ function getInputs() {
   const dock = Boolean(document.getElementById("dock").checked);
 
   return {
-    seed: Number(getElementById("seed").value) || 1,
-    bastions: Number(getElementById("bastions").value) || 8,
-    gates: Number(getElementById("gates").value) || 3,
+    seed: Number(document.getElementById("seed").value) || 1,
+    bastions: Number(document.getElementById("bastions").value) || 8,
+    gates: Number(document.getElementById("gates").value) || 3,
+
 
     site: {
       water,                 // "none" | "river" | "coast"
