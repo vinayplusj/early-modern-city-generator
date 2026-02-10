@@ -130,7 +130,20 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
+
+  const anchors = {
+    centre,        // {x,y}
+    plaza: null,   // {x,y}
+    citadel: null, // {x,y}
+    market: null,  // {x,y}
+    docks: null,   // {x,y} or null
+    gates: null,   // array of gate points
+    primaryGate: null, // single gate point
+  };
+
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
+
+  
 
   // Start with the full bastioned wall.
   let wallFinal = wall;
@@ -152,6 +165,7 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     wallFinal,
     bastionPolys,
   });
+
 
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
@@ -206,6 +220,18 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     },
   });
 
+  const plazaWard = wardsWithRoles.find(w => w.role === "plaza");
+  const citadelWard = wardsWithRoles.find(w => w.role === "citadel");
+
+  
+  if (!plazaWard) throw new Error("No plaza ward found");
+  if (!citadelWard) throw new Error("No citadel ward found");
+  if (!plazaWard.centroid) throw new Error("Plaza ward centroid missing");
+  if (!citadelWard.centroid) throw new Error("Citadel ward centroid missing");
+  
+  anchors.plaza = plazaWard.centroid;
+  anchors.citadel = citadelWard.centroid;
+
   // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
@@ -222,31 +248,27 @@ export function generate(seed, bastionCount, gateCount, width, height) {
   });
 
   // ---------------- Citadel ----------------
-  const citSize = baseR * 0.1;
-  let citCentre = null;
-  let citadel = null;
 
-  for (let tries = 0; tries < 40; tries++) {
-    const citAng = rng() * Math.PI * 2;
-    const candidate = polar(cx, cy, citAng, wallR * 0.72);
+  // for (let tries = 0; tries < 40; tries++) {
+   //  const citAng = rng() * Math.PI * 2;
+    // const candidate = polar(cx, cy, citAng, wallR * 0.72);
 
-    const wallForGap = (wallFinal && Array.isArray(wallFinal) && wallFinal.length >= 3)
-      ? wallFinal
-      : wallBase;
+    // const wallForGap = (wallFinal && Array.isArray(wallFinal) && wallFinal.length >= 3)
+     //  ? wallFinal
+   //    : wallBase;
     
-    const gap = minDistPointToPoly(candidate, wallForGap);
+   //  const gap = minDistPointToPoly(candidate, wallForGap);
 
-    if (gap < citSize * 1.8) continue;
+   //  if (gap < citSize * 1.8) continue;
 
-    citCentre = candidate;
-    citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-    break;
-  }
-
-  if (!citCentre) {
-    citCentre = polar(cx, cy, rng() * Math.PI * 2, wallR * 0.65);
-    citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-  }
+   //  citCentre = candidate;
+    // citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
+   //  break;
+//   }
+  const citSize = baseR * 0.1;
+  let citCentre = anchors.citadel;
+  
+  let citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
 
   // ---------------- Anchors (square + market) ----------------
   function placeSquare() {
@@ -261,7 +283,8 @@ export function generate(seed, bastionCount, gateCount, width, height) {
     return candidate;
   }
 
-  const squareCentre = placeSquare();
+  // const squareCentre = placeSquare();
+  const squareCentre = anchors.plaza;
 
   // Roles depend on square + citadel.
   assignDistrictRoles(
@@ -327,7 +350,10 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
   const primaryGateWarped = (primaryGate && wallWarped)
     ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
     : primaryGate;
-
+    
+  anchors.gates = gatesWarped; // or gates (pick one and keep consistent)
+  anchors.primaryGate = primaryGateWarped; // after snapping
+  
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
   const ravelins = (gatesWarped || [])
@@ -369,7 +395,9 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     footprint,
     wallBase,
   });
-
+  
+  anchors.market = marketCentre;
+  
   const landmarks = [
     { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
     { id: "market", pointOrPolygon: marketCentre, kind: "market", label: "Market" },
@@ -470,5 +498,6 @@ if (primaryGate && !districts.some(d => d.kind === "new_town")) {
     // Markers
     gatesOriginal: gates,
     landmarks,
+    anchors,
   };
 }
