@@ -11,6 +11,56 @@ function isPoint(p) {
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
+function dist2PointToSeg(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+
+  const ab2 = abx * abx + aby * aby;
+  if (ab2 <= 1e-12) {
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    return dx * dx + dy * dy;
+  }
+
+  let t = (apx * abx + apy * aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
+
+  const cx = a.x + abx * t;
+  const cy = a.y + aby * t;
+
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return dx * dx + dy * dy;
+}
+
+function pickBestEdge(poly, nearPoint) {
+  if (!Array.isArray(poly) || poly.length < 3 || !isPoint(nearPoint)) return null;
+
+  let bestI = 0;
+  let bestD2 = Infinity;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    const d2 = dist2PointToSeg(nearPoint, a, b);
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bestI = i;
+    }
+  }
+
+  const a = poly[bestI];
+  const b = poly[(bestI + 1) % poly.length];
+  if (!isPoint(a) || !isPoint(b)) return null;
+
+  // Shoreline as a 2-point segment for snapping.
+  return [a, b];
+}
+
 export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR } = {}) {
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
@@ -39,12 +89,13 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
   // Coast
   if (raw.kind === "coast" && Array.isArray(raw.polygon) && raw.polygon.length >= 3) {
     const bankPoint = isPoint(raw.bankPoint) ? raw.bankPoint : { x: cx, y: cy };
+    const shoreline = pickBestEdge(raw.polygon, bankPoint);
   
     return {
       kind: "coast",
       river: null,
       coast: { polygon: raw.polygon },
-      shoreline: raw.polygon,   // <-- change THIS
+      shoreline,     // <-- shoreline edge segment (2 points)
       bankPoint,
     };
   }
