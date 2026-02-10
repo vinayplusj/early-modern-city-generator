@@ -1,76 +1,100 @@
-// docs/src/render/stages/water.js
+// docs/src/model/water.js
+//
+// Model-level wrapper around generate_helpers/water.js.
+// Normalizes the output so generate.js and render code have a stable shape.
 
-import { drawPoly } from "../render/helpers/draw.js";
+import { buildWater } from "./generate_helpers/water.js";
 
-function drawPolyline(ctx, pts) {
-  if (!Array.isArray(pts) || pts.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+function isPoint(p) {
+  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
-export function drawWater(ctx, { water }) {
-  if (!water || water.kind === "none") return;
+function dist2PointToSeg(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
 
-  const coastPoly = water?.coast?.polygon || null;
-  const riverLine = water?.river?.polyline || null;
-  const shoreline = water?.shoreline || null;
+  const ab2 = abx * abx + aby * aby;
+  if (ab2 <= 1e-12) {
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    return dx * dx + dy * dy;
+  }
 
-  const fill = "#0b2033";
-  const stroke = "#6fb7ff";
+  let t = (apx * abx + apy * aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
 
-  if (water.kind === "coast") {
-    if (!Array.isArray(coastPoly) || coastPoly.length < 3) return;
+  const cx = a.x + abx * t;
+  const cy = a.y + aby * t;
 
-    ctx.save();
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return dx * dx + dy * dy;
+}
 
-    // Fill the sea area
-    ctx.globalAlpha = 0.28;
-    ctx.fillStyle = fill;
-    drawPoly(ctx, coastPoly, true);
-    ctx.fill();
+// Picks the polygon edge closest to nearPoint, and returns it as a 2-point polyline.
+function pickBestEdge(poly, nearPoint) {
+  if (!Array.isArray(poly) || poly.length < 3 || !isPoint(nearPoint)) return null;
 
-    // Stroke only the shoreline segment when available
-    ctx.globalAlpha = 0.65;
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 2.5;
+  let bestI = 0;
+  let bestD2 = Infinity;
 
-    if (Array.isArray(shoreline) && shoreline.length >= 2) {
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      drawPolyline(ctx, shoreline);
-      ctx.stroke();
-    } else {
-      // Fallback: outline the polygon if shoreline is missing
-      drawPoly(ctx, coastPoly, true);
-      ctx.stroke();
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    const d2 = dist2PointToSeg(nearPoint, a, b);
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bestI = i;
     }
-
-    ctx.restore();
-    return;
   }
 
-  if (water.kind === "river") {
-    if (!Array.isArray(riverLine) || riverLine.length < 2) return;
+  const a = poly[bestI];
+  const b = poly[(bestI + 1) % poly.length];
+  if (!isPoint(a) || !isPoint(b)) return null;
 
-    ctx.save();
+  return [a, b];
+}
 
-    ctx.globalAlpha = 0.22;
-    ctx.strokeStyle = fill;
-    ctx.lineWidth = 18;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    drawPolyline(ctx, riverLine);
-    ctx.stroke();
+export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR } = {}) {
+  const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    drawPolyline(ctx, riverLine);
-    ctx.stroke();
-
-    ctx.restore();
+  if (kind === "none") {
+    return { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null };
   }
+
+  const raw = buildWater({ rng, siteWater: kind, outerBoundary, cx, cy, baseR }) || {};
+
+  if (raw.kind === "river" && Array.isArray(raw.polyline) && raw.polyline.length >= 2) {
+    return {
+      kind: "river",
+      river: { polyline: raw.polyline },
+      coast: null,
+      shoreline: raw.polyline,
+      bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null,
+    };
+  }
+
+  if (raw.kind === "coast" && Array.isArray(raw.polygon) && raw.polygon.length >= 3) {
+    const bankPoint = isPoint(raw.bankPoint) ? raw.bankPoint : { x: cx, y: cy };
+    const shoreline = pickBestEdge(raw.polygon, bankPoint);
+
+    return {
+      kind: "coast",
+      river: null,
+      coast: { polygon: raw.polygon },
+      shoreline,              // shoreline is now the cut edge, not the full sea polygon
+      bankPoint,
+    };
+  }
+
+  return { 
+    kind: "none", 
+    river: null, 
+    coast: null, 
+    shoreline: null, 
+    bankPoint: null };
 }
