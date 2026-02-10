@@ -1,6 +1,6 @@
 // docs/src/render/stages/water.js
 
-import { drawPoly } from "../helpers/draw.js";
+import { drawPoly } from "../../render/helpers/draw.js";
 
 function drawPolyline(ctx, pts) {
   if (!Array.isArray(pts) || pts.length < 2) return;
