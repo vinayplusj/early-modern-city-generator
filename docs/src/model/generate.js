@@ -38,7 +38,6 @@ import {
 import { snapGatesToWall } from "./generate_helpers/snap.js";
 import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
 import { placeNewTown } from "./generate_helpers/new_town.js";
-import { buildWater } from "./generate_helpers/water.js";
 
 import { buildFortWarp } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
@@ -50,6 +49,8 @@ import {
   pushAwayFromWall,
   enforceMinSeparation,
 } from "./anchors/anchor_constraints.js";
+
+import { buildWaterModel } from "./water.js";
 
 const WARP_FORT = {
   enabled: true,
@@ -194,8 +195,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
   ]);
 
-  // ---------------- Water geometry (river/coast/none) ----------------
-  const water = buildWater({
+    // ---------------- Water (river/coast) ----------------
+  const waterModel = (waterKind === "none")
+  ? { kind: "none", polyline: null, polygon: null, shoreline: null, bankPoint: null }
+  : buildWaterModel({
     rng,
     siteWater: waterKind,
     outerBoundary,
@@ -203,6 +206,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     cy,
     baseR,
   });
+
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
@@ -357,33 +361,91 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   anchors.gates = gatesWarped;
   anchors.primaryGate = primaryGateWarped;
 
-  // ---------------- Docks ----------------
-  anchors.docks = null;
-
-  if (hasDock && newTown?.poly && newTown.poly.length >= 3 && anchors.primaryGate) {
-    const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
-    const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : normalize({ x: 1, y: 0 });
-
-    // Simple deterministic choice for now: farthest vertex in the gate direction.
-    let best = newTown.poly[0];
+  function supportPoint(poly, dir) {
+    if (!poly || poly.length < 1) return null;
+    let best = poly[0];
     let bestDot = best.x * dir.x + best.y * dir.y;
-
-    for (let i = 1; i < newTown.poly.length; i++) {
-      const p = newTown.poly[i];
+  
+    for (let i = 1; i < poly.length; i++) {
+      const p = poly[i];
       const d = p.x * dir.x + p.y * dir.y;
-      if (d > bestDot) {
-        bestDot = d;
-        best = p;
+      if (d > bestDot) { bestDot = d; best = p; }
+    }
+    return best;
+  }
+
+    // ---------------- Docks ----------------
+    // Deterministic docks point, created only when the UI enables it.
+    // Invariant: anchors.docks is null unless hasDock is true.
+    anchors.docks = null;
+  
+    function snapPointToPolyline(p, line) {
+      if (!p || !Array.isArray(line) || line.length < 2) return p;
+  
+      let best = line[0];
+      let bestD2 = Infinity;
+  
+      for (let i = 0; i < line.length - 1; i++) {
+        const a = line[i];
+        const b = line[i + 1];
+        if (!a || !b) continue;
+  
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const apx = p.x - a.x;
+        const apy = p.y - a.y;
+  
+        const ab2 = abx * abx + aby * aby;
+        let t = 0;
+        if (ab2 > 1e-12) {
+          t = (apx * abx + apy * aby) / ab2;
+          t = Math.max(0, Math.min(1, t));
+        }
+  
+        const cxp = a.x + abx * t;
+        const cyp = a.y + aby * t;
+  
+        const dx = p.x - cxp;
+        const dy = p.y - cyp;
+        const d2 = dx * dx + dy * dy;
+  
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          best = { x: cxp, y: cyp };
+        }
+      }
+  
+      return best;
+    }
+  
+    if (
+      hasDock &&
+      newTown?.poly &&
+      newTown.poly.length >= 3 &&
+      anchors.primaryGate &&
+      waterModel &&
+      waterModel.kind !== "none" &&
+      Array.isArray(waterModel.shoreline) &&
+      waterModel.shoreline.length >= 2
+    ) {
+      // Start from the outward direction (centre -> primary gate) to pick a stable edge of New Town.
+      const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
+      const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : normalize({ x: 1, y: 0 });
+  
+      const v = supportPoint(newTown.poly, dir);
+  
+      if (v) {
+        // Snap to shoreline (river polyline or coast edge polyline), so docks never float.
+        const snapped = snapPointToPolyline(v, waterModel.shoreline);
+  
+        // Nudge slightly toward the city centre so the marker does not sit exactly on the water line.
+        const iv = { x: centre.x - snapped.x, y: centre.y - snapped.y };
+        const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
+        anchors.docks = add(snapped, mul(inward, 6));
+
       }
     }
 
-    const v = best;
-
-    if (v) {
-      const nudged = add(v, mul(normalize({ x: centre.x - v.x, y: centre.y - v.y }), 4));
-      anchors.docks = pointInPolyOrOn(nudged, newTown.poly, 1e-6) ? nudged : v;
-    }
-  }
 
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
@@ -504,9 +566,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     wardSeeds,
     wardRoleIndices,
 
-    // Water
-    water,
-
     // Anchors
     centre,
     squareR: baseR * 0.055,
@@ -518,6 +577,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     primaryGate: primaryGateWarped,
 
     site: { water: waterKind, hasDock },
+    water: waterModel,
 
     // Roads
     roads,
