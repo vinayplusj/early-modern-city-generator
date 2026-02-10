@@ -3,7 +3,16 @@
 import { pointInPolyOrOn } from "../../geom/poly.js";
 import { drawCircle } from "../helpers/draw.js";
 
-export function drawLandmarksAndCentre(ctx, { wallBase, centre, squareR, squareCentre, marketCentre, anchors }) {
+export function drawLandmarksAndCentre(ctx, {
+  wallBase,
+  centre,
+  squareR,
+  squareCentre,
+  marketCentre,
+  anchors,
+  site,
+  newTown,
+}) {
   const plaza = anchors?.plaza || squareCentre;
   const market = anchors?.market || marketCentre;
 
@@ -63,6 +72,40 @@ export function drawLandmarksAndCentre(ctx, { wallBase, centre, squareR, squareC
     ctx.stroke();
     ctx.restore();
   }
+
+    // Docks (only when enabled by UI: site.hasDock)
+    const docks = anchors?.docks || null;
+    const dockEnabled = Boolean(site && site.hasDock);
+  
+    const dockInside =
+      dockEnabled &&
+      docks &&
+      (!newTown?.poly || newTown.poly.length < 3 || pointInPolyOrOn(docks, newTown.poly, 1e-6));
+  
+    if (dockInside) {
+      const r = Math.max(4, (squareR || 10) * 0.26);
+  
+      // Halo
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = "#ffffff";
+      drawCircle(ctx, docks, r * 2.0);
+      ctx.fill();
+      ctx.restore();
+  
+      // Core dot (slightly different tone from market)
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = "#101010";
+      drawCircle(ctx, docks, r);
+      ctx.fill();
+  
+      ctx.strokeStyle = "#efefef";
+      ctx.lineWidth = 2;
+      drawCircle(ctx, docks, r);
+      ctx.stroke();
+      ctx.restore();
+    }
 
   // Centre marker (reference)
   if (centre) {
