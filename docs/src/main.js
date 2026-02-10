@@ -32,7 +32,7 @@ function getInputs() {
   const dock = Boolean(document.getElementById("dock").checked);
 
   return {
-    seed: Number(document.getElementById("seed").value) || 1,
+    seed: Number(document.getElementById("seed").value) || 1331,
     bastions: Number(document.getElementById("bastions").value) || 8,
     gates: Number(document.getElementById("gates").value) || 3,
 
