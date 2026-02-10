@@ -1,95 +1,117 @@
 // docs/src/model/water.js
 //
-// Model-level wrapper for water generation.
-// This keeps generate.js clean and gives render code a stable shape.
+// Model-level wrapper around generate_helpers/water.js.
+// Normalizes the output so generate.js and render code have a stable shape.
 //
-// Expected helper location:
-//   docs/src/model/generate_helpers/water.js
-//
-// Expected helper export (one of these names):
-//   - buildWaterFeature
-//   - generateWaterFeature
-//   - makeWaterFeature
-//
-// This wrapper normalizes output to:
-//   { kind: "none" | "river" | "coast", poly: Array<{x,y}>|null, shoreline: Array<{x,y}>|null }
+// Returned shape:
+// {
+//   kind: "none" | "river" | "coast",
+//   river: { polyline: Array<{x,y}> } | null,
+//   coast: { polygon: Array<{x,y}> } | null,
+//   shoreline: Array<{x,y}> | null,   // polyline for snapping docks (river polyline or best coast edge)
+//   bankPoint: {x,y} | null,
+// }
 
-import * as waterHelper from "./generate_helpers/water.js";
+import { buildWater } from "./generate_helpers/water.js";
 
-function pickHelperFn() {
-  return (
-    waterHelper.buildWaterFeature ||
-    waterHelper.generateWaterFeature ||
-    waterHelper.makeWaterFeature ||
-    null
-  );
+function isPoint(p) {
+  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
-function normalizeKind(kind) {
-  const k = (typeof kind === "string") ? kind : "none";
-  if (k === "river" || k === "coast") return k;
-  return "none";
-}
+function dist2PointToSeg(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
 
-function normalizePoly(poly) {
-  return Array.isArray(poly) && poly.length >= 3 ? poly : null;
-}
-
-function normalizeShoreline(shoreline, poly) {
-  // Shoreline may be a polyline (>= 2) or a closed ring (>= 3).
-  if (Array.isArray(shoreline) && shoreline.length >= 2) return shoreline;
-
-  // If helper did not supply a shoreline, fall back to the polygon ring.
-  if (Array.isArray(poly) && poly.length >= 3) return poly;
-
-  return null;
-}
-
-export function buildWaterModel({
-  rng,
-  cx,
-  cy,
-  width,
-  height,
-  outerBoundary,
-  site,
-  params,
-} = {}) {
-  const requested = normalizeKind(site && site.water);
-
-  if (requested === "none") {
-    return { kind: "none", poly: null, shoreline: null };
+  const ab2 = abx * abx + aby * aby;
+  if (ab2 <= 1e-12) {
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    return dx * dx + dy * dy;
   }
 
-  const fn = pickHelperFn();
-  if (!fn) {
-    // Hard fail would be annoying during iteration.
-    // Return "none" so the rest of the model still works.
-    return { kind: "none", poly: null, shoreline: null };
+  let t = (apx * abx + apy * aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
+
+  const cx = a.x + abx * t;
+  const cy = a.y + aby * t;
+
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return dx * dx + dy * dy;
+}
+
+function pickBestEdge(poly, nearPoint) {
+  if (!Array.isArray(poly) || poly.length < 3 || !isPoint(nearPoint)) return null;
+
+  let bestI = 0;
+  let bestD2 = Infinity;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    const d2 = dist2PointToSeg(nearPoint, a, b);
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bestI = i;
+    }
   }
 
-  const raw = fn({
-    rng,
-    cx,
-    cy,
-    width,
-    height,
-    outerBoundary,
-    site: { ...(site || {}), water: requested },
-    params: params || {},
-  }) || {};
+  const a = poly[bestI];
+  const b = poly[(bestI + 1) % poly.length];
+  if (!isPoint(a) || !isPoint(b)) return null;
 
-  const kind = normalizeKind(raw.kind || requested);
-  const poly = normalizePoly(raw.poly || raw.waterPoly || raw.polygon);
-  const shoreline = normalizeShoreline(
-    raw.shoreline || raw.bank || raw.coastline || raw.riverbank,
-    poly
-  );
+  // Represent shoreline as a 2-point polyline for snapping.
+  return [a, b];
+}
 
-  // If helper returns nothing useful, treat as none.
-  if (!poly || !shoreline) {
-    return { kind: "none", poly: null, shoreline: null };
+export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR } = {}) {
+  const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
+
+  if (kind === "none") {
+    return {
+      kind: "none",
+      river: null,
+      coast: null,
+      shoreline: null,
+      bankPoint: null,
+    };
   }
 
-  return { kind, poly, shoreline };
+  const raw = buildWater({ rng, siteWater: kind, outerBoundary, cx, cy, baseR }) || {};
+
+  if (raw.kind === "river" && Array.isArray(raw.polyline) && raw.polyline.length >= 2) {
+    return {
+      kind: "river",
+      river: { polyline: raw.polyline },
+      coast: null,
+      shoreline: raw.polyline,
+      bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null,
+    };
+  }
+
+  if (raw.kind === "coast" && Array.isArray(raw.polygon) && raw.polygon.length >= 3) {
+    const bankPoint = isPoint(raw.bankPoint) ? raw.bankPoint : { x: cx, y: cy };
+    const shoreline = pickBestEdge(raw.polygon, bankPoint);
+
+    return {
+      kind: "coast",
+      river: null,
+      coast: { polygon: raw.polygon },
+      shoreline,
+      bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null,
+    };
+  }
+
+  // Fallback
+  return {
+    kind: "none",
+    river: null,
+    coast: null,
+    shoreline: null,
+    bankPoint: isPoint(raw.bankPoint) ? raw.bankPoint : null,
+  };
 }
