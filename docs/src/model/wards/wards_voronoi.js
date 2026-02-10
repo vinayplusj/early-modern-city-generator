@@ -20,6 +20,8 @@
 // - clipToFootprint: if true, try to clip cells to footprintPoly when a clipper exists
 
 import { Delaunay } from "https://esm.sh/d3-delaunay@6"; // must vendor this file in docs/vendor/.
+import { clipPolyConvex } from "../../geom/clip_convex.js";
+
 
 /**
  * @typedef {{x:number, y:number}} Point
@@ -344,14 +346,9 @@ function polygonCentroid(poly) {
  * - Until then, keep clipToFootprint = false for Commit 2, and enable it later.
  */
 function tryClipToFootprint(cellPoly, footprintPoly) {
-  // If the project exposes a boolean clipper, connect it here.
-  // Example wiring (only if already have it):
-  // return intersectPolygons(cellPoly, footprintPoly);
-
-  // Conservative fallback:
-  // If centroid is outside footprint, do not clip here, just return the raw cell.
-  const c = polygonCentroid(cellPoly);
-  if (!pointInPoly(c, footprintPoly)) return cellPoly;
-
-  return cellPoly;
+  // Clip Voronoi cell to convex footprint (outerBoundary is a convex hull).
+  // Returns [] if fully outside.
+  const clipped = clipPolyConvex(cellPoly, footprintPoly);
+  if (!clipped || clipped.length < 3) return null;
+  return clipped;
 }
