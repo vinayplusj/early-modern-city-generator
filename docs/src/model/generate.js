@@ -308,11 +308,13 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   };
 
   const { wardSeeds, wards } = buildWardsVoronoi({
-    rng,
+    rng: ctx.rng.wards,
     centre: { x: cx, y: cy },
     footprintPoly: outerBoundary,
     params: WARDS_PARAMS,
   });
+
+  ctx.wards.seeds = wardSeeds;
 
   const { wards: wardsWithRoles, indices: wardRoleIndices } = assignWardRoles({
     wards,
