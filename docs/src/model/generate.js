@@ -581,7 +581,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   
   // Ensure it is inside the wall, not near the wall, and on-canvas.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
   
   // If you want market to live in an inner ward region, enforce that intent here.
   if (marketFallback) {
@@ -591,7 +591,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     if (len(mv) > baseR * 0.18) {
       anchors.market = add(anchors.market, mul(safeNormalize(mv), baseR * 0.08));
       anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-      anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+      anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
     }
   }
   
@@ -599,7 +599,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   
   // Re-ensure inside after clamping.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
 
   // Keep legacy field aligned with the final anchor.
   marketCentre = anchors.market;
