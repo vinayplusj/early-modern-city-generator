@@ -122,7 +122,7 @@ export function buildAnchors(ctx) {
   }
 
   function pickAlternateCitadelWardInner(plazaPoint) {
-    // Prefer inner wards only. This preserves your design intent.
+    // Prefer inner wards only. This preserves the design intent.
     const inner = wards.filter((w) => w && w.role === "inner");
     if (inner.length === 0) return null;
 
@@ -134,12 +134,24 @@ export function buildAnchors(ctx) {
       if (!isPoint(c)) continue;
 
       const d2 = dist2(c, plazaPoint);
+      if (d2 < minAnchorSep * minAnchorSep) continue;      
       if (d2 > bestD2) {
         bestD2 = d2;
         best = w;
       }
     }
-
+    if (!best) {
+      // If all inner wards are within minAnchorSep, fall back to farthest anyway.
+      for (const w of inner) {
+        const c = wardCentroid(w);
+        if (!isPoint(c)) continue;
+        const d2 = dist2(c, plazaPoint);
+        if (d2 > bestD2) {
+          bestD2 = d2;
+          best = w;
+        }
+      }
+    }
     return best;
   }
 
