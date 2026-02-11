@@ -362,25 +362,29 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     // Invariant: anchors.docks is null unless hasDock is true.
     anchors.docks = null;
     
-    function pickPointOnShoreline(shoreline, dir) {
+    function pickPointOnShoreline(shoreline, dir, width, height, pad = 10) {
       if (!Array.isArray(shoreline) || shoreline.length < 2) return null;
     
-      // Shoreline is expected to be a polyline. For coast it is typically a 2-point segment.
-      const a = shoreline[0];
-      const b = shoreline[shoreline.length - 1];
-      if (!a || !b) return null;
+      function inCanvas(p) {
+        return p && p.x >= pad && p.x <= (width - pad) && p.y >= pad && p.y <= (height - pad);
+      }
     
-      const da = a.x * dir.x + a.y * dir.y;
-      const db = b.x * dir.x + b.y * dir.y;
+      // Prefer shoreline points that are already visible.
+      const candidates = shoreline.filter(inCanvas);
+      const pts = (candidates.length >= 2) ? candidates : shoreline;
     
-      // Pick the endpoint most aligned with dir, but bias toward the midpoint for stability.
-      const end = (db > da) ? b : a;
-      const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+      let best = null;
+      let bestDot = -Infinity;
     
-      return {
-        x: mid.x * 0.75 + end.x * 0.25,
-        y: mid.y * 0.75 + end.y * 0.25,
-      };
+      for (const p of pts) {
+        const d = p.x * dir.x + p.y * dir.y;
+        if (d > bestDot) {
+          bestDot = d;
+          best = p;
+        }
+      }
+    
+      return best;
     }
     
     if (
@@ -400,7 +404,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : { x: 1, y: 0 };
     
       // Pick a point on shoreline in that direction (shore-first).
-      const shorePick = pickPointOnShoreline(waterModel.shoreline, dir);
+      const shorePick = pickPointOnShoreline(waterModel.shoreline, dir, width, height, 10);
     
       if (shorePick) {
         // Nudge slightly toward the city centre so the marker does not sit exactly on the water line.
