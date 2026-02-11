@@ -107,9 +107,16 @@ document.getElementById("gates").addEventListener("change", () => {
   syncGateControl();
   regenerate();
 });
-document.getElementById("water").addEventListener("change", regenerate);
-document.getElementById("dock").addEventListener("change", regenerate);
+document.getElementById("water").addEventListener("change", () => {
+  syncDockControl();
+  syncGateControl();
+  regenerate();
+});
 
+document.getElementById("dock").addEventListener("change", () => {
+  syncGateControl();
+  regenerate();
+});
 
 // Debounced resize (prevents 3–5 regen calls during layout settle)
 let resizeTimer = null;
