@@ -12,7 +12,7 @@
 import { mulberry32 } from "../rng/mulberry32.js";
 
 import { add, mul, normalize } from "../geom/primitives.js";
-import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
+import { centroid, pointInPolyOrOn } from "../geom/poly.js";
 
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
@@ -138,6 +138,58 @@ function supportPoint(poly, dir) {
     }
   }
   return best;
+}
+
+function finitePointOrNull(p) {
+  return (p && Number.isFinite(p.x) && Number.isFinite(p.y)) ? p : null;
+}
+
+function vec(a, b) {
+  return { x: b.x - a.x, y: b.y - a.y };
+}
+
+function len(v) {
+  return Math.hypot(v.x, v.y);
+}
+
+function safeNormalize(v, fallback = { x: 1, y: 0 }) {
+  const m = len(v);
+  if (m > 1e-9) return { x: v.x / m, y: v.y / m };
+  return fallback;
+}
+
+function isInsidePolyOrSkip(p, poly) {
+  if (!p) return false;
+  if (!Array.isArray(poly) || poly.length < 3) return true; // treat as pass-through
+  return pointInPolyOrOn(p, poly, 1e-6);
+}
+
+function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
+  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
+
+  let q = p;
+  const dir = safeNormalize(vec(q, toward));
+
+  for (let i = 0; i < iters; i++) {
+    if (pointInPolyOrOn(q, poly, 1e-6)) return q;
+    q = add(q, mul(dir, step));
+  }
+
+  return q;
+}
+
+function pushOutsidePoly(p, poly, awayFrom, step = 4, iters = 80) {
+  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
+
+  let q = p;
+  const dir = safeNormalize(vec(awayFrom, q)); // move away from centre
+
+  for (let i = 0; i < iters; i++) {
+    if (!pointInPolyOrOn(q, poly, 1e-6)) return q;
+    q = add(q, mul(dir, step));
+  }
+
+  return q;
 }
 
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
@@ -268,6 +320,25 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   anchors.plaza = plazaC;
   anchors.citadel = citadelC;
 
+  // Keep plaza/citadel tied to their ward regions (not just "inside wall").
+  const plazaPoly =
+    (plazaWard && Array.isArray(plazaWard.polygon) && plazaWard.polygon.length >= 3) ? plazaWard.polygon :
+    (plazaWard && Array.isArray(plazaWard.poly) && plazaWard.poly.length >= 3) ? plazaWard.poly :
+    null;
+  
+  const citadelPoly =
+    (citadelWard && Array.isArray(citadelWard.polygon) && citadelWard.polygon.length >= 3) ? citadelWard.polygon :
+    (citadelWard && Array.isArray(citadelWard.poly) && citadelWard.poly.length >= 3) ? citadelWard.poly :
+    null;
+  
+  // If a candidate is outside its ward polygon, pull it toward that ward centroid.
+  if (plazaPoly && !pointInPolyOrOn(anchors.plaza, plazaPoly, 1e-6)) {
+    anchors.plaza = pushInsidePoly(anchors.plaza, plazaPoly, wardCentroid(plazaWard) || centre, 4, 60);
+  }
+  
+  if (citadelPoly && !pointInPolyOrOn(anchors.citadel, citadelPoly, 1e-6)) {
+    anchors.citadel = pushInsidePoly(anchors.citadel, citadelPoly, wardCentroid(citadelWard) || centre, 4, 60);
+  }
 
   // ---------------- Anchor constraints ----------------
   const anchorCentreHint = centre;
@@ -289,6 +360,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
   }
 
+  // Final canvas clamp for always-on anchors.
+  anchors.plaza = clampPointToCanvas(anchors.plaza, width, height, 10);
+  anchors.citadel = clampPointToCanvas(anchors.citadel, width, height, 10);
+  
+  // After clamping, re-ensure inside wall base so they are never outside.
+  anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
+  anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
+  anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
+  anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
+
   // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
@@ -306,16 +387,13 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Citadel ----------------
   const citSize = baseR * 0.1;
-  const citCentre = anchors.citadel;
-  const citadel = generateBastionedWall(rng, citCentre.x, citCentre.y, citSize, 5).wall;
-
-  const squareCentre = anchors.plaza;
+  const citadel = generateBastionedWall(rng, anchors.citadel.x, anchors.citadel.y, citSize, 5).wall;
 
   assignDistrictRoles(
     districts,
     cx,
     cy,
-    { squareCentre, citCentre, primaryGate },
+    { squareCentre: anchors.plaza, citCentre: anchors.citadel, primaryGate },
     {
       INNER_COUNT: 3,
       NEW_TOWN_COUNT: 1,
@@ -348,8 +426,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       return;
     }
   }
-
-  if (WARP_FORT.debug) console.log("DISTRICT KINDS POST-ROLES", districts.map(d => d.kind));
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
@@ -472,6 +548,24 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
         p = clampPointToCanvas(p, width, height, 10);
     
         anchors.docks = p;
+        // Docks must be outside the bastioned fort (wallBase). If not, push outward; if still bad, drop it.
+        if (anchors.docks && Array.isArray(wallBase) && wallBase.length >= 3) {
+          if (pointInPolyOrOn(anchors.docks, wallBase, 1e-6)) {
+            // Push away from city centre until outside wallBase.
+            anchors.docks = pushOutsidePoly(anchors.docks, wallBase, centre, 6, 120);
+          }
+        
+          // If it still failed, do not force it. Dock is allowed to be null.
+          if (anchors.docks && pointInPolyOrOn(anchors.docks, wallBase, 1e-6)) {
+            anchors.docks = null;
+          }
+        }
+        
+        // Keep docks on-canvas if it exists.
+        if (anchors.docks) {
+          anchors.docks = clampPointToCanvas(anchors.docks, width, height, 10);
+        }
+
       }
     }
 
@@ -496,7 +590,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     .filter(Boolean);
 
   let marketCentre = computeInitialMarketCentre({
-    squareCentre,
+    squareCentre: anchors.plaza,
     primaryGateWarped,
     cx,
     cy,
@@ -506,7 +600,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   });
 
   marketCentre = safeMarketNudge({
-    squareCentre,
+    squareCentre: anchors.plaza,
     marketCentre,
     centre,
     primaryGate: primaryGateWarped,
@@ -517,16 +611,59 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     wallBase,
   });
 
-  anchors.market = marketCentre;
+  // ---------------- Market anchor (always-on, always valid) ----------------
+  anchors.market = finitePointOrNull(marketCentre);
+  
+  // Prefer an inner ward as a fallback source for market location.
+  const innerWards = (wardsWithRoles || []).filter((w) => w && w.role === "inner");
+  let marketFallback = null;
+  
+  for (const w of innerWards) {
+    const c = wardCentroid(w);
+    if (finitePointOrNull(c)) {
+      marketFallback = c;
+      break;
+    }
+  }
+  
+  if (!anchors.market) {
+    // Last resort: near plaza, but slightly offset.
+    anchors.market = add(anchors.plaza, { x: baseR * 0.03, y: -baseR * 0.02 });
+  }
+  
+  // Ensure it is inside the wall, not near the wall, and on-canvas.
+  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+  
+  // If you want market to live in an inner ward region, enforce that intent here.
+  if (marketFallback) {
+    // If market drifts too far out (or ends up in a non-inner ward), pull toward an inner ward centroid.
+    // This is a soft pull that keeps determinism and avoids hard snapping.
+    const mv = vec(anchors.market, marketFallback);
+    if (len(mv) > baseR * 0.18) {
+      anchors.market = add(anchors.market, mul(safeNormalize(mv), baseR * 0.08));
+      anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+      anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+    }
+  }
+  
+  anchors.market = clampPointToCanvas(anchors.market, width, height, 10);
+  
+  // Re-ensure inside after clamping.
+  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, MIN_WALL_CLEAR, centre);
+
+  // Keep legacy field aligned with the final anchor.
+  marketCentre = anchors.market;
 
   const landmarks = [
-    { id: "square", pointOrPolygon: squareCentre, kind: "main_square", label: "Main Square" },
-    { id: "market", pointOrPolygon: marketCentre, kind: "market", label: "Market" },
+    { id: "square", pointOrPolygon: anchors.plaza, kind: "main_square", label: "Main Square" },
+    { id: "market", pointOrPolygon: anchors.market, kind: "market", label: "Market" },
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  const roads = generateRoadsToCentre(gatesWarped, squareCentre);
-  const avenue = [squareCentre, citCentre];
+  const roads = generateRoadsToCentre(gatesWarped, anchors.plaza);
+  const avenue = [anchors.plaza, anchors.citadel];
 
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
@@ -535,8 +672,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     gatesWarped,
     ring,
     ring2,
-    squareCentre,
-    citCentre,
+    anchors.plaza,
+    anchors.citadel,
     newTown,
   });
 
@@ -554,6 +691,52 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   });
 
   assignBlocksToDistricts(blocks, districts, cx, cy);
+
+  // ---------------- Anchor invariants (debug only) ----------------
+  if (WARP_FORT.debug) {
+    const bad = [];
+  
+    const plazaOk =
+      finitePointOrNull(anchors.plaza) &&
+      isInsidePolyOrSkip(anchors.plaza, wallBase) &&
+      (anchors.plaza.x >= 0 && anchors.plaza.x <= width && anchors.plaza.y >= 0 && anchors.plaza.y <= height);
+  
+    const citadelOk =
+      finitePointOrNull(anchors.citadel) &&
+      isInsidePolyOrSkip(anchors.citadel, wallBase) &&
+      (anchors.citadel.x >= 0 && anchors.citadel.x <= width && anchors.citadel.y >= 0 && anchors.citadel.y <= height);
+  
+    const marketOk =
+      finitePointOrNull(anchors.market) &&
+      isInsidePolyOrSkip(anchors.market, wallBase) &&
+      (anchors.market.x >= 0 && anchors.market.x <= width && anchors.market.y >= 0 && anchors.market.y <= height);
+  
+    let docksOk = true;
+    if (hasDock) {
+      docksOk =
+        (anchors.docks === null) ||
+        (finitePointOrNull(anchors.docks) &&
+          !pointInPolyOrOn(anchors.docks, wallBase, 1e-6) &&
+          isInsidePolyOrSkip(anchors.docks, outerBoundary) &&
+          (anchors.docks.x >= 0 && anchors.docks.x <= width && anchors.docks.y >= 0 && anchors.docks.y <= height));
+    }
+  
+    if (!plazaOk) bad.push("plaza");
+    if (!citadelOk) bad.push("citadel");
+    if (!marketOk) bad.push("market");
+    if (!docksOk) bad.push("docks");
+  
+    if (bad.length) {
+      console.warn("ANCHOR INVARIANTS FAILED", bad, {
+        plaza: anchors.plaza,
+        citadel: anchors.citadel,
+        market: anchors.market,
+        docks: anchors.docks,
+        hasDock,
+        water: waterModel?.kind,
+      });
+    }
+  }
 
   return {
     footprint,
@@ -583,9 +766,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     // Anchors
     centre,
     squareR: baseR * 0.055,
-    squareCentre,
-    marketCentre,
-    citCentre,
     citadel,
     avenue,
     primaryGate: primaryGateWarped,
