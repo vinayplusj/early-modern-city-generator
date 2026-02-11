@@ -523,13 +523,14 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
       }
     }
+  // ---------------- Outworks ----------------
+
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
   // Invariant: length aligns with bastions, but consumers must handle nulls.
   const bastionPolysSafe = Array.isArray(bastionPolys)
     ? bastionPolys.map((p) => (Array.isArray(p) && p.length >= 3 ? p : null))
     : [];
-
-  // ---------------- Outworks ----------------
+  
   const wallForOutworks = wallForDraw;
   const ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
