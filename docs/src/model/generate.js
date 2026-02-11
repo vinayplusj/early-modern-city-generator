@@ -268,6 +268,13 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const primaryGate = placed.primaryGate;
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
   bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
+  
+  if (WARP_FORT.debug) {
+    const okLen = Array.isArray(bastionPolys) && Array.isArray(bastions) && bastionPolys.length === bastions.length;
+    if (!okLen) {
+      throw new Error("bastionPolys length must match bastions length");
+    }
+  }
 
   const hitBastionSet = new Set(placed.hitBastions || []);
   const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
@@ -516,6 +523,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
       }
     }
+  // Bastion polys may include nulls (flattened to avoid New Town intersections).
+  // Invariant: length aligns with bastions, but consumers must handle nulls.
+  const bastionPolysSafe = Array.isArray(bastionPolys)
+    ? bastionPolys.map((p) => (Array.isArray(p) && p.length >= 3 ? p : null))
+    : [];
 
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
@@ -531,7 +543,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
         glacisWidth,
         newTown ? newTown.poly : null,
         bastionCount,
-        bastionPolys,
+        bastionPolysSafe,
         wallForOutworks
       )
     )
