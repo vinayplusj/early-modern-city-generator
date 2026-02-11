@@ -34,49 +34,38 @@ export function render(ctx, model) {
     site,
     water,
 
-    // Walls
     wall,
     wallBase,
     bastionPolys,
     ring,
     ring2,
 
-    // Moatworks
     ditchOuter,
     ditchInner,
     glacisOuter,
 
-    // Features
-    gates,
-    primaryGate,
     ravelins,
 
-    // Anchors
     cx,
     cy,
-    centre,
     squareR,
-    squareCentre,
-    marketCentre,
     citadel,
-    citCentre,
+    anchors,
 
-    // Roads
     roadGraph,
-
-    // New Town
     newTown,
     blocks,
     warp,
   } = model || {};
 
-  // 1) background
-  drawBackground(ctx);
+  const A = anchors || {};
 
-  // 1.0) water (under footprint fill)
+  const gates = A.gates || null;
+  const primaryGate = A.primaryGate || null;
+
+  drawBackground(ctx);
   drawWater(ctx, { water });
 
-  // 1.1) footprint + debug overlays (districts + blocks) + outer boundary stroke
   drawFootprintAndDebugOverlays(ctx, {
     footprint,
     outerBoundary,
@@ -84,29 +73,17 @@ export function render(ctx, model) {
     blocks,
   });
 
-  // 1.5) wards (debug overlay)
   drawWardsDebug(ctx, {
     wards: model?.wards,
     wardSeeds: model?.wardSeeds,
-    wardRoleIndices: model?.wardRoleIndices, // keep for fallback/debug
-    anchors: model?.anchors,
+    wardRoleIndices: model?.wardRoleIndices,
+    anchors: A,
   });
 
-  // 2) New Town polygon + streets + main avenue
-  drawBoundaryAndNewTown(ctx, {
-    outerBoundary,
-    newTown,
-  });
+  drawBoundaryAndNewTown(ctx, { outerBoundary, newTown });
 
-  // 3) glacis + ditch rings + ravelins
-  drawMoatworksAndRavelins(ctx, {
-    glacisOuter,
-    ditchOuter,
-    ditchInner,
-    ravelins,
-  });
+  drawMoatworksAndRavelins(ctx, { glacisOuter, ditchOuter, ditchInner, ravelins });
 
-  // 4) walls + rings + warp overlay
   drawWallsAndRingsAndWarp(ctx, {
     wall,
     wallBase,
@@ -116,33 +93,17 @@ export function render(ctx, model) {
     warp,
   });
 
-  // 5) road graph
   drawRoadGraph(ctx, { roadGraph });
 
-  // 6) gates + primary gate
-  drawGatesAndPrimaryGate(ctx, {
-    gates,
-    primaryGate,
-    cx,
-    cy,
-    squareR,
-  });
+  drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
 
-  // 7) citadel
-  drawCitadel(ctx, {
-    citadel,
-    citCentre,
-  });
+  drawCitadel(ctx, { citadel, anchors: A });
 
-  // 8) landmarks LAST + 9) centre marker
   drawLandmarksAndCentre(ctx, {
     wallBase,
     outerBoundary,
-    centre,
     squareR,
-    squareCentre,
-    marketCentre,
-    anchors: model?.anchors,
+    anchors: A,
     site,
   });
 }
