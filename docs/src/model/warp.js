@@ -23,14 +23,6 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
       if (rr >= params.bandInner && rr <= params.bandOuter) inside++;
       else outside++;
     }
-  
-    console.log("WARP BAND TEST", {
-      bandInner: params.bandInner,
-      bandOuter: params.bandOuter,
-      wallVertsInsideBand: inside,
-      wallVertsOutsideBand: outside,
-      wallVertexCount: wallPoly.length,
-    });
   }
 
 
@@ -47,7 +39,6 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
     rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i] ?? 0, params);
     if (params.debug && i % 120 === 0) {
       const d = districtAtAngle(theta, districts);
-      console.log("WARP DISTRICT SAMPLE", { i, theta, kind: d?.kind ?? null });
     }
   }
 
@@ -57,7 +48,6 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
       const d = districtAtAngle(thetas[j], districts);
       if (!d) nullCount++;
     }
-    console.log("WARP DISTRICT COVERAGE", { nullCount, N });
   
     if (nullCount > 0) {
       console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
@@ -93,8 +83,6 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
       minD = Math.min(minD, delta[i]);
       maxD = Math.max(maxD, delta[i]);
     }
-  
-    console.log("WARP DELTA RANGE", { minD, maxD });
   }
 
   for (let i = 0; i < N; i++) {
@@ -152,8 +140,6 @@ export function warpPolylineRadial(poly, centre, field, params) {
       const d = Math.hypot(dx, dy);
       if (d > maxShift) maxShift = d;
     }
-
-    console.log("WARP WALL MAX SHIFT", maxShift);
   }
 
   return warpedPoly;
@@ -358,7 +344,6 @@ function buildBastionLockMask(thetas, centre, bastions, params) {
   if (params.debug) {
   let minW = 1, maxW = 0;
   for (const w of out) { minW = Math.min(minW, w); maxW = Math.max(maxW, w); }
-  console.log("WARP BASTION MASK RANGE", { minW, maxW });
 }
 
   return out;
@@ -403,7 +388,6 @@ function buildBastionClearMask(thetas, centre, bastions, params) {
       minW = Math.min(minW, w);
       maxW = Math.max(maxW, w);
     }
-    console.log("WARP BASTION CLEAR MASK", { zeros, N, minW, maxW });
   }
 
   return out;
