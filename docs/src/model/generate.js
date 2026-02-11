@@ -445,12 +445,31 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     
         let p = add(snapped, mul(inward, 6));
     
+        const MAX_IN_STEPS = 80;
+        const IN_STEP = 6;
+    
+        // 1) Walk inward until inside the overall buildable boundary.
         if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
-          for (let i = 0; i < 40; i++) {
+          for (let i = 0; i < MAX_IN_STEPS; i++) {
             if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
-            p = add(p, mul(inward, 4));
+            p = add(p, mul(inward, IN_STEP));
           }
         }
+    
+        // 2) Clamp to visible canvas (coast cases often go off-canvas).
+        p = clampPointToCanvas(p, width, height, 10);
+    
+        // 3) Clamping can move it outside boundary again, so walk inward again.
+        if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
+          for (let i = 0; i < MAX_IN_STEPS; i++) {
+            if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
+            p = add(p, mul(inward, IN_STEP));
+            p = clampPointToCanvas(p, width, height, 10);
+          }
+        }
+    
+        // 4) Final clamp so it always remains drawable.
+        p = clampPointToCanvas(p, width, height, 10);
     
         anchors.docks = p;
       }
