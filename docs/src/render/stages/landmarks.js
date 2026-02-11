@@ -81,10 +81,15 @@ export function drawLandmarksAndCentre(ctx, {
   const dockEnabled = Boolean(site && site.hasDock);
   const docks = anchors?.docks || null;
 
+  const pad = 8;
+
   const dockVisible =
     dockEnabled &&
     isPoint(docks) &&
-    (!outerBoundary || outerBoundary.length < 3 || pointInPolyOrOn(docks, outerBoundary, 1e-6));
+    docks.x >= pad &&
+    docks.x <= ctx.canvas.width - pad &&
+    docks.y >= pad &&
+    docks.y <= ctx.canvas.height - pad;
 
   if (dockVisible) {
     const r = Math.max(4, (squareR || 10) * 0.26);
