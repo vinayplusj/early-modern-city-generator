@@ -12,7 +12,7 @@
 import { mulberry32 } from "../rng/mulberry32.js";
 
 import { add, mul, normalize } from "../geom/primitives.js";
-import { centroid } from "../geom/poly.js";
+import { centroid, pointInPoly, pointInPolyOrOn } from "../geom/poly.js";
 
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
@@ -376,6 +376,20 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
         const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
     
         anchors.docks = add(shorePick, mul(inward, 6));
+
+        // Clamp docks onto the land side (inside outerBoundary), in case it still sits in water.
+        if (anchors.docks && Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
+          let p = anchors.docks;
+        
+          // Step inward until the point is inside (or on) the buildable boundary.
+          for (let i = 0; i < 40; i++) {
+            if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
+            p = add(p, mul(inward, 4));
+          }
+        
+          anchors.docks = p;
+        }
+        
       }
     }
 
