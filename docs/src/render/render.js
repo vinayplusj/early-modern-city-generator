@@ -137,6 +137,7 @@ export function render(ctx, model) {
   // 8) landmarks LAST + 9) centre marker
   drawLandmarksAndCentre(ctx, {
     wallBase,
+    outerBoundary,
     centre,
     squareR,
     squareCentre,
