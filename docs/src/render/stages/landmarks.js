@@ -10,15 +10,13 @@ function isPoint(p) {
 export function drawLandmarksAndCentre(ctx, {
   wallBase,
   outerBoundary,
-  centre,
   squareR,
-  squareCentre,
-  marketCentre,
   anchors,
   site,
 }) {
-  const plaza = anchors?.plaza || squareCentre;
-  const market = anchors?.market || marketCentre;
+  const plaza = anchors?.plaza || null;
+  const market = anchors?.market || null;
+  const centreP = anchors?.centre || null;
 
   // Use pointInPolyOrOn so points on the wall line still render.
   const squareInside =
@@ -86,10 +84,7 @@ export function drawLandmarksAndCentre(ctx, {
   const dockVisible =
     dockEnabled &&
     isPoint(docks) &&
-    docks.x >= pad &&
-    docks.x <= ctx.canvas.width - pad &&
-    docks.y >= pad &&
-    docks.y <= ctx.canvas.height - pad;
+    (!outerBoundary || outerBoundary.length < 3 || pointInPolyOrOn(docks, outerBoundary, 1e-6));
 
   if (dockVisible) {
     const r = Math.max(4, (squareR || 10) * 0.26);
@@ -117,11 +112,11 @@ export function drawLandmarksAndCentre(ctx, {
   }
 
   // Centre marker (reference)
-  if (centre) {
+  if (centreP) {
     ctx.save();
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = "#efefef";
-    drawCircle(ctx, centre, 2.5);
+    drawCircle(ctx, centreP, 2.5);
     ctx.fill();
     ctx.restore();
   }
