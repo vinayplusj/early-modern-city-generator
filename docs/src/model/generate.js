@@ -199,10 +199,42 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const plazaWard = wardsWithRoles.find(w => w.role === "plaza");
   const citadelWard = wardsWithRoles.find(w => w.role === "citadel");
 
+function isPoint(p) {
+  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+function wardCentroid(w) {
+  if (!w) return null;
+
+  if (isPoint(w.centroid)) return w.centroid;
+
+  // Common polygon fields used in this codebase
+  const poly =
+    (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
+    (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
+    null;
+
+  if (poly) {
+    const c = centroid(poly);
+    return isPoint(c) ? c : null;
+  }
+
+  return null;
+}
+  
   if (!plazaWard) throw new Error("No plaza ward found");
   if (!citadelWard) throw new Error("No citadel ward found");
-  if (!plazaWard.centroid) throw new Error("Plaza ward centroid missing");
-  if (!citadelWard.centroid) throw new Error("Citadel ward centroid missing");
+  
+  const plazaC = wardCentroid(plazaWard);
+  const citadelC = wardCentroid(citadelWard);
+  
+  // If we still cannot compute, fail with more context.
+  if (!plazaC) throw new Error("Plaza ward centroid missing (no polygon)");
+  if (!citadelC) throw new Error("Citadel ward centroid missing (no polygon)");
+  
+  anchors.plaza = plazaC;
+  anchors.citadel = citadelC;
+
 
   anchors.plaza = plazaWard.centroid;
   anchors.citadel = citadelWard.centroid;
