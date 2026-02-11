@@ -667,13 +667,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
+  const squareCentre = anchors.plaza;
+  const citCentre = anchors.citadel;
+  
   const { polylines, secondaryRoads: secondaryRoadsLegacy } = buildRoadPolylines({
     rng,
     gatesWarped,
     ring,
     ring2,
-    anchors.plaza,
-    anchors.citadel,
+    squareCentre,
+    citCentre,
     newTown,
   });
 
