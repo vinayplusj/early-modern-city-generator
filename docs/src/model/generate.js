@@ -51,6 +51,8 @@ import {
 } from "./anchors/anchor_constraints.js";
 
 import { buildWaterModel } from "./water.js";
+import { buildAnchors } from "./stages/anchors.js";
+import { createCtx } from "./ctx.js";
 
 const WARP_FORT = {
   enabled: true,
@@ -196,6 +198,14 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
 
+  const ctx = createCtx({
+    seed,
+    w: width,
+    h: height,
+    site: { water: waterKind, hasDock },
+    params: { bastions: bastionCount, gates: gateCount },
+  });
+
   const rng = mulberry32(seed);
 
   const cx = width * 0.5;
@@ -216,6 +226,12 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   const ditchWidth = wallR * 0.035;
   const glacisWidth = wallR * 0.08;
+  ctx.params.baseR = baseR;
+  ctx.params.minWallClear = ditchWidth * 1.25;
+  ctx.params.minAnchorSep = baseR * 0.12;
+  ctx.params.canvasPad = 10;
+
+  ctx.geom.wallBase = wallBase;
 
   const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
   const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
@@ -223,15 +239,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   const centre = centroid(footprint);
 
-  const anchors = {
-    centre,        // {x,y}
-    plaza: null,   // {x,y}
-    citadel: null, // {x,y}
-    market: null,  // {x,y}
-    docks: null,   // {x,y} or null
-    gates: null,   // array of gate points
-    primaryGate: null, // single gate point
-  };
+  let anchors = null;
 
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
 
@@ -305,70 +313,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     params: { innerCount: 8 },
   });
 
-  const plazaWard = wardsWithRoles.find((w) => w.role === "plaza");
-  const citadelWard = wardsWithRoles.find((w) => w.role === "citadel");
-  
+  ctx.wards.cells = wardsWithRoles;
+  ctx.wards.roleIndices = wardRoleIndices;
 
-  
-  if (!plazaWard) throw new Error("No plaza ward found");
-  if (!citadelWard) throw new Error("No citadel ward found");
-  
-  // Deterministic fallbacks if a ward has no usable polygon.
-  const plazaC = wardCentroid(plazaWard) || { x: cx, y: cy };
-  const citadelC = wardCentroid(citadelWard) || { x: cx - baseR * 0.12, y: cy + baseR * 0.02 };
-  
-  anchors.plaza = plazaC;
-  anchors.citadel = citadelC;
-
-  // Keep plaza/citadel tied to their ward regions (not just "inside wall").
-  const plazaPoly =
-    (plazaWard && Array.isArray(plazaWard.polygon) && plazaWard.polygon.length >= 3) ? plazaWard.polygon :
-    (plazaWard && Array.isArray(plazaWard.poly) && plazaWard.poly.length >= 3) ? plazaWard.poly :
-    null;
-  
-  const citadelPoly =
-    (citadelWard && Array.isArray(citadelWard.polygon) && citadelWard.polygon.length >= 3) ? citadelWard.polygon :
-    (citadelWard && Array.isArray(citadelWard.poly) && citadelWard.poly.length >= 3) ? citadelWard.poly :
-    null;
-  
-  // If a candidate is outside its ward polygon, pull it toward that ward centroid.
-  if (plazaPoly && !pointInPolyOrOn(anchors.plaza, plazaPoly, 1e-6)) {
-    anchors.plaza = pushInsidePoly(anchors.plaza, plazaPoly, wardCentroid(plazaWard) || centre, 4, 60);
-  }
-  
-  if (citadelPoly && !pointInPolyOrOn(anchors.citadel, citadelPoly, 1e-6)) {
-    anchors.citadel = pushInsidePoly(anchors.citadel, citadelPoly, wardCentroid(citadelWard) || centre, 4, 60);
-  }
-
-  // ---------------- Anchor constraints ----------------
-  const anchorCentreHint = centre;
-
-  anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
-  anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
-
-  const MIN_WALL_CLEAR = ditchWidth * 1.25;
-  anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
-  anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
-
-  const MIN_ANCHOR_SEP = baseR * 0.12;
-  {
-    const sep = enforceMinSeparation(anchors.plaza, anchors.citadel, MIN_ANCHOR_SEP);
-    anchors.plaza = ensureInside(wallBase, sep.a, anchorCentreHint, 1.0);
-    anchors.citadel = ensureInside(wallBase, sep.b, anchorCentreHint, 1.0);
-
-    anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
-    anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
-  }
-
-  // Final canvas clamp for always-on anchors.
-  anchors.plaza = clampPointToCanvas(anchors.plaza, width, height, 10);
-  anchors.citadel = clampPointToCanvas(anchors.citadel, width, height, 10);
-  
-  // After clamping, re-ensure inside wall base so they are never outside.
-  anchors.plaza = ensureInside(wallBase, anchors.plaza, anchorCentreHint, 1.0);
-  anchors.citadel = ensureInside(wallBase, anchors.citadel, anchorCentreHint, 1.0);
-  anchors.plaza = pushAwayFromWall(wallBase, anchors.plaza, MIN_WALL_CLEAR, anchorCentreHint);
-  anchors.citadel = pushAwayFromWall(wallBase, anchors.citadel, MIN_WALL_CLEAR, anchorCentreHint);
+  anchors = buildAnchors(ctx);
 
   // ---------------- Inner rings ----------------
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
