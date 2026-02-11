@@ -9,6 +9,7 @@ function isPoint(p) {
 
 export function drawLandmarksAndCentre(ctx, {
   wallBase,
+  outerBoundary,
   centre,
   squareR,
   squareCentre,
@@ -83,7 +84,7 @@ export function drawLandmarksAndCentre(ctx, {
   const dockVisible =
     dockEnabled &&
     isPoint(docks) &&
-    (!wallBase || wallBase.length < 3 || pointInPolyOrOn(docks, wallBase, 1e-6));
+    (!outerBoundary || outerBoundary.length < 3 || pointInPolyOrOn(docks, outerBoundary, 1e-6));
 
   if (dockVisible) {
     const r = Math.max(4, (squareR || 10) * 0.26);
