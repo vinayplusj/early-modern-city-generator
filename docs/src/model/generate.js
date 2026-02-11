@@ -123,6 +123,23 @@ function wardCentroid(w) {
     return null;
   }
 
+function supportPoint(poly, dir) {
+  if (!Array.isArray(poly) || poly.length < 1) return null;
+
+  let best = poly[0];
+  let bestDot = best.x * dir.x + best.y * dir.y;
+
+  for (let i = 1; i < poly.length; i++) {
+    const p = poly[i];
+    const d = p.x * dir.x + p.y * dir.y;
+    if (d > bestDot) {
+      bestDot = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
@@ -401,34 +418,33 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       return best;
     }
     
+    const dockPoly =
+      (newTown?.poly && newTown.poly.length >= 3) ? newTown.poly :
+      (outerBoundary && outerBoundary.length >= 3) ? outerBoundary :
+      null;
+    
     if (
       hasDock &&
-      newTown?.poly &&
-      newTown.poly.length >= 3 &&
+      dockPoly &&
       anchors.primaryGate &&
       waterModel &&
       waterModel.kind !== "none" &&
       Array.isArray(waterModel.shoreline) &&
       waterModel.shoreline.length >= 2
     ) {
-      // Stable direction: centre -> primary gate
       const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
       const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : { x: 1, y: 0 };
     
-      // Pick a stable “city-facing” point on New Town boundary.
-      const v = supportPoint(newTown.poly, dir);
+      const v = supportPoint(dockPoly, dir);
     
       if (v) {
-        // Snap to shoreline (river polyline or coast polyline).
         const snapped = snapPointToPolyline(v, waterModel.shoreline);
     
-        // Nudge slightly toward the city centre so it sits on land side, not exactly on the water line.
         const iv = { x: centre.x - snapped.x, y: centre.y - snapped.y };
         const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
     
         let p = add(snapped, mul(inward, 6));
     
-        // Ensure it is inside the overall buildable boundary (but do NOT require inside wallBase).
         if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
           for (let i = 0; i < 40; i++) {
             if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
