@@ -196,48 +196,47 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     params: { innerCount: 8 },
   });
 
-  const plazaWard = wardsWithRoles.find(w => w.role === "plaza");
-  const citadelWard = wardsWithRoles.find(w => w.role === "citadel");
-
-function isPoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
-
-function wardCentroid(w) {
-  if (!w) return null;
-
-  if (isPoint(w.centroid)) return w.centroid;
-
-  // Common polygon fields used in this codebase
-  const poly =
-    (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
-    (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
-    null;
-
-  if (poly) {
-    const c = centroid(poly);
-    return isPoint(c) ? c : null;
+  const plazaWard = wardsWithRoles.find((w) => w.role === "plaza");
+  const citadelWard = wardsWithRoles.find((w) => w.role === "citadel");
+  
+  function isPoint(p) {
+    return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
   }
-
-  return null;
-}
+  
+  function wardCentroid(w) {
+    if (!w) return null;
+  
+    if (isPoint(w.centroid)) return w.centroid;
+  
+    const poly =
+      (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
+      (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
+      null;
+  
+    if (poly) {
+      const c = centroid(poly);
+      if (isPoint(c)) return c;
+    }
+  
+    if (isPoint(w.site)) return w.site;
+    if (isPoint(w.seed)) return w.seed;
+    if (isPoint(w.point)) return w.point;
+    if (isPoint(w.center)) return w.center;
+    if (isPoint(w.centre)) return w.centre;
+  
+    return null;
+  }
   
   if (!plazaWard) throw new Error("No plaza ward found");
   if (!citadelWard) throw new Error("No citadel ward found");
   
-  const plazaC = wardCentroid(plazaWard);
-  const citadelC = wardCentroid(citadelWard);
-  
-  // If we still cannot compute, fail with more context.
-  if (!plazaC) throw new Error("Plaza ward centroid missing (no polygon)");
-  if (!citadelC) throw new Error("Citadel ward centroid missing (no polygon)");
+  // Deterministic fallbacks if a ward has no usable polygon.
+  const plazaC = wardCentroid(plazaWard) || { x: cx, y: cy };
+  const citadelC = wardCentroid(citadelWard) || { x: cx - baseR * 0.12, y: cy + baseR * 0.02 };
   
   anchors.plaza = plazaC;
   anchors.citadel = citadelC;
 
-
-  anchors.plaza = plazaWard.centroid;
-  anchors.citadel = citadelWard.centroid;
 
   // ---------------- Anchor constraints ----------------
   const anchorCentreHint = centre;
