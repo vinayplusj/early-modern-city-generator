@@ -228,7 +228,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const glacisWidth = wallR * 0.08;
   ctx.params.baseR = baseR;
   ctx.params.minWallClear = ditchWidth * 1.25;
-  ctx.params.minAnchorSep = baseR * 0.12;
+  // Keep separation proportional, but bounded so it is always satisfiable.
+  ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
   ctx.params.canvasPad = 10;
 
   ctx.geom.wallBase = wallBase;
