@@ -115,25 +115,25 @@ export function buildAnchors(ctx) {
   // Ward-driven: pick the wards by role.
   const plazaWard = wards.find((wd) => wd && wd.role === "plaza") || null;
   const citadelWard = wards.find((wd) => wd && wd.role === "citadel") || null;
+  function dist2(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return dx * dx + dy * dy;
+  }
 
-  function pickAlternateCitadelWard(plazaPoint) {
-    // Prefer an inner ward farthest from plaza, then fall back to any non-plaza ward.
-    const candidates = wards.filter((w) => w && w.role && w.role !== "plaza");
+  function pickAlternateCitadelWardInner(plazaPoint) {
+    // Prefer inner wards only. This preserves your design intent.
+    const inner = wards.filter((w) => w && w.role === "inner");
+    if (inner.length === 0) return null;
 
     let best = null;
     let bestD2 = -Infinity;
 
-    for (const w of candidates) {
-      // Never select the plaza ward itself.
-      if (w === plazaWard) continue;
-
+    for (const w of inner) {
       const c = wardCentroid(w);
       if (!isPoint(c)) continue;
 
-      const dx = c.x - plazaPoint.x;
-      const dy = c.y - plazaPoint.y;
-      const d2 = dx * dx + dy * dy;
-
+      const d2 = dist2(c, plazaPoint);
       if (d2 > bestD2) {
         bestD2 = d2;
         best = w;
@@ -152,6 +152,11 @@ export function buildAnchors(ctx) {
   // Initial candidates from ward centroid.
   let plaza = wardCentroid(plazaWard) || { x: ctx.canvas.cx, y: ctx.canvas.cy };
   let citadel = wardCentroid(citadelWard) || { x: ctx.canvas.cx - baseR * 0.12, y: ctx.canvas.cy + baseR * 0.02 };
+
+  if (citadelWard && citadelWard.role !== "inner" && wards.some((w) => w && w.role === "inner")) {
+    const alt = pickAlternateCitadelWardInner(plaza);
+    if (alt) citadel = wardCentroid(alt) || citadel;
+  }  
 
   // Ensure each anchor is inside its ward poly if available.
   if (plazaPoly && !pointInPolyOrOn(plaza, plazaPoly, 1e-6)) {
@@ -201,14 +206,11 @@ export function buildAnchors(ctx) {
   assertFinitePoint(plaza, "anchors.plaza");
   assertFinitePoint(citadel, "anchors.citadel");
 
-  // Repair pass if plaza and citadel are too close.
-  const dx0 = citadel.x - plaza.x;
-  const dy0 = citadel.y - plaza.y;
-  const d0 = Math.hypot(dx0, dy0);
-
+  // Repair pass: if plaza and citadel are too close, choose a different inner ward for citadel,
+  // then enforce separation deterministically inside wallBase.
+  const d0 = Math.hypot(citadel.x - plaza.x, citadel.y - plaza.y);
   if (!(d0 >= minAnchorSep)) {
-    // 1) Try picking a different ward for citadel, deterministically.
-    const alt = pickAlternateCitadelWard(plaza);
+    const alt = pickAlternateCitadelWardInner(plaza);
     if (alt) {
       const altPoly = wardPoly(alt);
       let altC = wardCentroid(alt) || citadel;
@@ -217,33 +219,28 @@ export function buildAnchors(ctx) {
         altC = pushInsidePoly(altC, altPoly, wardCentroid(alt) || centre, 4, 60);
       }
 
-      // Apply the same wall constraints.
       altC = ensureInside(wallBase, altC, centreHint, 1.0);
       altC = pushAwayFromWall(wallBase, altC, minWallClear, centreHint);
 
       citadel = altC;
     }
 
-    // 2) If still too close, force separation deterministically.
-    {
-      const sep = enforceMinSeparation(plaza, citadel, minAnchorSep);
-      plaza = ensureInside(wallBase, sep.a, centreHint, 1.0);
-      citadel = ensureInside(wallBase, sep.b, centreHint, 1.0);
+    const sep = enforceMinSeparation(plaza, citadel, minAnchorSep);
+    plaza = ensureInside(wallBase, sep.a, centreHint, 1.0);
+    citadel = ensureInside(wallBase, sep.b, centreHint, 1.0);
 
-      plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
-      citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
+    plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
+    citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
 
-      plaza = clampPointToCanvas(plaza, w, h, pad);
-      citadel = clampPointToCanvas(citadel, w, h, pad);
+    plaza = clampPointToCanvas(plaza, w, h, pad);
+    citadel = clampPointToCanvas(citadel, w, h, pad);
 
-      plaza = ensureInside(wallBase, plaza, centreHint, 1.0);
-      citadel = ensureInside(wallBase, citadel, centreHint, 1.0);
-    }
+    plaza = ensureInside(wallBase, plaza, centreHint, 1.0);
+    citadel = ensureInside(wallBase, citadel, centreHint, 1.0);
   }
 
   // Now validate strictly.
   assertDistinctPoints(plaza, citadel, minAnchorSep, "plaza", "citadel");
-
 
   return {
     centre,
