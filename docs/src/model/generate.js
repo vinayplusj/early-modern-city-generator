@@ -83,6 +83,46 @@ const WARP_FORT = {
   bastionClearFeather: 0.06,
 };
 
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function clampPointToCanvas(p, w, h, pad = 8) {
+  if (!p) return p;
+  return {
+    x: clamp(p.x, pad, w - pad),
+    y: clamp(p.y, pad, h - pad),
+  };
+}
+        
+function isPoint(p) {
+    return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+  }
+  
+function wardCentroid(w) {
+    if (!w) return null;
+  
+    if (isPoint(w.centroid)) return w.centroid;
+  
+    const poly =
+      (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
+      (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
+      null;
+  
+    if (poly) {
+      const c = centroid(poly);
+      if (isPoint(c)) return c;
+    }
+  
+    if (isPoint(w.site)) return w.site;
+    if (isPoint(w.seed)) return w.seed;
+    if (isPoint(w.point)) return w.point;
+    if (isPoint(w.center)) return w.center;
+    if (isPoint(w.centre)) return w.centre;
+  
+    return null;
+  }
+
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
@@ -199,33 +239,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const plazaWard = wardsWithRoles.find((w) => w.role === "plaza");
   const citadelWard = wardsWithRoles.find((w) => w.role === "citadel");
   
-  function isPoint(p) {
-    return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-  }
-  
-  function wardCentroid(w) {
-    if (!w) return null;
-  
-    if (isPoint(w.centroid)) return w.centroid;
-  
-    const poly =
-      (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
-      (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
-      null;
-  
-    if (poly) {
-      const c = centroid(poly);
-      if (isPoint(c)) return c;
-    }
-  
-    if (isPoint(w.site)) return w.site;
-    if (isPoint(w.seed)) return w.seed;
-    if (isPoint(w.point)) return w.point;
-    if (isPoint(w.center)) return w.center;
-    if (isPoint(w.centre)) return w.centre;
-  
-    return null;
-  }
+
   
   if (!plazaWard) throw new Error("No plaza ward found");
   if (!citadelWard) throw new Error("No citadel ward found");
@@ -343,19 +357,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   anchors.gates = gatesWarped;
   anchors.primaryGate = primaryGateWarped;
 
-  function supportPoint(poly, dir) {
-    if (!poly || poly.length < 1) return null;
-    let best = poly[0];
-    let bestDot = best.x * dir.x + best.y * dir.y;
-  
-    for (let i = 1; i < poly.length; i++) {
-      const p = poly[i];
-      const d = p.x * dir.x + p.y * dir.y;
-      if (d > bestDot) { bestDot = d; best = p; }
-    }
-    return best;
-  }
-
     // ---------------- Docks ----------------
     // Deterministic docks point, created only when the UI enables it.
     // Invariant: anchors.docks is null unless hasDock is true.
@@ -407,12 +408,12 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
         const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
     
         anchors.docks = add(shorePick, mul(inward, 6));
-
-        // Clamp docks onto the land side (inside outerBoundary), in case it still sits in water.
+        
+        // After your existing outerBoundary inward stepping:
+        // 1) Step inward until inside (or on) the buildable boundary.
         if (anchors.docks && Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
           let p = anchors.docks;
         
-          // Step inward until the point is inside (or on) the buildable boundary.
           for (let i = 0; i < 40; i++) {
             if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
             p = add(p, mul(inward, 4));
@@ -421,10 +422,26 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
           anchors.docks = p;
         }
         
+        // 2) Clamp to visible canvas.
+        anchors.docks = clampPointToCanvas(anchors.docks, width, height, 10);
+        
+        // 3) Clamp may move it outside boundary again, so re-step.
+        if (anchors.docks && Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
+          let p = anchors.docks;
+        
+          for (let i = 0; i < 40; i++) {
+            if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
+            p = add(p, mul(inward, 4));
+          }
+        
+          anchors.docks = p;
+        }
+        
+        // 4) Final clamp to guarantee visibility.
+        anchors.docks = clampPointToCanvas(anchors.docks, width, height, 10);
+
       }
     }
-
-
 
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
