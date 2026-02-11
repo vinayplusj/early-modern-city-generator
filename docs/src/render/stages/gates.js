@@ -3,7 +3,7 @@
 import { drawCircle } from "../helpers/draw.js";
 import { drawGatehouse } from "../icons/gatehouse.js";
 
-export function drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR }) {
+export function drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR, anchors }) {
   // Gates + markers
   if (gates && gates.length) {
     for (const g of gates) {
