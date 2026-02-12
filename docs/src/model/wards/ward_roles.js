@@ -54,6 +54,78 @@
 import { centroid } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 
+function wardAdjacency(wards) {
+  // Build adjacency by shared polygon edges using quantised point keys.
+  // Invariant: wards are Voronoi partitions clipped to same boundary, so shared borders exist.
+
+  const bbox = (() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const w of wards) {
+      const poly = w?.poly;
+      if (!Array.isArray(poly)) continue;
+      for (const p of poly) {
+        if (!p) continue;
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+    }
+    const ok = Number.isFinite(minX);
+    return ok ? { minX, minY, maxX, maxY } : null;
+  })();
+
+  if (!bbox) return wards.map(() => []);
+
+  const dx = bbox.maxX - bbox.minX;
+  const dy = bbox.maxY - bbox.minY;
+  const diag = Math.sqrt(dx * dx + dy * dy);
+
+  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
+  const inv = 1 / eps;
+
+  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
+  const edgeKey = (aKey, bKey) => (aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`);
+
+  // edgeKey -> list of ward indices that have this edge
+  const edgeOwners = new Map();
+
+  for (let wi = 0; wi < wards.length; wi++) {
+    const poly = wards[wi]?.poly;
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (!a || !b) continue;
+      const aKey = keyOf(a);
+      const bKey = keyOf(b);
+      if (aKey === bKey) continue;
+
+      const k = edgeKey(aKey, bKey);
+      if (!edgeOwners.has(k)) edgeOwners.set(k, []);
+      edgeOwners.get(k).push(wi);
+    }
+  }
+
+  const adj = wards.map(() => new Set());
+
+  for (const owners of edgeOwners.values()) {
+    if (owners.length < 2) continue;
+    // If more than 2 owners due to quantisation, connect all pairs deterministically.
+    for (let i = 0; i < owners.length; i++) {
+      for (let j = i + 1; j < owners.length; j++) {
+        const a = owners[i];
+        const b = owners[j];
+        adj[a].add(b);
+        adj[b].add(a);
+      }
+    }
+  }
+
+  return adj.map((s) => Array.from(s).sort((a, b) => a - b));
+}
+
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
 
@@ -90,28 +162,106 @@ export function assignWardRoles({ wards, centre, params }) {
 
   // Roles by required ordering.
   const plazaWard = order[0];
-  const innerWards = order.slice(1, 1 + p.innerCount);
-  const citadelWard = order[1 + p.innerCount] ?? order[order.length - 1];
+
+  // Select a citadel candidate deterministically before picking inner wards.
+  // Default: the ward immediately after the inner band in distance order.
+  const innerCount = p.innerCount;
+
+  // Helper: map ward id -> index in wardsCopy for adjacency traversal.
+  const idToIndex = new Map();
+  for (let i = 0; i < wardsCopy.length; i++) idToIndex.set(wardsCopy[i].id, i);
+
+  const plazaIdx = idToIndex.get(plazaWard.id);
+
+  // Fallback safety: if id mapping fails, degrade to distance-only logic.
+  if (plazaIdx === undefined) {
+    for (const w of wardsCopy) w.role = "plains";
+    return {
+      wards: wardsCopy,
+      indices: { plaza: -1, citadel: -1, inner: [], outside: wardsCopy.map((w) => w.id) },
+    };
+  }
+
+  // Choose initial inner candidates by distance order (excluding plaza).
+  const candidatesByOrder = order.slice(1);
+
+  // Choose citadel ward as the (innerCount + 1)th in distance order (excluding plaza).
+  // If not enough, pick last available.
+  const citadelWard = candidatesByOrder[Math.min(innerCount, candidatesByOrder.length - 1)];
+  let citadelId = citadelWard ? citadelWard.id : plazaWard.id;
+  let citadelIdx = idToIndex.get(citadelId);
+
+  // Build adjacency on wardsCopy (consistent data set).
+  const adj = wardAdjacency(wardsCopy);
+
+  // Deterministic flood fill outward from plaza until innerCount wards selected.
+  // Exclude plaza and citadel from the inner set.
+  const exclude = new Set([plazaIdx]);
+  if (citadelIdx !== undefined) exclude.add(citadelIdx);
+
+  const innerIdxs = [];
+  const visited = new Set([plazaIdx]);
+  let frontier = [plazaIdx];
+
+  while (frontier.length && innerIdxs.length < innerCount) {
+    const nextFrontier = [];
+    frontier.sort((a, b) => a - b);
+
+    for (const u of frontier) {
+      const nbrs = adj[u] || [];
+      for (const v of nbrs) {
+        if (visited.has(v)) continue;
+        visited.add(v);
+        nextFrontier.push(v);
+
+        if (!exclude.has(v)) {
+          innerIdxs.push(v);
+          if (innerIdxs.length >= innerCount) break;
+        }
+      }
+      if (innerIdxs.length >= innerCount) break;
+    }
+
+    frontier = nextFrontier;
+  }
+
+  // Fallback: if BFS did not yield enough, fill by distance order deterministically.
+  if (innerIdxs.length < innerCount) {
+    const excludeIds = new Set([plazaWard.id, citadelId]);
+    const already = new Set(innerIdxs.map((i) => wardsCopy[i]?.id));
+
+    for (const w of candidatesByOrder) {
+      if (innerIdxs.length >= innerCount) break;
+      if (excludeIds.has(w.id)) continue;
+      if (already.has(w.id)) continue;
+      const idx = idToIndex.get(w.id);
+      if (idx === undefined) continue;
+      innerIdxs.push(idx);
+      already.add(w.id);
+    }
+  }
+
+  // Now ensure citadel is distinct from plaza and inner wards.
+  // If collision, pick next available by order.
+  {
+    const usedIds = new Set([plazaWard.id, ...innerIdxs.map((i) => wardsCopy[i].id)]);
+    if (usedIds.has(citadelId)) {
+      const alt = order.find((w) => !usedIds.has(w.id));
+      if (alt) {
+        citadelId = alt.id;
+        citadelIdx = idToIndex.get(citadelId);
+      }
+    }
+  }
+
+  const innerWards = innerIdxs.map((i) => wardsCopy[i]).filter(Boolean);
 
   // Assign roles.
   setRole(wardsCopy, plazaWard.id, "plaza");
-
-  for (const w of innerWards) {
-    setRole(wardsCopy, w.id, "inner");
-  }
-
-  // Ensure citadel is distinct from plaza and any inner ward.
-  // If it collides, pick the next available ward by order.
-  const used = new Set([plazaWard.id, ...innerWards.map((w) => w.id)]);
-  let citadelId = citadelWard.id;
-
-  if (used.has(citadelId)) {
-    const alt = order.find((w) => !used.has(w.id));
-    if (alt) citadelId = alt.id;
-  }
-
+  for (const w of innerWards) setRole(wardsCopy, w.id, "inner");
   setRole(wardsCopy, citadelId, "citadel");
-  used.add(citadelId);
+
+  const used = new Set([plazaWard.id, citadelId, ...innerWards.map((w) => w.id)]);
 
   // Remaining wards are "outside candidates".
   const outside = order.filter((w) => !used.has(w.id));
@@ -123,7 +273,6 @@ export function assignWardRoles({ wards, centre, params }) {
   assignOutsideRolesByBands({
     wards: wardsCopy,
     outsideOrder: outside,
-    centre,
     params: p,
   });
 
