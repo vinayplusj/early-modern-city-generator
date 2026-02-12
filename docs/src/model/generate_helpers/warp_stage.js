@@ -20,6 +20,21 @@ export function buildFortWarp({
     params: { ...params, bandInner: 0, bandOuter: 0 },
   });
 
+    // Debug-only invariant: centre-to-wall rays should usually hit the wall.
+  // If many rays miss, the centre is likely outside the wall, or the wall is degenerate/self-intersecting.
+  if (params.debug && tmp && tmp.stats && Number.isFinite(tmp.stats.rFortNullSamples)) {
+    const misses = tmp.stats.rFortNullSamples;
+    const N = tmp.N;
+
+    // Threshold: allow some misses (numerical edge cases), but fail if it is systemic.
+    // 20% is conservative; raise to 30% if you see false positives.
+    const maxMisses = Math.floor(N * 0.20);
+
+    if (misses > maxMisses) {
+      throw new Error(`warp: rFort coverage failed (misses=${misses}/${N}). centre may be outside wallPoly or wallPoly is degenerate.`);
+    }
+  }
+
   let sum = 0;
   let count = 0;
   
