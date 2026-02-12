@@ -126,6 +126,160 @@ function wardAdjacency(wards) {
   return adj.map((s) => Array.from(s).sort((a, b) => a - b));
 }
 
+function coreHoleCount({ wards, coreIdxs }) {
+  const polys = [];
+  for (const idx of coreIdxs) {
+    const poly = wards[idx]?.poly;
+    if (Array.isArray(poly) && poly.length >= 3) polys.push(poly);
+  }
+  if (polys.length === 0) return 0;
+
+  // Inline: union boundary via edge cancellation (same method as districts).
+  // We only need hole count, so minimal implementation is acceptable here.
+  const bbox = (() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const poly of polys) for (const p of poly) {
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    }
+    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  })();
+  if (!bbox) return 0;
+
+  const dx = bbox.maxX - bbox.minX, dy = bbox.maxY - bbox.minY;
+  const diag = Math.sqrt(dx * dx + dy * dy);
+  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
+  const inv = 1 / eps;
+  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
+  const eKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+  const rep = new Map();
+  const edgeCount = new Map();
+
+  for (const poly of polys) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ak = keyOf(a), bk = keyOf(b);
+      if (ak === bk) continue;
+      if (!rep.has(ak)) rep.set(ak, { x: a.x, y: a.y });
+      if (!rep.has(bk)) rep.set(bk, { x: b.x, y: b.y });
+      const k = eKey(ak, bk);
+      edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+    }
+  }
+
+  // Boundary edges = count === 1, build adjacency.
+  const adj = new Map();
+  const unused = new Set();
+  function addAdj(u, v) {
+    if (!adj.has(u)) adj.set(u, new Set());
+    adj.get(u).add(v);
+  }
+
+  for (const [k, c] of edgeCount.entries()) {
+    if (c !== 1) continue;
+    const [a, b] = k.split("|");
+    addAdj(a, b); addAdj(b, a);
+    unused.add(k);
+  }
+
+  function nextNeighbour(curr, prev) {
+    const nbrs = adj.get(curr);
+    if (!nbrs) return null;
+    const ordered = Array.from(nbrs).sort();
+    for (const n of ordered) {
+      if (n === prev) continue;
+      const k = eKey(curr, n);
+      if (unused.has(k)) return n;
+    }
+    for (const n of ordered) {
+      const k = eKey(curr, n);
+      if (unused.has(k)) return n;
+    }
+    return null;
+  }
+
+  const loops = [];
+  const keysSorted = () => Array.from(adj.keys()).sort();
+
+  while (unused.size > 0) {
+    let start = null;
+    for (const u of keysSorted()) {
+      for (const v of (adj.get(u) || [])) {
+        if (unused.has(eKey(u, v))) { start = u; break; }
+      }
+      if (start) break;
+    }
+    if (!start) break;
+
+    const nbrs0 = Array.from(adj.get(start) || []).sort();
+    let first = null;
+    for (const v of nbrs0) {
+      if (unused.has(eKey(start, v))) { first = v; break; }
+    }
+    if (!first) break;
+
+    const loopKeys = [start, first];
+    unused.delete(eKey(start, first));
+
+    let prev = start, curr = first;
+    for (let step = 0; step < 200000; step++) {
+      const nxt = nextNeighbour(curr, prev);
+      if (!nxt) break;
+      if (nxt === start) { unused.delete(eKey(curr, nxt)); break; }
+      unused.delete(eKey(curr, nxt));
+      prev = curr; curr = nxt;
+      loopKeys.push(curr);
+    }
+
+    const loop = loopKeys.map((k) => rep.get(k)).filter(Boolean);
+    if (loop.length >= 3) loops.push(loop);
+  }
+
+  if (loops.length <= 1) return 0;
+
+  // Find outer by abs area.
+  const area = (poly) => {
+    let a = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return a * 0.5;
+  };
+  let outer = loops[0], outerAbs = Math.abs(area(loops[0]));
+  for (const l of loops) {
+    const aa = Math.abs(area(l));
+    if (aa > outerAbs) { outerAbs = aa; outer = l; }
+  }
+
+  // Hole test by centroid-in-outer (use your existing centroid if you prefer).
+  const centroidSimple = (poly) => {
+    let x = 0, y = 0;
+    for (const p of poly) { x += p.x; y += p.y; }
+    return { x: x / poly.length, y: y / poly.length };
+  };
+  const pointInPoly = (pt, poly) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
+      const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+        (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi + 1e-12) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  let holes = 0;
+  for (const l of loops) {
+    if (l === outer) continue;
+    const c = centroidSimple(l);
+    if (pointInPoly(c, outer)) holes += 1;
+  }
+  return holes;
+}
+
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
 
@@ -253,15 +407,65 @@ export function assignWardRoles({ wards, centre, params }) {
       }
     }
   }
+ 
+ // Assign plaza + citadel now. Inner is assigned after optional plugging.
+ setRole(wardsCopy, plazaWard.id, "plaza");
+ setRole(wardsCopy, citadelId, "citadel");
+ 
+ // Optional: plug holes by adding a few extra inner wards (deterministic).
+ const maxPlugAdds = p.maxPlugAdds;
+ if (maxPlugAdds > 0) {
+   const plazaIdx2 = plazaIdx;
+   const citadelIdx2 = citadelIdx;
+ 
+   const isCore = (idx) =>
+     idx === plazaIdx2 || idx === citadelIdx2 || innerIdxs.includes(idx);
+ 
+   for (let step = 0; step < maxPlugAdds; step++) {
+     const coreIdxs = [plazaIdx2, citadelIdx2, ...innerIdxs].filter((x) => Number.isInteger(x));
+     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs });
+     if (holesBefore === 0) break;
+ 
+     const candidateSet = new Set();
+     for (const u of innerIdxs) for (const v of (adj[u] || [])) candidateSet.add(v);
+ 
+     const candidates = Array.from(candidateSet)
+       .filter((v) => !isCore(v))
+       .sort((a, b) => {
+         const da = wardsCopy[a]?.distToCentre ?? Infinity;
+         const db = wardsCopy[b]?.distToCentre ?? Infinity;
+         if (da !== db) return da - db;
+         const ia = wardsCopy[a]?.id ?? 0;
+         const ib = wardsCopy[b]?.id ?? 0;
+         return ia - ib;
+       });
+ 
+     let best = null;
+     let bestHoles = holesBefore;
+ 
+     const evalLimit = Math.min(10, candidates.length);
+     for (let i = 0; i < evalLimit; i++) {
+       const v = candidates[i];
+       const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: [...coreIdxs, v] });
+       if (holesAfter < bestHoles) {
+         bestHoles = holesAfter;
+         best = v;
+         if (bestHoles === 0) break;
+       }
+     }
+ 
+     if (best === null) break;
+     innerIdxs.push(best);
+   }
+ }
+ 
+ // Now that innerIdxs is final, assign inner roles and compute innerWards.
+ const innerWards = innerIdxs.map((i) => wardsCopy[i]).filter(Boolean);
+ for (const w of innerWards) setRole(wardsCopy, w.id, "inner");
 
-  const innerWards = innerIdxs.map((i) => wardsCopy[i]).filter(Boolean);
 
-  // Assign roles.
-  setRole(wardsCopy, plazaWard.id, "plaza");
-  for (const w of innerWards) setRole(wardsCopy, w.id, "inner");
-  setRole(wardsCopy, citadelId, "citadel");
+  const used = new Set([plazaWard.id, citadelId, ...innerIdxs.map((i) => wardsCopy[i]?.id).filter(Number.isFinite)]);
 
-  const used = new Set([plazaWard.id, citadelId, ...innerWards.map((w) => w.id)]);
 
   // Remaining wards are "outside candidates".
   const outside = order.filter((w) => !used.has(w.id));
@@ -382,10 +586,11 @@ function setRole(wards, id, role) {
 }
 
 function normaliseParams(params) {
-  return {
-    innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
-    outsideBands: params?.outsideBands,
-  };
+ return {
+   innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
+   maxPlugAdds: clampInt(params?.maxPlugAdds ?? 3, 0, 20),
+   outsideBands: params?.outsideBands,
+ };
 }
 
 function dist(a, b) {
