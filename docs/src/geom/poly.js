@@ -81,6 +81,45 @@ export function supportPoint(poly, dir) {
   return best;
 }
 
+export function snapPointToPolyline(p, line) {
+  if (!p || !Array.isArray(line) || line.length < 2) return p;
+
+  let best = line[0];
+  let bestD2 = Infinity;
+
+  for (let i = 0; i < line.length - 1; i++) {
+    const a = line[i];
+    const b = line[i + 1];
+    if (!a || !b) continue;
+
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const apx = p.x - a.x;
+    const apy = p.y - a.y;
+
+    const ab2 = abx * abx + aby * aby;
+    let t = 0;
+    if (ab2 > 1e-12) {
+      t = (apx * abx + apy * aby) / ab2;
+      t = Math.max(0, Math.min(1, t));
+    }
+
+    const cxp = a.x + abx * t;
+    const cyp = a.y + aby * t;
+
+    const dx = p.x - cxp;
+    const dy = p.y - cyp;
+    const d2 = dx * dx + dy * dy;
+
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = { x: cxp, y: cyp };
+    }
+  }
+
+  return best;
+}
+
 // Deterministic “pull point into polygon” by stepping toward `toward`
 export function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
   if (!p || !Array.isArray(poly) || poly.length < 3) return p;
