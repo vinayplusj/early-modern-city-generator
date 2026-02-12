@@ -401,10 +401,102 @@ export function assignWardRoles({ wards, centre, params }) {
     }
   }
  
- // Assign plaza + citadel now. Inner is assigned after optional plugging.
- setRole(wardsCopy, plazaWard.id, "plaza");
- setRole(wardsCopy, citadelId, "citadel");
+  // Assign plaza + citadel now. Inner is assigned after optional plugging.
+  setRole(wardsCopy, plazaWard.id, "plaza");
+  setRole(wardsCopy, citadelId, "citadel");
+  
+  function proposePlugSeq({ innerIdxsNow, maxAddsLeft }) {
+   const depthMax = Math.min(3, maxAddsLeft);
+   const beamWidth = 12;
+   const candidateLimit = 25;
  
+   const plazaIdx2 = plazaIdx;
+   const citadelIdx2 = citadelIdx;
+ 
+   const isCore = (idx, innerSet) =>
+     idx === plazaIdx2 || idx === citadelIdx2 || innerSet.has(idx);
+ 
+   function orderedCandidates(innerArr) {
+     const innerSet = new Set(innerArr);
+ 
+     const candidateSet = new Set();
+ 
+     const frontierSeeds = [
+       ...innerArr,
+       ...(Number.isInteger(plazaIdx2) ? [plazaIdx2] : []),
+       ...(Number.isInteger(citadelIdx2) ? [citadelIdx2] : []),
+     ];
+ 
+     for (const u of frontierSeeds) {
+       for (const v of (adj[u] || [])) candidateSet.add(v);
+     }
+ 
+     return Array.from(candidateSet)
+       .filter((v) => !isCore(v, innerSet))
+       .sort((a, b) => {
+         const da = wardsCopy[a]?.distToCentre ?? Infinity;
+         const db = wardsCopy[b]?.distToCentre ?? Infinity;
+         if (da !== db) return da - db;
+         const ia = wardsCopy[a]?.id ?? 0;
+         const ib = wardsCopy[b]?.id ?? 0;
+         return ia - ib;
+       })
+       .slice(0, candidateLimit);
+   }
+ 
+   function score(innerArr) {
+     const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: innerArr });
+     let distSum = 0;
+     for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
+     return { holes, distSum };
+   }
+ 
+   const base = innerIdxsNow.slice();
+   const baseScore = score(base);
+   if (baseScore.holes === 0) return [];
+ 
+   // Beam states: { seq, innerArr, holes, distSum }
+   let beam = [{ seq: [], innerArr: base, ...baseScore }];
+ 
+   for (let depth = 1; depth <= depthMax; depth++) {
+     const next = [];
+ 
+     for (const state of beam) {
+       if (state.holes === 0) return state.seq;
+ 
+       const cand = orderedCandidates(state.innerArr);
+ 
+       for (const v of cand) {
+         const inner2 = state.innerArr.concat([v]);
+         const sc = score(inner2);
+         next.push({ seq: state.seq.concat([v]), innerArr: inner2, ...sc });
+       }
+     }
+ 
+     if (next.length === 0) break;
+ 
+     next.sort((a, b) => {
+       if (a.holes !== b.holes) return a.holes - b.holes;
+       if (a.distSum !== b.distSum) return a.distSum - b.distSum;
+ 
+       // Stable tie-break: compare ward ids of the sequence
+       const aKey = a.seq.map((i) => String(wardsCopy[i]?.id ?? i)).join(",");
+       const bKey = b.seq.map((i) => String(wardsCopy[i]?.id ?? i)).join(",");
+       return aKey.localeCompare(bKey);
+     });
+ 
+     beam = next.slice(0, beamWidth);
+ 
+     if (beam[0].holes === 0) return beam[0].seq;
+   }
+ 
+   // If we cannot solve, still return a sequence that improves holes (if any).
+   const best = beam[0];
+   if (best && best.holes < baseScore.holes) return best.seq;
+ 
+   return [];
+ }
+
  // Optional: plug holes by adding a few extra inner wards (deterministic).
  const maxPlugAdds = p.maxPlugAdds;
  if (maxPlugAdds > 0) {
@@ -414,54 +506,28 @@ export function assignWardRoles({ wards, centre, params }) {
    const isCore = (idx) =>
      idx === plazaIdx2 || idx === citadelIdx2 || innerIdxs.includes(idx);
  
-   for (let step = 0; step < maxPlugAdds; step++) {
-    // Target: inner-only union (matches districts_voronoi grouping for role === "inner").
-    const targetIdxs = innerIdxs.slice();
-    const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: targetIdxs });
+   let addsLeft = maxPlugAdds;
+   
+   while (addsLeft > 0) {
+     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: innerIdxs });
      if (holesBefore === 0) break;
- 
-  const candidateSet = new Set();
-  
-  // Include neighbours of inner + plaza + citadel so we can seal wedges that touch them.
-  const frontierSeeds = [
-    ...innerIdxs,
-    ...(Number.isInteger(plazaIdx2) ? [plazaIdx2] : []),
-    ...(Number.isInteger(citadelIdx2) ? [citadelIdx2] : []),
-  ];
-  
-  for (const u of frontierSeeds) {
-    for (const v of (adj[u] || [])) candidateSet.add(v);
-  }
-
- 
-     const candidates = Array.from(candidateSet)
-       .filter((v) => !isCore(v))
-       .sort((a, b) => {
-         const da = wardsCopy[a]?.distToCentre ?? Infinity;
-         const db = wardsCopy[b]?.distToCentre ?? Infinity;
-         if (da !== db) return da - db;
-         const ia = wardsCopy[a]?.id ?? 0;
-         const ib = wardsCopy[b]?.id ?? 0;
-         return ia - ib;
-       });
- 
-     let best = null;
-     let bestHoles = holesBefore;
- 
-     const evalLimit = Math.min(10, candidates.length);
-     for (let i = 0; i < evalLimit; i++) {
-       const v = candidates[i];
-       const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: [...targetIdxs, v] });
-       if (holesAfter < bestHoles) {
-         bestHoles = holesAfter;
-         best = v;
-         if (bestHoles === 0) break;
+   
+     const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
+     if (!seq || seq.length === 0) break;
+   
+     // Apply the sequence (bounded by remaining budget)
+     for (const v of seq) {
+       if (addsLeft <= 0) break;
+       if (!innerIdxs.includes(v)) {
+         innerIdxs.push(v);
+         addsLeft -= 1;
        }
      }
- 
-     if (best === null) break;
-     innerIdxs.push(best);
+   
+     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: innerIdxs });
+     if (holesAfter >= holesBefore) break;
    }
+
  }
  
  // Now that innerIdxs is final, assign inner roles and compute innerWards.
