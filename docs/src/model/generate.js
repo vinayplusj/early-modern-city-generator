@@ -39,15 +39,16 @@ import {
   generateBastionedWall,
   pickGates,
   makeRavelin,
- } from "./features.js";
+} from "./features.js";
 
 // Milestone 3.6: blocks extraction (faces) - debug use
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
+
+// Change 3: Voronoi-driven districts (role-grouped wards) replace radial sector districts.
 import {
-  buildRadialDistricts,
-  assignBlocksToDistricts,
-  assignDistrictRoles,
-} from "./districts.js";
+  buildVoronoiDistrictsFromWards,
+  assignBlocksToDistrictsByWards,
+} from "./districts_voronoi.js";
 
 import { snapGatesToWall } from "./generate_helpers/snap.js";
 import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
@@ -60,7 +61,7 @@ import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
 import {
   ensureInside,
   pushAwayFromWall,
-  } from "./anchors/anchor_constraints.js";
+} from "./anchors/anchor_constraints.js";
 
 import { buildWaterModel } from "./water.js";
 import { buildAnchors } from "./stages/anchors.js";
@@ -182,7 +183,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   ctx.primaryGate = primaryGate;
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
   bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
-  
+
   if (WARP_FORT.debug) {
     const okLen = Array.isArray(bastionPolys) && Array.isArray(bastions) && bastionPolys.length === bastions.length;
     if (!okLen) {
@@ -202,19 +203,18 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   ctx.geom.cx = cx;
   ctx.geom.cy = cy;
   ctx.geom.wallR = wallR;
-  
 
-    // ---------------- Water (river/coast) ----------------
+  // ---------------- Water (river/coast) ----------------
   const waterModel = (waterKind === "none")
-  ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
-  : buildWaterModel({
-      rng: ctx.rng.water,
-      siteWater: waterKind,
-      outerBoundary,
-      cx,
-      cy,
-      baseR,
-    });
+    ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
+    : buildWaterModel({
+        rng: ctx.rng.water,
+        siteWater: waterKind,
+        outerBoundary,
+        cx,
+        cy,
+        baseR,
+      });
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
@@ -250,58 +250,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   const ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
-  // ---------------- Districts ----------------
-  const DISTRICT_COUNT = 8;
-  const DISTRICT_JITTER = 0.12;
-  const DISTRICT_MIN_SPAN = 0.35;
-
-  const districts = buildRadialDistricts(rng, outerBoundary, cx, cy, {
-    COUNT: DISTRICT_COUNT,
-    JITTER: DISTRICT_JITTER,
-    MIN_SPAN: DISTRICT_MIN_SPAN,
+  // ---------------- Districts (Voronoi role groups) ----------------
+  // Change 3: districts are derived from wardsWithRoles, not from radial sectors.
+  const districts = buildVoronoiDistrictsFromWards({
+    wards: wardsWithRoles,
+    centre: { x: cx, y: cy },
   });
 
   // ---------------- Citadel ----------------
   const citSize = baseR * 0.1;
   const citadel = generateBastionedWall(rng, anchors.citadel.x, anchors.citadel.y, citSize, 5).wall;
-
-  assignDistrictRoles(
-    districts,
-    cx,
-    cy,
-    { squareCentre: anchors.plaza, citCentre: anchors.citadel, primaryGate },
-    {
-      INNER_COUNT: 3,
-      NEW_TOWN_COUNT: 1,
-      OUTER_WARD_COUNT: 2,
-    }
-  );
-
-  if (primaryGate && !districts.some(d => d.kind === "new_town")) {
-    tagNewTownDistrictByGate(districts, primaryGate, cx, cy);
-  }
-
-  function tagNewTownDistrictByGate(districts, gate, cx, cy) {
-    if (!gate) return;
-
-    const t = ((Math.atan2(gate.y - cy, gate.x - cx) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-
-    for (const d of districts) {
-      const a0 = Number.isFinite(d.startAngle) ? d.startAngle : d._debug?.a0;
-      const a1 = Number.isFinite(d.endAngle) ? d.endAngle : d._debug?.a1;
-      if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
-
-      const inSector = (a0 <= a1) ? (t >= a0 && t < a1) : (t >= a0 || t < a1);
-      if (!inSector) continue;
-
-      if (d.kind === "plaza" || d.kind === "citadel") return;
-
-      d.kind = "new_town";
-      d.name = "New Town";
-
-      return;
-    }
-  }
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
@@ -326,35 +284,35 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   anchors.gates = gatesWarped;
   anchors.primaryGate = primaryGateWarped;
 
-// ---------------- Docks ----------------
-anchors.docks = buildDocks({
-  hasDock,
-  anchors,
-  newTown,
-  outerBoundary,
-  wallBase,
-  centre,
-  waterModel,
-  width,
-  height,
+  // ---------------- Docks ----------------
+  anchors.docks = buildDocks({
+    hasDock,
+    anchors,
+    newTown,
+    outerBoundary,
+    wallBase,
+    centre,
+    waterModel,
+    width,
+    height,
 
-  add,
-  mul,
-  normalize,
-  clampPointToCanvas,
-  pointInPolyOrOn,
-  pushOutsidePoly,
-  supportPoint,
-  snapPointToPolyline,
-});
+    add,
+    mul,
+    normalize,
+    clampPointToCanvas,
+    pointInPolyOrOn,
+    pushOutsidePoly,
+    supportPoint,
+    snapPointToPolyline,
+  });
+
   // ---------------- Outworks ----------------
-
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
   // Invariant: length aligns with bastions, but consumers must handle nulls.
   const bastionPolysSafe = Array.isArray(bastionPolys)
     ? bastionPolys.map((p) => (Array.isArray(p) && p.length >= 3 ? p : null))
     : [];
-  
+
   const wallForOutworks = wallForDraw;
   const ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
@@ -398,11 +356,11 @@ anchors.docks = buildDocks({
 
   // ---------------- Market anchor (always-on, always valid) ----------------
   anchors.market = finitePointOrNull(marketCentre);
-  
+
   // Prefer an inner ward as a fallback source for market location.
   const innerWards = (wardsWithRoles || []).filter((w) => w && w.role === "inner");
   let marketFallback = null;
-  
+
   for (const w of innerWards) {
     const c = wardCentroid(w);
     if (finitePointOrNull(c)) {
@@ -410,16 +368,16 @@ anchors.docks = buildDocks({
       break;
     }
   }
-  
+
   if (!anchors.market) {
     // Last resort: near plaza, but slightly offset.
     anchors.market = add(anchors.plaza, { x: baseR * 0.03, y: -baseR * 0.02 });
   }
-  
+
   // Ensure it is inside the wall, not near the wall, and on-canvas.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
   anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
-  
+
   // If you want market to live in an inner ward region, enforce that intent here.
   if (marketFallback) {
     // If market drifts too far out (or ends up in a non-inner ward), pull toward an inner ward centroid.
@@ -431,9 +389,9 @@ anchors.docks = buildDocks({
       anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
     }
   }
-  
+
   anchors.market = clampPointToCanvas(anchors.market, width, height, 10);
-  
+
   // Re-ensure inside after clamping.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
   anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
@@ -455,7 +413,7 @@ anchors.docks = buildDocks({
   const ROAD_EPS = 2.0;
   const squareCentre = anchors.plaza;
   const citCentre = anchors.citadel;
-  
+
   const { polylines, secondaryRoads: secondaryRoadsLegacy } = buildRoadPolylines({
     rng,
     gatesWarped,
@@ -479,27 +437,32 @@ anchors.docks = buildDocks({
     MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
   });
 
-  assignBlocksToDistricts(blocks, districts, cx, cy);
+  // Change 3: Assign blocks by ward containment, then map ward role -> district id.
+  assignBlocksToDistrictsByWards({
+    blocks,
+    wards: wardsWithRoles,
+    districts,
+  });
 
   // ---------------- Anchor invariants (debug only) ----------------
   if (WARP_FORT.debug) {
     const bad = [];
-  
+
     const plazaOk =
       finitePointOrNull(anchors.plaza) &&
       isInsidePolyOrSkip(anchors.plaza, wallBase) &&
       (anchors.plaza.x >= 0 && anchors.plaza.x <= width && anchors.plaza.y >= 0 && anchors.plaza.y <= height);
-  
+
     const citadelOk =
       finitePointOrNull(anchors.citadel) &&
       isInsidePolyOrSkip(anchors.citadel, wallBase) &&
       (anchors.citadel.x >= 0 && anchors.citadel.x <= width && anchors.citadel.y >= 0 && anchors.citadel.y <= height);
-  
+
     const marketOk =
       finitePointOrNull(anchors.market) &&
       isInsidePolyOrSkip(anchors.market, wallBase) &&
       (anchors.market.x >= 0 && anchors.market.x <= width && anchors.market.y >= 0 && anchors.market.y <= height);
-  
+
     let docksOk = true;
     if (hasDock) {
       docksOk =
@@ -509,12 +472,12 @@ anchors.docks = buildDocks({
           isInsidePolyOrSkip(anchors.docks, outerBoundary) &&
           (anchors.docks.x >= 0 && anchors.docks.x <= width && anchors.docks.y >= 0 && anchors.docks.y <= height));
     }
-  
+
     if (!plazaOk) bad.push("plaza");
     if (!citadelOk) bad.push("citadel");
     if (!marketOk) bad.push("market");
     if (!docksOk) bad.push("docks");
-  
+
     if (bad.length) {
       console.warn("ANCHOR INVARIANTS FAILED", bad, {
         plaza: anchors.plaza,
