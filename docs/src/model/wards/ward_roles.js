@@ -51,6 +51,9 @@
  * @param {object} [args.params.outsideBands] - Optional distance-band based role distribution.
  * @returns {{wards: Ward[], indices: {plaza:number, citadel:number, inner:number[], outside:number[]}}}
  */
+import { centroid } from "../../geom/poly.js";
+import { isPoint } from "../../geom/primitives.js";
+
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
 
@@ -246,4 +249,27 @@ function clampInt(v, lo, hi) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
+}
+export function wardCentroid(w) {
+  if (!w) return null;
+
+  if (isPoint(w.centroid)) return w.centroid;
+
+  const poly =
+    (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
+    (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
+    null;
+
+  if (poly) {
+    const c = centroid(poly);
+    if (isPoint(c)) return c;
+  }
+
+  if (isPoint(w.site)) return w.site;
+  if (isPoint(w.seed)) return w.seed;
+  if (isPoint(w.point)) return w.point;
+  if (isPoint(w.center)) return w.center;
+  if (isPoint(w.centre)) return w.centre;
+
+  return null;
 }
