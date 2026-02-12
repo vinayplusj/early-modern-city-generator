@@ -38,7 +38,6 @@ import {
   generateFootprint,
   generateBastionedWall,
   pickGates,
-  generateRoadsToCentre,
   makeRavelin,
  } from "./features.js";
 
@@ -448,7 +447,8 @@ anchors.docks = buildDocks({
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  const roads = generateRoadsToCentre(gatesWarped, anchors.plaza);
+  const roads = (gatesWarped || []).map((g) => [g, anchors.plaza]);
+
   const avenue = [anchors.plaza, anchors.citadel];
 
   // ---------------- Road polylines -> road graph ----------------
