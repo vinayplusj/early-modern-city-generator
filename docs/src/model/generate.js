@@ -10,14 +10,14 @@
 // - Rendering remains read-only; all logic here or in geom/roads modules.
 
 import { mulberry32 } from "../rng/mulberry32.js";
-
-import { add, mul, normalize } from "../geom/primitives.js";
-import { centroid, pointInPolyOrOn } from "../geom/poly.js";
+import { add, mul, normalize, finitePointOrNull, vec, len, safeNormalize } from "../geom/primitives.js";
+import { centroid, pointInPolyOrOn, supportPoint, pushOutsidePoly } from "../geom/poly.js";
 
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
 
 import { buildRoadGraphWithIntersections } from "../roads/graph.js";
+import { assignWardRoles, wardCentroid } from "./wards/ward_roles.js";
 
 import {
   generateFootprint,
@@ -42,13 +42,11 @@ import { placeNewTown } from "./generate_helpers/new_town.js";
 import { buildFortWarp } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
 import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
-import { assignWardRoles } from "./wards/ward_roles.js";
 
 import {
   ensureInside,
   pushAwayFromWall,
-  enforceMinSeparation,
-} from "./anchors/anchor_constraints.js";
+  } from "./anchors/anchor_constraints.js";
 
 import { buildWaterModel } from "./water.js";
 import { buildAnchors } from "./stages/anchors.js";
@@ -96,102 +94,11 @@ function clampPointToCanvas(p, w, h, pad = 8) {
     y: clamp(p.y, pad, h - pad),
   };
 }
-        
-function isPoint(p) {
-    return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-  }
-  
-function wardCentroid(w) {
-    if (!w) return null;
-  
-    if (isPoint(w.centroid)) return w.centroid;
-  
-    const poly =
-      (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
-      (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
-      null;
-  
-    if (poly) {
-      const c = centroid(poly);
-      if (isPoint(c)) return c;
-    }
-  
-    if (isPoint(w.site)) return w.site;
-    if (isPoint(w.seed)) return w.seed;
-    if (isPoint(w.point)) return w.point;
-    if (isPoint(w.center)) return w.center;
-    if (isPoint(w.centre)) return w.centre;
-  
-    return null;
-  }
-
-function supportPoint(poly, dir) {
-  if (!Array.isArray(poly) || poly.length < 1) return null;
-
-  let best = poly[0];
-  let bestDot = best.x * dir.x + best.y * dir.y;
-
-  for (let i = 1; i < poly.length; i++) {
-    const p = poly[i];
-    const d = p.x * dir.x + p.y * dir.y;
-    if (d > bestDot) {
-      bestDot = d;
-      best = p;
-    }
-  }
-  return best;
-}
-
-function finitePointOrNull(p) {
-  return (p && Number.isFinite(p.x) && Number.isFinite(p.y)) ? p : null;
-}
-
-function vec(a, b) {
-  return { x: b.x - a.x, y: b.y - a.y };
-}
-
-function len(v) {
-  return Math.hypot(v.x, v.y);
-}
-
-function safeNormalize(v, fallback = { x: 1, y: 0 }) {
-  const m = len(v);
-  if (m > 1e-9) return { x: v.x / m, y: v.y / m };
-  return fallback;
-}
 
 function isInsidePolyOrSkip(p, poly) {
   if (!p) return false;
-  if (!Array.isArray(poly) || poly.length < 3) return true; // treat as pass-through
+  if (!Array.isArray(poly) || poly.length < 3) return true; // pass-through
   return pointInPolyOrOn(p, poly, 1e-6);
-}
-
-function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
-  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
-
-  let q = p;
-  const dir = safeNormalize(vec(q, toward));
-
-  for (let i = 0; i < iters; i++) {
-    if (pointInPolyOrOn(q, poly, 1e-6)) return q;
-    q = add(q, mul(dir, step));
-  }
-
-  return q;
-}
-
-function pushOutsidePoly(p, poly, awayFrom, step = 4, iters = 80) {
-  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
-
-  let q = p;
-  const dir = safeNormalize(vec(awayFrom, q)); // move away from centre
-
-  for (let i = 0; i < iters; i++) {
-    if (!pointInPolyOrOn(q, poly, 1e-6)) return q;
-    q = add(q, mul(dir, step));
-  }
-
-  return q;
 }
 
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
