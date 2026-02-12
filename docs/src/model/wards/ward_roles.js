@@ -413,7 +413,16 @@ export function assignWardRoles({ wards, centre, params }) {
   setRole(wardsCopy, plazaWard.id, "plaza");
   setRole(wardsCopy, citadelId, "citadel");
   
-  function proposePlugSeq({ innerIdxsNow, maxAddsLeft }) {
+    // Fort core indices = plaza + citadel + inner
+  function fortCoreIdxs(innerArr = innerIdxs) {
+    const out = [];
+    if (Number.isInteger(plazaIdx)) out.push(plazaIdx);
+    if (Number.isInteger(citadelIdx)) out.push(citadelIdx);
+    for (const i of innerArr) if (Number.isInteger(i)) out.push(i);
+    return out;
+  }
+
+ function proposePlugSeq({ innerIdxsNow, maxAddsLeft }) {
    const depthMax = Math.min(3, maxAddsLeft);
    const beamWidth = 12;
    const candidateLimit = 25;
@@ -439,8 +448,12 @@ export function assignWardRoles({ wards, centre, params }) {
        for (const v of (adj[u] || [])) candidateSet.add(v);
      }
  
+     const baseMaxDist = Math.max(...innerArr.map(i => wardsCopy[i]?.distToCentre ?? 0));
+
      return Array.from(candidateSet)
        .filter((v) => !isCore(v, innerSet))
+       // Do not let plugging pull in very far wards
+       .filter((v) => (wardsCopy[v]?.distToCentre ?? Infinity) <= baseMaxDist * 1.35)
        .sort((a, b) => {
          const da = wardsCopy[a]?.distToCentre ?? Infinity;
          const db = wardsCopy[b]?.distToCentre ?? Infinity;
@@ -453,11 +466,11 @@ export function assignWardRoles({ wards, centre, params }) {
    }
  
    function score(innerArr) {
-     const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerArr) });
-     let distSum = 0;
-     for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
-     return { holes, distSum };
-   }
+    const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerArr) });
+    let distSum = 0;
+    for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
+    return { holes, distSum };
+  } 
  
    const base = innerIdxsNow.slice();
    const baseScore = score(base);
@@ -517,7 +530,7 @@ export function assignWardRoles({ wards, centre, params }) {
    let addsLeft = maxPlugAdds;
    
    while (addsLeft > 0) {
-     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
+     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs() });
      if (holesBefore === 0) break;
    
      const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
@@ -532,7 +545,7 @@ export function assignWardRoles({ wards, centre, params }) {
        }
      }
    
-     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
+     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs() });
      if (holesAfter >= holesBefore) break;
    }
 
@@ -706,3 +719,9 @@ export function wardCentroid(w) {
 
   return null;
 }
+
+if (typeof window !== "undefined") {
+  window.__wardDebug = window.__wardDebug || {};
+  window.__wardDebug.coreHoleCount = coreHoleCount;
+}
+
