@@ -389,38 +389,60 @@ export function buildVoronoiDistrictsFromWards({ wards, centre }) {
 
     // True merged outline from boundary edges (union boundary extraction).
     const { loops, eps } = mergeOutlineFromWardPolys(polys);
-    const outer = pickLargestLoop(loops);
-
+    if (!loops || loops.length === 0) continue;
+    
+    let outerIdx = -1;
+    let outer = null;
+    let bestAbsArea = -Infinity;
+    
+    for (let i = 0; i < loops.length; i++) {
+      const l = loops[i];
+      if (!Array.isArray(l) || l.length < 3) continue;
+      const a = Math.abs(polyArea(l));
+      if (a > bestAbsArea) {
+        bestAbsArea = a;
+        outerIdx = i;
+        outer = l;
+      }
+    }
+    
     if (!outer || outer.length < 3) continue;
 
-    const [a0, a1] = districtAnglesFromPoly(outer, centre);
+    // Classify remaining loops as holes if their centroid lies inside the outer loop.
+    const holes = [];
+    for (let i = 0; i < loops.length; i++) {
+      if (i === outerIdx) continue;
+      const l = loops[i];
+      if (!Array.isArray(l) || l.length < 3) continue;
+      const c = polyCentroid(l);
+      if (c && pointInPolyOrOn(c, outer, 1e-6)) holes.push(l);
+    }
+    
     const kind = roleToKind(role);
-
+    const [a0, a1] = districtAnglesFromPoly(outer, centre);
+    
     districts.push({
       id: `d_${kind}`,
       kind,
       name: titleCase(kind),
-
-      // Debug polygon: now a merged outline instead of a convex hull.
+    
       polygon: outer,
-
-      // Traceability.
+      holes,
+    
       memberWardIds: members.map((w) => w.id),
-
-      // Warp compatibility.
       startAngle: a0,
       endAngle: a1,
-
-      // Debug-only extras.
+    
       _debug: {
         role,
         unionEps: eps,
-        componentCount: loops.length,
-        components: loops, // full set, for future hole/component rendering
+        loopCount: loops.length,
+        holeCount: holes.length,
+        componentCount: 1,
+        loops,
       },
     });
   }
-
   return districts;
 }
 
