@@ -12,6 +12,9 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   const rTarget = new Array(N);
   let nullCount = 0;
 
+  // Debug-only: how often the centre-to-wall ray does not hit the wall at a sample angle.
+  // This is a strong signal that centre is outside wallPoly or wallPoly is degenerate/self-intersecting.
+  let rFortNullSamples = 0;
 
   // ---- DEBUG: check whether wall vertices fall inside the warp band ----
   if (params.debug) {
@@ -29,7 +32,9 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   for (let i = 0; i < N; i++) {
     const theta = (i / N) * Math.PI * 2;
     thetas[i] = theta;
-    rFort[i] = sampleRadiusAtAngle(centre, theta, wallPoly);
+    const rawR = sampleRadiusAtAngle(centre, theta, wallPoly);
+    if (rawR == null) rFortNullSamples++;
+    rFort[i] = rawR;
 
     // Stable fallback: carry previous, else use next later
     if (rFort[i] == null) {
@@ -108,7 +113,14 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   const deltaSmooth = smoothCircular(delta, params.smoothRadius);
   const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
 
-  return { N, thetas, rFort, rTarget, delta: deltaSafe };
+  return {
+    N,
+    thetas,
+    rFort,
+    rTarget,
+    delta: deltaSafe,
+    stats: params.debug ? { rFortNullSamples } : null,
+  };
 }
 
 export function warpPointRadial(p, centre, field, params) {
