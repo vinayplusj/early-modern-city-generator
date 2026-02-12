@@ -109,16 +109,27 @@ export function placeNewTown({
         const s1 = (Array.isArray(b.shoulders) && b.shoulders[1]) ? b.shoulders[1] : b.pts[b.pts.length - 1];
         return [s0, s1];
       });
-      
-      console.log("NEW TOWN HIT BASTIONS", { hitBastions, count: hitBastions.length });
-      
+        
+      // Sanity: keep wall usable as a polygon-like loop.
+      // Remove adjacent duplicates and ensure we still have enough points to draw.
+      const cleanedWall = [];
+      for (const p of wallFinalOut) {
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+        const last = cleanedWall[cleanedWall.length - 1];
+        if (last && Math.hypot(p.x - last.x, p.y - last.y) < 1e-6) continue;
+        cleanedWall.push(p);
+      }
+
+      // If cleaning made it unusable, fall back to the incoming wall.
+      const wallFinalSafe = (cleanedWall.length >= 8) ? cleanedWall : wallFinal;
+        
       stats.ok++;
       return {
         newTown: nt,
         primaryGate: g,
         hitBastions,
         stats,
-        wallFinal: wallFinalOut,
+        wallFinal: wallFinalSafe,
         bastionPolys: bastionPolysOut,
       };
 
