@@ -99,6 +99,7 @@ export function buildRoadPolylines({
       polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
     }
   }
+}
 
 export function generateSecondaryRoads(rng, gates, ring1, ring2) {
   const secondary = [];
