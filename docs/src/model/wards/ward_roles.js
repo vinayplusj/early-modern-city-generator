@@ -412,15 +412,6 @@ export function assignWardRoles({ wards, centre, params }) {
   // Assign plaza + citadel now. Inner is assigned after optional plugging.
   setRole(wardsCopy, plazaWard.id, "plaza");
   setRole(wardsCopy, citadelId, "citadel");
-  
-    // Fort core indices = plaza + citadel + inner
-  function fortCoreIdxs(innerArr = innerIdxs) {
-    const out = [];
-    if (Number.isInteger(plazaIdx)) out.push(plazaIdx);
-    if (Number.isInteger(citadelIdx)) out.push(citadelIdx);
-    for (const i of innerArr) if (Number.isInteger(i)) out.push(i);
-    return out;
-  }
 
  function proposePlugSeq({ innerIdxsNow, maxAddsLeft }) {
    const depthMax = Math.min(3, maxAddsLeft);
