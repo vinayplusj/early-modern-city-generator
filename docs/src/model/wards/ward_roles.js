@@ -279,14 +279,6 @@ export function assignWardRoles({ wards, centre, params }) {
   // Defensive copy so caller can keep original list if needed.
   const wardsCopy = wards.map((w) => ({ ...w }));
 
-  const fortCoreIdxs = (innerArr) => {
-    const out = [];
-    if (Number.isInteger(plazaIdx)) out.push(plazaIdx);
-    if (Number.isInteger(citadelIdx)) out.push(citadelIdx);
-    for (const i of innerArr) if (Number.isInteger(i)) out.push(i);
-    return out;
-  };
-
  // Recompute distToCentre if missing (keeps this module usable standalone).
   for (const w of wardsCopy) {
     if (!Number.isFinite(w.distToCentre)) {
@@ -355,6 +347,19 @@ export function assignWardRoles({ wards, centre, params }) {
   if (citadelIdx !== undefined) exclude.add(citadelIdx);
 
   const innerIdxs = [];
+ 
+  const fortCoreIdxs = (innerArr = innerIdxs) => {
+   const arr = Array.isArray(innerArr) ? innerArr : [];
+   const out = [];
+   if (Number.isInteger(plazaIdx)) out.push(plazaIdx);
+ 
+   const cIdx = idToIndex.get(citadelId);
+   if (Number.isInteger(cIdx)) out.push(cIdx);
+ 
+   for (const i of arr) if (Number.isInteger(i)) out.push(i);
+   return out;
+ };
+ 
   const visited = new Set([plazaIdx]);
   let frontier = [plazaIdx];
 
@@ -409,7 +414,11 @@ export function assignWardRoles({ wards, centre, params }) {
     }
   }
  
-  // Assign plaza + citadel now. Inner is assigned after optional plugging.
+  exclude.clear();
+  exclude.add(plazaIdx);
+  if (Number.isInteger(citadelIdx)) exclude.add(citadelIdx);
+
+ // Assign plaza + citadel now. Inner is assigned after optional plugging.
   setRole(wardsCopy, plazaWard.id, "plaza");
   setRole(wardsCopy, citadelId, "citadel");
 
@@ -419,8 +428,8 @@ export function assignWardRoles({ wards, centre, params }) {
    const candidateLimit = 25;
  
    const plazaIdx2 = plazaIdx;
-   const citadelIdx2 = citadelIdx;
- 
+   const citadelIdx2 = idToIndex.get(citadelId);
+   
    const isCore = (idx, innerSet) =>
      idx === plazaIdx2 || idx === citadelIdx2 || innerSet.has(idx);
  
@@ -439,21 +448,30 @@ export function assignWardRoles({ wards, centre, params }) {
        for (const v of (adj[u] || [])) candidateSet.add(v);
      }
  
-     const baseMaxDist = Math.max(...innerArr.map(i => wardsCopy[i]?.distToCentre ?? 0));
-
-     return Array.from(candidateSet)
-       .filter((v) => !isCore(v, innerSet))
-       // Do not let plugging pull in very far wards
-       .filter((v) => (wardsCopy[v]?.distToCentre ?? Infinity) <= baseMaxDist * 1.35)
-       .sort((a, b) => {
-         const da = wardsCopy[a]?.distToCentre ?? Infinity;
-         const db = wardsCopy[b]?.distToCentre ?? Infinity;
-         if (da !== db) return da - db;
-         const ia = wardsCopy[a]?.id ?? 0;
-         const ib = wardsCopy[b]?.id ?? 0;
-         return ia - ib;
-       })
-       .slice(0, candidateLimit);
+     const baseMaxDist =
+      innerArr.length
+        ? Math.max(...innerArr.map((i) => wardsCopy[i]?.distToCentre ?? 0))
+        : 0;
+    
+    let cands = Array.from(candidateSet)
+      .filter((v) => !isCore(v, innerSet))
+      .sort((a, b) => {
+        const da = wardsCopy[a]?.distToCentre ?? Infinity;
+        const db = wardsCopy[b]?.distToCentre ?? Infinity;
+        if (da !== db) return da - db;
+        const ia = wardsCopy[a]?.id ?? 0;
+        const ib = wardsCopy[b]?.id ?? 0;
+        return ia - ib;
+      });
+    
+    // Only apply the “do not pull far wards” gate if baseMaxDist is meaningful.
+    if (baseMaxDist > 0) {
+      cands = cands.filter(
+        (v) => (wardsCopy[v]?.distToCentre ?? Infinity) <= baseMaxDist * 1.35
+      );
+    }
+    
+    return cands.slice(0, candidateLimit);
    }
  
    function score(innerArr) {
@@ -512,16 +530,9 @@ export function assignWardRoles({ wards, centre, params }) {
  // Optional: plug holes by adding a few extra inner wards (deterministic).
  const maxPlugAdds = p.maxPlugAdds;
  if (maxPlugAdds > 0) {
-   const plazaIdx2 = plazaIdx;
-   const citadelIdx2 = citadelIdx;
- 
-   const isCore = (idx) =>
-     idx === plazaIdx2 || idx === citadelIdx2 || innerIdxs.includes(idx);
- 
-   let addsLeft = maxPlugAdds;
-   
+   let addsLeft = maxPlugAdds;   
    while (addsLeft > 0) {
-     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs() });
+     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
      if (holesBefore === 0) break;
    
      const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
@@ -536,8 +547,8 @@ export function assignWardRoles({ wards, centre, params }) {
        }
      }
    
-     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs() });
-     if (holesAfter >= holesBefore) break;
+    const holesAfter  = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
+    if (holesAfter >= holesBefore) break;
    }
 
  }
