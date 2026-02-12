@@ -112,13 +112,14 @@ function bboxOfPolys(polys) {
 
 function makeQuantiser(bbox) {
   // Deterministic quantisation epsilon derived from local scale.
-  // This is critical to match shared edges produced by float math.
+  // Used only for hashing edges so shared borders cancel out.
   const dx = bbox.maxX - bbox.minX;
   const dy = bbox.maxY - bbox.minY;
   const diag = Math.sqrt(dx * dx + dy * dy);
 
-  // Scale: about 1e-6 of the local diagonal, clamped to reasonable limits.
-  const eps = Math.max(1e-6, Math.min(1e-3, diag * 1e-6));
+  // Slightly larger than before to tolerate clip / float drift.
+  // Still small relative to map scale.
+  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
   const inv = 1 / eps;
 
   function keyOf(p) {
@@ -127,13 +128,7 @@ function makeQuantiser(bbox) {
     return `${qx},${qy}`;
   }
 
-  function pointOfKey(k) {
-    // Not used for geometry. Keys are only for hashing and stitching.
-    // Coordinates come from representative points we store separately.
-    return k;
-  }
-
-  return { eps, keyOf, pointOfKey };
+  return { eps, keyOf };
 }
 
 function undirectedEdgeKey(aKey, bKey) {
@@ -153,26 +148,26 @@ function vec(a, b) {
 
 function mergeOutlineFromWardPolys(polys) {
   // Returns boundary loops as arrays of points (each loop is closed implicitly).
-  // Strategy:
-  // 1) Build undirected edge counts to cancel shared edges.
-  // 2) Keep edges with count === 1 as boundary edges.
-  // 3) Stitch boundary directed edges into loops.
+  //
+  // Robust, deterministic outline extraction for partitions:
+  // 1) Count undirected edges across member ward polygons (after quantisation).
+  // 2) Keep only edges with count === 1 (union boundary).
+  // 3) Build undirected adjacency (degree ~2 on valid boundaries).
+  // 4) Stitch loops by walking unused edges.
 
   const bbox = bboxOfPolys(polys);
   if (!bbox) return { loops: [], eps: 0 };
 
   const Q = makeQuantiser(bbox);
 
-  // Map undirected edge key -> { count, aKey, bKey, a, b }
-  const edgeCount = new Map();
-
   // Representative point for each point key.
   const repPoint = new Map();
-
   function rememberPoint(k, p) {
     if (!repPoint.has(k)) repPoint.set(k, { x: p.x, y: p.y });
   }
 
+  // Map undirected edge key -> count, plus endpoints.
+  const edgeCount = new Map(); // k -> { count, aKey, bKey }
   for (const poly of polys) {
     if (!Array.isArray(poly) || poly.length < 3) continue;
 
@@ -200,124 +195,125 @@ function mergeOutlineFromWardPolys(polys) {
     }
   }
 
-  // Build directed adjacency from boundary edges (count === 1).
-  // For stitching we need directed edges. We store both directions because the
-  // original polygon winding may vary between wards.
-  const outEdges = new Map(); // fromKey -> [{ toKey }]
-  const allDirectedEdges = new Set(); // "from->to" strings for visited tracking
-
-  function addDirected(fromKey, toKey) {
-    const k = `${fromKey}->${toKey}`;
-    if (allDirectedEdges.has(k)) return;
-    allDirectedEdges.add(k);
-    if (!outEdges.has(fromKey)) outEdges.set(fromKey, []);
-    outEdges.get(fromKey).push({ toKey });
-  }
-
+  // Boundary edges: count === 1.
+  const boundaryEdges = [];
   for (const rec of edgeCount.values()) {
-    if (rec.count !== 1) continue;
-    addDirected(rec.aKey, rec.bKey);
-    addDirected(rec.bKey, rec.aKey);
+    if (rec.count === 1) boundaryEdges.push(rec);
   }
 
-  // Deterministic ordering of outgoing edges.
-  for (const [fromKey, arr] of outEdges.entries()) {
-    arr.sort((e1, e2) => String(e1.toKey).localeCompare(String(e2.toKey)));
+  if (boundaryEdges.length === 0) return { loops: [], eps: Q.eps };
+
+  // Build undirected adjacency: key -> Set(neighbourKey)
+  const adj = new Map();
+  function addAdj(u, v) {
+    if (!adj.has(u)) adj.set(u, new Set());
+    adj.get(u).add(v);
   }
 
-  function popNextEdge(fromKey, prevKey) {
-    // Choose an outgoing edge deterministically with a geometric preference:
-    // - If prevKey exists, prefer smallest left turn from incoming direction.
-    // - Otherwise choose lexicographically first.
-    const candidates = outEdges.get(fromKey);
-    if (!candidates || candidates.length === 0) return null;
+  // Track edge usage while stitching.
+  const unusedEdges = new Set(); // stores undirectedEdgeKey(u,v)
 
-    if (!prevKey) {
-      // First edge: take first candidate.
-      return candidates[0];
+  for (const e of boundaryEdges) {
+    addAdj(e.aKey, e.bKey);
+    addAdj(e.bKey, e.aKey);
+    unusedEdges.add(undirectedEdgeKey(e.aKey, e.bKey));
+  }
+
+  // Deterministic vertex ordering for choosing start points.
+  function sortedKeys(m) {
+    return Array.from(m.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+  }
+
+  function nextNeighbour(curr, prev) {
+    // Follow the boundary by taking an unused neighbour edge.
+    // Prefer the neighbour that is not prev (degree-2 walk), but still handle branching.
+    const nbrs = adj.get(curr);
+    if (!nbrs || nbrs.size === 0) return null;
+
+    const ordered = Array.from(nbrs).sort((a, b) => String(a).localeCompare(String(b)));
+
+    // First try: neighbour != prev with unused edge.
+    for (const n of ordered) {
+      if (n === prev) continue;
+      const ek = undirectedEdgeKey(curr, n);
+      if (unusedEdges.has(ek)) return n;
     }
 
-    const fromP = repPoint.get(fromKey);
-    const prevP = repPoint.get(prevKey);
-    if (!fromP || !prevP) return candidates[0];
-
-    const inV = vec(fromP, prevP); // incoming direction (from -> prev)
-    // We want outgoing direction (from -> to). Choose most consistent boundary walk.
-    // We choose the candidate with the smallest positive turn (leftmost), then smallest absolute.
-    let best = null;
-    let bestScore = Infinity;
-
-    for (const cand of candidates) {
-      const toP = repPoint.get(cand.toKey);
-      if (!toP) continue;
-      const outV = vec(fromP, toP);
-      const ang = angleBetween(inV, outV); // (-pi, pi]
-      // Convert to [0, 2pi) where 0 is straight back, and prefer small positive.
-      const score = ang < 0 ? ang + Math.PI * 2 : ang;
-      if (score < bestScore) {
-        bestScore = score;
-        best = cand;
-      }
+    // Fallback: allow returning to prev if it is the only remaining unused edge.
+    for (const n of ordered) {
+      const ek = undirectedEdgeKey(curr, n);
+      if (unusedEdges.has(ek)) return n;
     }
 
-    return best || candidates[0];
-  }
-
-  function removeDirectedEdge(fromKey, toKey) {
-    const arr = outEdges.get(fromKey);
-    if (!arr) return;
-    const idx = arr.findIndex((e) => e.toKey === toKey);
-    if (idx >= 0) arr.splice(idx, 1);
-    if (arr.length === 0) outEdges.delete(fromKey);
+    return null;
   }
 
   const loops = [];
+  const safetyMax = 200000;
 
-  // Stitch loops: while any edges remain, start from smallest key deterministically.
-  while (outEdges.size > 0) {
-    const startKey = Array.from(outEdges.keys()).sort((a, b) => String(a).localeCompare(String(b)))[0];
-    const startEdges = outEdges.get(startKey);
-    if (!startEdges || startEdges.length === 0) {
-      outEdges.delete(startKey);
-      continue;
+  // Stitch until no unused boundary edges remain.
+  while (unusedEdges.size > 0) {
+    // Pick a deterministic starting edge: smallest vertex key that still has an unused incident edge.
+    let start = null;
+    for (const k of sortedKeys(adj)) {
+      const nbrs = adj.get(k);
+      if (!nbrs) continue;
+      for (const n of nbrs) {
+        if (unusedEdges.has(undirectedEdgeKey(k, n))) {
+          start = k;
+          break;
+        }
+      }
+      if (start) break;
     }
+    if (!start) break;
 
-    let prevKey = null;
-    let currKey = startKey;
-    let next = startEdges[0];
-
-    const loopKeys = [];
-    const safetyMax = 200000;
-
-    for (let step = 0; step < safetyMax; step++) {
-      // Record vertex
-      loopKeys.push(currKey);
-
-      // Choose edge
-      const chosen = popNextEdge(currKey, prevKey);
-      if (!chosen) break;
-
-      // Consume chosen edge so we do not reuse it.
-      const toKey = chosen.toKey;
-      removeDirectedEdge(currKey, toKey);
-
-      prevKey = currKey;
-      currKey = toKey;
-
-      if (currKey === startKey) {
-        // Closed.
+    // Start walking from start -> first available neighbour.
+    const nbrs0 = Array.from(adj.get(start) || []).sort((a, b) => String(a).localeCompare(String(b)));
+    let first = null;
+    for (const n of nbrs0) {
+      if (unusedEdges.has(undirectedEdgeKey(start, n))) {
+        first = n;
         break;
       }
     }
+    if (!first) {
+      // No usable edges incident to start; should not happen if start selection was correct.
+      break;
+    }
 
-    // Convert keys to representative points.
+    const loopKeys = [start];
+    let prev = start;
+    let curr = first;
+
+    // Consume the first edge.
+    unusedEdges.delete(undirectedEdgeKey(prev, curr));
+    loopKeys.push(curr);
+
+    for (let step = 0; step < safetyMax; step++) {
+      const nxt = nextNeighbour(curr, prev);
+      if (!nxt) break;
+
+      // If we are closing the loop, do it and stop.
+      if (nxt === start) {
+        unusedEdges.delete(undirectedEdgeKey(curr, nxt));
+        break;
+      }
+
+      // Consume and advance.
+      unusedEdges.delete(undirectedEdgeKey(curr, nxt));
+      prev = curr;
+      curr = nxt;
+      loopKeys.push(curr);
+    }
+
+    // Convert keys to points.
     const loop = loopKeys
       .map((k) => repPoint.get(k))
       .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
 
-    // Basic validity filter.
     if (loop.length >= 3) {
-      // Remove consecutive duplicates (possible due to quantisation collisions).
+      // Remove consecutive duplicates.
       const cleaned = [];
       for (const p of loop) {
         const last = cleaned[cleaned.length - 1];
