@@ -279,7 +279,15 @@ export function assignWardRoles({ wards, centre, params }) {
   // Defensive copy so caller can keep original list if needed.
   const wardsCopy = wards.map((w) => ({ ...w }));
 
-  // Recompute distToCentre if missing (keeps this module usable standalone).
+  const fortCoreIdxs = (innerArr) => {
+    const out = [];
+    if (Number.isInteger(plazaIdx)) out.push(plazaIdx);
+    if (Number.isInteger(citadelIdx)) out.push(citadelIdx);
+    for (const i of innerArr) if (Number.isInteger(i)) out.push(i);
+    return out;
+  };
+
+ // Recompute distToCentre if missing (keeps this module usable standalone).
   for (const w of wardsCopy) {
     if (!Number.isFinite(w.distToCentre)) {
       w.distToCentre = dist(w.seed, centre);
@@ -445,7 +453,7 @@ export function assignWardRoles({ wards, centre, params }) {
    }
  
    function score(innerArr) {
-     const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: innerArr });
+     const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerArr) });
      let distSum = 0;
      for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
      return { holes, distSum };
@@ -509,7 +517,7 @@ export function assignWardRoles({ wards, centre, params }) {
    let addsLeft = maxPlugAdds;
    
    while (addsLeft > 0) {
-     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: innerIdxs });
+     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
      if (holesBefore === 0) break;
    
      const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
@@ -524,7 +532,7 @@ export function assignWardRoles({ wards, centre, params }) {
        }
      }
    
-     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: innerIdxs });
+     const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
      if (holesAfter >= holesBefore) break;
    }
 
