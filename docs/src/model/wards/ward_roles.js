@@ -582,7 +582,18 @@ export function assignWardRoles({ wards, centre, params }) {
     if (idx >= 0) wardsCopy[idx].ringIndex = i;
   }
 
-  return {
+  if (typeof window !== "undefined") {
+   window.__wardDebug = window.__wardDebug || {};
+   window.__wardDebug.last = window.__wardDebug.last || {};
+   window.__wardDebug.last.fortCore = {
+     plazaId: plazaWard.id,
+     citadelId,
+     innerIds: innerIdxs.map(i => wardsCopy[i]?.id).filter(Number.isFinite),
+     coreHoleCount: coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) }),
+   };
+ }
+
+ return {
     wards: wardsCopy,
     indices: {
       plaza: plazaWard.id,
@@ -682,7 +693,7 @@ function setRole(wards, id, role) {
 function normaliseParams(params) {
  return {
    innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
-   maxPlugAdds: clampInt(params?.maxPlugAdds ?? 3, 0, 20),
+   maxPlugAdds: clampInt(params?.maxPlugAdds ?? 0, 0, 20),
    outsideBands: params?.outsideBands,
  };
 }
