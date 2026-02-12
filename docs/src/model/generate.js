@@ -10,8 +10,23 @@
 // - Rendering remains read-only; all logic here or in geom/roads modules.
 
 import { mulberry32 } from "../rng/mulberry32.js";
-import { add, mul, normalize, finitePointOrNull, vec, len, safeNormalize } from "../geom/primitives.js";
-import { centroid, pointInPolyOrOn, supportPoint, pushOutsidePoly } from "../geom/poly.js";
+import {
+  add,
+  mul,
+  normalize,
+  finitePointOrNull,
+  vec,
+  len,
+  safeNormalize,
+  clampPointToCanvas,
+} from "../geom/primitives.js";
+import {
+  centroid,
+  pointInPolyOrOn,
+  supportPoint,
+  pushOutsidePoly,
+  snapPointToPolyline,
+} from "../geom/poly.js";
 
 import { offsetRadial } from "../geom/offset.js";
 import { convexHull } from "../geom/hull.js";
@@ -50,6 +65,7 @@ import {
 
 import { buildWaterModel } from "./water.js";
 import { buildAnchors } from "./stages/anchors.js";
+import { buildDocks } from "./stages/docks.js";
 import { createCtx } from "./ctx.js";
 
 const WARP_FORT = {
@@ -82,18 +98,6 @@ const WARP_FORT = {
   bastionClearHalfWidth: 0.05,
   bastionClearFeather: 0.06,
 };
-
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function clampPointToCanvas(p, w, h, pad = 8) {
-  if (!p) return p;
-  return {
-    x: clamp(p.x, pad, w - pad),
-    y: clamp(p.y, pad, h - pad),
-  };
-}
 
 function isInsidePolyOrSkip(p, poly) {
   if (!p) return false;
@@ -323,124 +327,27 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   anchors.gates = gatesWarped;
   anchors.primaryGate = primaryGateWarped;
 
-    // ---------------- Docks ----------------
-    // Deterministic docks point, created only when the UI enables it.
-    // Invariant: anchors.docks is null unless hasDock is true.
-    anchors.docks = null;
-    
-    function snapPointToPolyline(p, line) {
-      if (!p || !Array.isArray(line) || line.length < 2) return p;
-    
-      let best = line[0];
-      let bestD2 = Infinity;
-    
-      for (let i = 0; i < line.length - 1; i++) {
-        const a = line[i];
-        const b = line[i + 1];
-        if (!a || !b) continue;
-    
-        const abx = b.x - a.x;
-        const aby = b.y - a.y;
-        const apx = p.x - a.x;
-        const apy = p.y - a.y;
-    
-        const ab2 = abx * abx + aby * aby;
-        let t = 0;
-        if (ab2 > 1e-12) {
-          t = (apx * abx + apy * aby) / ab2;
-          t = Math.max(0, Math.min(1, t));
-        }
-    
-        const cxp = a.x + abx * t;
-        const cyp = a.y + aby * t;
-    
-        const dx = p.x - cxp;
-        const dy = p.y - cyp;
-        const d2 = dx * dx + dy * dy;
-    
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          best = { x: cxp, y: cyp };
-        }
-      }
-    
-      return best;
-    }
-    
-    const dockPoly =
-      (newTown?.poly && newTown.poly.length >= 3) ? newTown.poly :
-      (outerBoundary && outerBoundary.length >= 3) ? outerBoundary :
-      null;
-    
-    if (
-      hasDock &&
-      dockPoly &&
-      anchors.primaryGate &&
-      waterModel &&
-      waterModel.kind !== "none" &&
-      Array.isArray(waterModel.shoreline) &&
-      waterModel.shoreline.length >= 2
-    ) {
-      const raw = { x: anchors.primaryGate.x - centre.x, y: anchors.primaryGate.y - centre.y };
-      const dir = (Math.hypot(raw.x, raw.y) > 1e-6) ? normalize(raw) : { x: 1, y: 0 };
-    
-      const v = supportPoint(dockPoly, dir);
-    
-      if (v) {
-        const snapped = snapPointToPolyline(v, waterModel.shoreline);
-    
-        const iv = { x: centre.x - snapped.x, y: centre.y - snapped.y };
-        const inward = (Math.hypot(iv.x, iv.y) > 1e-6) ? normalize(iv) : { x: 1, y: 0 };
-    
-        let p = add(snapped, mul(inward, 6));
-    
-        const MAX_IN_STEPS = 80;
-        const IN_STEP = 6;
-    
-        // 1) Walk inward until inside the overall buildable boundary.
-        if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
-          for (let i = 0; i < MAX_IN_STEPS; i++) {
-            if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
-            p = add(p, mul(inward, IN_STEP));
-          }
-        }
-    
-        // 2) Clamp to visible canvas (coast cases often go off-canvas).
-        p = clampPointToCanvas(p, width, height, 10);
-    
-        // 3) Clamping can move it outside boundary again, so walk inward again.
-        if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
-          for (let i = 0; i < MAX_IN_STEPS; i++) {
-            if (pointInPolyOrOn(p, outerBoundary, 1e-6)) break;
-            p = add(p, mul(inward, IN_STEP));
-            p = clampPointToCanvas(p, width, height, 10);
-          }
-        }
-    
-        // 4) Final clamp so it always remains drawable.
-        p = clampPointToCanvas(p, width, height, 10);
-    
-        anchors.docks = p;
-        // Docks must be outside the bastioned fort (wallBase). If not, push outward; if still bad, drop it.
-        if (anchors.docks && Array.isArray(wallBase) && wallBase.length >= 3) {
-          if (pointInPolyOrOn(anchors.docks, wallBase, 1e-6)) {
-            // Push away from city centre until outside wallBase.
-            anchors.docks = pushOutsidePoly(anchors.docks, wallBase, centre, 6, 120);
-          }
-        
-          // If it still failed, do not force it. Dock is allowed to be null.
-          if (anchors.docks && pointInPolyOrOn(anchors.docks, wallBase, 1e-6)) {
-            anchors.docks = null;
-          }
-        }
-        
-        // Keep docks on-canvas if it exists.
-        if (anchors.docks) {
-          anchors.docks = clampPointToCanvas(anchors.docks, width, height, 10);
-        }
+// ---------------- Docks ----------------
+anchors.docks = buildDocks({
+  hasDock,
+  anchors,
+  newTown,
+  outerBoundary,
+  wallBase,
+  centre,
+  waterModel,
+  width,
+  height,
 
-      }
-    }
+  add,
+  mul,
+  normalize,
+  clampPointToCanvas,
+  pointInPolyOrOn,
+  pushOutsidePoly,
+  supportPoint,
+  snapPointToPolyline,
+});
   // ---------------- Outworks ----------------
 
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
