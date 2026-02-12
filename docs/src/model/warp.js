@@ -193,13 +193,21 @@ function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
   const d = districtAtAngle(theta, districts);
   if (!d) return rFort;
 
-  const kind = d.kind; // You already have deterministic roles
+  const kind = d.kind; // Deterministic roles
   const margin = params.targetMargin ?? 0;
 
+  // Treat “outer” land-use roles like outer_ward for fort offset purposes.
+  const isOuterLike =
+    kind === "outer_ward" ||
+    kind === "slums" ||
+    kind === "farms" ||
+    kind === "plains" ||
+    kind === "woods";
+
   const offset =
-    kind === "new_town"   ? (params.newTownFortOffset ?? 30) :
-    kind === "outer_ward" ? (params.outerWardFortOffset ?? 10) :
-    kind === "citadel"    ? (params.citadelFortOffset ?? -10) :
+    kind === "new_town" ? (params.newTownFortOffset ?? 30) :
+    isOuterLike         ? (params.outerWardFortOffset ?? 10) :
+    kind === "citadel"  ? (params.citadelFortOffset ?? -10) :
     (params.defaultFortOffset ?? 0);
 
   return rFort + offset - margin;
