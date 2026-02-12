@@ -237,8 +237,17 @@ function coreHoleCount({ wards, coreIdxs }) {
   }
 
   if (loops.length <= 1) return 0;
+ 
 
-  // Find outer by abs area.
+  const area = (poly) => {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a * 0.5;
+};
+// Find outer by abs area.
   let outer = null;
   let outerAbs = -Infinity;
 
