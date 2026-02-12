@@ -51,7 +51,7 @@
  * @param {object} [args.params.outsideBands] - Optional distance-band based role distribution.
  * @returns {{wards: Ward[], indices: {plaza:number, citadel:number, inner:number[], outside:number[]}}}
  */
-import { centroid } from "../../geom/poly.js";
+import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 
 function wardAdjacency(wards) {
@@ -239,45 +239,29 @@ function coreHoleCount({ wards, coreIdxs }) {
   if (loops.length <= 1) return 0;
 
   // Find outer by abs area.
-  const area = (poly) => {
-    let a = 0;
-    for (let i = 0; i < poly.length; i++) {
-      const p = poly[i], q = poly[(i + 1) % poly.length];
-      a += p.x * q.y - q.x * p.y;
-    }
-    return a * 0.5;
-  };
-  let outer = loops[0], outerAbs = Math.abs(area(loops[0]));
+  let outer = null;
+  let outerAbs = -Infinity;
+
   for (const l of loops) {
     const aa = Math.abs(area(l));
-    if (aa > outerAbs) { outerAbs = aa; outer = l; }
+    if (aa > outerAbs) {
+      outerAbs = aa;
+      outer = l;
+    }
   }
 
-  // Hole test by centroid-in-outer (use your existing centroid if you prefer).
-  const centroidSimple = (poly) => {
-    let x = 0, y = 0;
-    for (const p of poly) { x += p.x; y += p.y; }
-    return { x: x / poly.length, y: y / poly.length };
-  };
-  const pointInPoly = (pt, poly) => {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i].x, yi = poly[i].y;
-      const xj = poly[j].x, yj = poly[j].y;
-      const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
-        (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi + 1e-12) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  };
+  if (!outer) return 0;
 
+  // Hole test matches districts_voronoi.js:
+  // A loop is a hole if its centroid lies inside the outer loop.
   let holes = 0;
   for (const l of loops) {
     if (l === outer) continue;
-    const c = centroidSimple(l);
-    if (pointInPoly(c, outer)) holes += 1;
+    const c = centroid(l);
+    if (c && pointInPolyOrOn(c, outer, 1e-6)) holes += 1;
   }
   return holes;
+
 }
 
 export function assignWardRoles({ wards, centre, params }) {
@@ -426,8 +410,19 @@ export function assignWardRoles({ wards, centre, params }) {
      const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs });
      if (holesBefore === 0) break;
  
-     const candidateSet = new Set();
-     for (const u of innerIdxs) for (const v of (adj[u] || [])) candidateSet.add(v);
+  const candidateSet = new Set();
+  
+  // Include neighbours of inner + plaza + citadel so we can seal wedges that touch them.
+  const frontierSeeds = [
+    ...innerIdxs,
+    ...(Number.isInteger(plazaIdx2) ? [plazaIdx2] : []),
+    ...(Number.isInteger(citadelIdx2) ? [citadelIdx2] : []),
+  ];
+  
+  for (const u of frontierSeeds) {
+    for (const v of (adj[u] || [])) candidateSet.add(v);
+  }
+
  
      const candidates = Array.from(candidateSet)
        .filter((v) => !isCore(v))
