@@ -239,6 +239,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
+  ctx.geom.centre = centre;
+  ctx.geom.footprint = footprint;
 
   let anchors = null;
 
@@ -250,7 +252,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- New Town placement ----------------
   const placed = placeNewTown({
-    rng,
+    rng: ctx.rng.newTown,
     gates,
     bastions,
     cx,
@@ -267,6 +269,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   let newTown = placed.newTown;
   const primaryGate = placed.primaryGate;
+  ctx.primaryGate = primaryGate;
   wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
   bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
   
@@ -285,12 +288,17 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     ...footprint,
     ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
   ]);
+  ctx.geom.outerBoundary = outerBoundary;
+  ctx.geom.cx = cx;
+  ctx.geom.cy = cy;
+  ctx.geom.wallR = wallR;
+  
 
     // ---------------- Water (river/coast) ----------------
   const waterModel = (waterKind === "none")
   ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
   : buildWaterModel({
-      rng,
+      rng: ctx.rng.water,
       siteWater: waterKind,
       outerBoundary,
       cx,
@@ -713,7 +721,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     // Walls + moatworks
     wallBase,
     wall: wallForDraw,
-    bastionPolys,
+    bastionPolys: bastionPolysSafe,
     gates: gatesWarped,
     ravelins,
     ditchOuter,
