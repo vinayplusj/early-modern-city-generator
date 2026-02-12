@@ -2,23 +2,17 @@
 //
 // Voronoi-region driven districts.
 //
-// Goal (incremental migration):
-// - Replace radial sector districts with districts derived from ward (Voronoi cell) grouping.
-// - Keep the downstream interface stable for:
-//   - warp.js (needs per-district kind + angular span for target offsets)
-//   - render debug overlays (expects district.polygon)
-//   - blocks debug colouring (expects block.districtId)
+// This version replaces the convex hull district polygon with a true merged outline:
+// - Collect all edges of member ward polygons.
+// - Cancel internal shared edges (appear twice).
+// - Stitch remaining edges into boundary loops.
+// - Use the largest loop as district.polygon (debug draw + angle span source).
 //
-// Design choices (safe, deterministic):
-// - Districts are role-groups of wards. This yields a small, stable set:
-//   plaza, citadel, inner_ward, new_town, slums, farms, plains, woods.
-// - Each district polygon is the convex hull of its member ward vertices.
-//   This is a debug/visualisation polygon, not a strict union.
-// - Each district also has startAngle/endAngle that minimally covers its polygon
-//   around the city centre. This preserves compatibility with the current warp
-//   implementation which samples by angle.
+// Notes:
+// - This is a deterministic "union boundary extraction" tailored to Voronoi partitions.
+// - It is not a full polygon boolean with robust hole handling.
+// - Multiple disjoint components are supported; we keep the largest as polygon for now.
 
-import { convexHull } from "../geom/hull.js";
 import { centroid as polyCentroid, pointInPolyOrOn } from "../geom/poly.js";
 
 function wrapAngle(a) {
@@ -33,6 +27,12 @@ function titleCase(s) {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+function roleToKind(role) {
+  // Preserve fine-grained roles on districts, but normalise the inner label.
+  if (role === "inner") return "inner_ward";
+  return role;
 }
 
 function minimalCoveringArc(angles) {
@@ -78,10 +78,270 @@ function districtAnglesFromPoly(poly, centre) {
   return minimalCoveringArc(angles);
 }
 
-function roleToKind(role) {
-  // Preserve fine-grained roles on districts, but normalise the inner label.
-  if (role === "inner") return "inner_ward";
-  return role;
+function polyArea(poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a * 0.5;
+}
+
+function bboxOfPolys(polys) {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+
+  for (const poly of polys) {
+    if (!Array.isArray(poly) || poly.length === 0) continue;
+    for (const p of poly) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function makeQuantiser(bbox) {
+  // Deterministic quantisation epsilon derived from local scale.
+  // This is critical to match shared edges produced by float math.
+  const dx = bbox.maxX - bbox.minX;
+  const dy = bbox.maxY - bbox.minY;
+  const diag = Math.sqrt(dx * dx + dy * dy);
+
+  // Scale: about 1e-6 of the local diagonal, clamped to reasonable limits.
+  const eps = Math.max(1e-6, Math.min(1e-3, diag * 1e-6));
+  const inv = 1 / eps;
+
+  function keyOf(p) {
+    const qx = Math.round(p.x * inv);
+    const qy = Math.round(p.y * inv);
+    return `${qx},${qy}`;
+  }
+
+  function pointOfKey(k) {
+    // Not used for geometry. Keys are only for hashing and stitching.
+    // Coordinates come from representative points we store separately.
+    return k;
+  }
+
+  return { eps, keyOf, pointOfKey };
+}
+
+function undirectedEdgeKey(aKey, bKey) {
+  return aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`;
+}
+
+function angleBetween(u, v) {
+  // Returns signed angle from u to v in (-pi, pi].
+  const cross = u.x * v.y - u.y * v.x;
+  const dot = u.x * v.x + u.y * v.y;
+  return Math.atan2(cross, dot);
+}
+
+function vec(a, b) {
+  return { x: b.x - a.x, y: b.y - a.y };
+}
+
+function mergeOutlineFromWardPolys(polys) {
+  // Returns boundary loops as arrays of points (each loop is closed implicitly).
+  // Strategy:
+  // 1) Build undirected edge counts to cancel shared edges.
+  // 2) Keep edges with count === 1 as boundary edges.
+  // 3) Stitch boundary directed edges into loops.
+
+  const bbox = bboxOfPolys(polys);
+  if (!bbox) return { loops: [], eps: 0 };
+
+  const Q = makeQuantiser(bbox);
+
+  // Map undirected edge key -> { count, aKey, bKey, a, b }
+  const edgeCount = new Map();
+
+  // Representative point for each point key.
+  const repPoint = new Map();
+
+  function rememberPoint(k, p) {
+    if (!repPoint.has(k)) repPoint.set(k, { x: p.x, y: p.y });
+  }
+
+  for (const poly of polys) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (!a || !b) continue;
+      if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) continue;
+      if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
+
+      const aKey = Q.keyOf(a);
+      const bKey = Q.keyOf(b);
+      if (aKey === bKey) continue;
+
+      rememberPoint(aKey, a);
+      rememberPoint(bKey, b);
+
+      const k = undirectedEdgeKey(aKey, bKey);
+      const rec = edgeCount.get(k);
+      if (rec) {
+        rec.count += 1;
+      } else {
+        edgeCount.set(k, { count: 1, aKey, bKey });
+      }
+    }
+  }
+
+  // Build directed adjacency from boundary edges (count === 1).
+  // For stitching we need directed edges. We store both directions because the
+  // original polygon winding may vary between wards.
+  const outEdges = new Map(); // fromKey -> [{ toKey }]
+  const allDirectedEdges = new Set(); // "from->to" strings for visited tracking
+
+  function addDirected(fromKey, toKey) {
+    const k = `${fromKey}->${toKey}`;
+    if (allDirectedEdges.has(k)) return;
+    allDirectedEdges.add(k);
+    if (!outEdges.has(fromKey)) outEdges.set(fromKey, []);
+    outEdges.get(fromKey).push({ toKey });
+  }
+
+  for (const rec of edgeCount.values()) {
+    if (rec.count !== 1) continue;
+    addDirected(rec.aKey, rec.bKey);
+    addDirected(rec.bKey, rec.aKey);
+  }
+
+  // Deterministic ordering of outgoing edges.
+  for (const [fromKey, arr] of outEdges.entries()) {
+    arr.sort((e1, e2) => String(e1.toKey).localeCompare(String(e2.toKey)));
+  }
+
+  function popNextEdge(fromKey, prevKey) {
+    // Choose an outgoing edge deterministically with a geometric preference:
+    // - If prevKey exists, prefer smallest left turn from incoming direction.
+    // - Otherwise choose lexicographically first.
+    const candidates = outEdges.get(fromKey);
+    if (!candidates || candidates.length === 0) return null;
+
+    if (!prevKey) {
+      // First edge: take first candidate.
+      return candidates[0];
+    }
+
+    const fromP = repPoint.get(fromKey);
+    const prevP = repPoint.get(prevKey);
+    if (!fromP || !prevP) return candidates[0];
+
+    const inV = vec(fromP, prevP); // incoming direction (from -> prev)
+    // We want outgoing direction (from -> to). Choose most consistent boundary walk.
+    // We choose the candidate with the smallest positive turn (leftmost), then smallest absolute.
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const cand of candidates) {
+      const toP = repPoint.get(cand.toKey);
+      if (!toP) continue;
+      const outV = vec(fromP, toP);
+      const ang = angleBetween(inV, outV); // (-pi, pi]
+      // Convert to [0, 2pi) where 0 is straight back, and prefer small positive.
+      const score = ang < 0 ? ang + Math.PI * 2 : ang;
+      if (score < bestScore) {
+        bestScore = score;
+        best = cand;
+      }
+    }
+
+    return best || candidates[0];
+  }
+
+  function removeDirectedEdge(fromKey, toKey) {
+    const arr = outEdges.get(fromKey);
+    if (!arr) return;
+    const idx = arr.findIndex((e) => e.toKey === toKey);
+    if (idx >= 0) arr.splice(idx, 1);
+    if (arr.length === 0) outEdges.delete(fromKey);
+  }
+
+  const loops = [];
+
+  // Stitch loops: while any edges remain, start from smallest key deterministically.
+  while (outEdges.size > 0) {
+    const startKey = Array.from(outEdges.keys()).sort((a, b) => String(a).localeCompare(String(b)))[0];
+    const startEdges = outEdges.get(startKey);
+    if (!startEdges || startEdges.length === 0) {
+      outEdges.delete(startKey);
+      continue;
+    }
+
+    let prevKey = null;
+    let currKey = startKey;
+    let next = startEdges[0];
+
+    const loopKeys = [];
+    const safetyMax = 200000;
+
+    for (let step = 0; step < safetyMax; step++) {
+      // Record vertex
+      loopKeys.push(currKey);
+
+      // Choose edge
+      const chosen = popNextEdge(currKey, prevKey);
+      if (!chosen) break;
+
+      // Consume chosen edge so we do not reuse it.
+      const toKey = chosen.toKey;
+      removeDirectedEdge(currKey, toKey);
+
+      prevKey = currKey;
+      currKey = toKey;
+
+      if (currKey === startKey) {
+        // Closed.
+        break;
+      }
+    }
+
+    // Convert keys to representative points.
+    const loop = loopKeys
+      .map((k) => repPoint.get(k))
+      .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+
+    // Basic validity filter.
+    if (loop.length >= 3) {
+      // Remove consecutive duplicates (possible due to quantisation collisions).
+      const cleaned = [];
+      for (const p of loop) {
+        const last = cleaned[cleaned.length - 1];
+        if (!last || last.x !== p.x || last.y !== p.y) cleaned.push(p);
+      }
+      if (cleaned.length >= 3) loops.push(cleaned);
+    }
+  }
+
+  return { loops, eps: Q.eps };
+}
+
+function pickLargestLoop(loops) {
+  if (!Array.isArray(loops) || loops.length === 0) return null;
+  let best = null;
+  let bestAbsArea = -Infinity;
+  for (const l of loops) {
+    const a = Math.abs(polyArea(l));
+    if (a > bestAbsArea) {
+      bestAbsArea = a;
+      best = l;
+    }
+  }
+  return best;
 }
 
 export function buildVoronoiDistrictsFromWards({ wards, centre }) {
@@ -92,9 +352,8 @@ export function buildVoronoiDistrictsFromWards({ wards, centre }) {
   const groups = new Map();
   for (const w of wards) {
     const role = String(w?.role || "").trim() || "plains";
-    const key = role;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(w);
+    if (!groups.has(role)) groups.set(role, []);
+    groups.get(role).push(w);
   }
 
   // Stable role ordering for deterministic district ordering.
@@ -122,34 +381,47 @@ export function buildVoronoiDistrictsFromWards({ wards, centre }) {
 
   for (const role of roles) {
     const members = groups.get(role) || [];
-    const verts = [];
 
+    const polys = [];
     for (const w of members) {
       const poly = w?.poly;
       if (!Array.isArray(poly) || poly.length < 3) continue;
-      for (const p of poly) {
-        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) verts.push(p);
-      }
+      polys.push(poly);
     }
 
-    // If a role group has no usable polygon geometry, skip it.
-    if (verts.length < 3) continue;
+    if (polys.length === 0) continue;
 
-    const hull = convexHull(verts);
-    if (!hull || hull.length < 3) continue;
+    // True merged outline from boundary edges (union boundary extraction).
+    const { loops, eps } = mergeOutlineFromWardPolys(polys);
+    const outer = pickLargestLoop(loops);
 
-    const [a0, a1] = districtAnglesFromPoly(hull, centre);
+    if (!outer || outer.length < 3) continue;
+
+    const [a0, a1] = districtAnglesFromPoly(outer, centre);
     const kind = roleToKind(role);
 
     districts.push({
       id: `d_${kind}`,
       kind,
       name: titleCase(kind),
-      polygon: hull,
+
+      // Debug polygon: now a merged outline instead of a convex hull.
+      polygon: outer,
+
+      // Traceability.
       memberWardIds: members.map((w) => w.id),
+
+      // Warp compatibility.
       startAngle: a0,
       endAngle: a1,
-      _debug: { role },
+
+      // Debug-only extras.
+      _debug: {
+        role,
+        unionEps: eps,
+        componentCount: loops.length,
+        components: loops, // full set, for future hole/component rendering
+      },
     });
   }
 
@@ -163,10 +435,8 @@ export function assignBlocksToDistrictsByWards({ blocks, wards, districts }) {
 
   const roleToDistrictId = new Map();
   for (const d of districts) {
-    // Use the underlying ward role when available.
     const role = String(d?._debug?.role || "").trim();
     if (role) roleToDistrictId.set(role, d.id);
-    // Also map kind for robustness.
     const kind = String(d?.kind || "").trim();
     if (kind) roleToDistrictId.set(kind, d.id);
   }
@@ -207,17 +477,18 @@ export function assignBlocksToDistrictsByWards({ blocks, wards, districts }) {
 
   for (const b of blocks) {
     if (!b || !Array.isArray(b.polygon) || b.polygon.length < 3) continue;
+
     const c = polyCentroid(b.polygon);
     if (!c) continue;
 
     const w = findWardForPoint(c);
     const role = String(w?.role || "").trim() || "plains";
+    const kind = roleToKind(role);
 
-    // Primary mapping is by role, then by kind.
     b.districtId =
       roleToDistrictId.get(role) ||
-      roleToDistrictId.get(roleToKind(role)) ||
-      `d_${roleToKind(role)}`;
+      roleToDistrictId.get(kind) ||
+      `d_${kind}`;
   }
 
   return blocks;
