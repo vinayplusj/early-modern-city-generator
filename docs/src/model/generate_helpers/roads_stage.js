@@ -101,7 +101,7 @@ export function buildRoadPolylines({
   }
 
   
-export function generateSecondaryRoads(rng, gates, ring1, ring2) {
+function generateSecondaryRoads(rng, gates, ring1, ring2) {
   const secondary = [];
   if (!gates || !gates.length || !ring1 || !ring2) return secondary;
 
