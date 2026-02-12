@@ -19,6 +19,7 @@ export function createCtx({ seed, w, h, site, params }) {
     wards: rngFork(seed, "stage:wards"),
     anchors: rngFork(seed, "stage:anchors"),
     newTown: rngFork(seed, "stage:newTown"),
+    water: rngFork(seed, "stage:water"),   
     outworks: rngFork(seed, "stage:outworks"),
   };
 
