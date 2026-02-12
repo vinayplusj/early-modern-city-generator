@@ -99,6 +99,8 @@ export function buildRoadPolylines({
       polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
     }
   }
+
+  return { polylines, secondaryRoads, roadEps };
 }
 
 export function generateSecondaryRoads(rng, gates, ring1, ring2) {
@@ -140,8 +142,6 @@ export function generateSecondaryRoads(rng, gates, ring1, ring2) {
   return secondary;
 }
 
-  return { polylines, secondaryRoads, roadEps };
-}
 
 export function routeGateToSquareViaRing(gate, ring, squareCentre) {
   if (!ring || ring.length < 3) return [gate, squareCentre];
