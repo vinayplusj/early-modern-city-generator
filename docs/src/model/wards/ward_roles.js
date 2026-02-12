@@ -406,8 +406,9 @@ export function assignWardRoles({ wards, centre, params }) {
      idx === plazaIdx2 || idx === citadelIdx2 || innerIdxs.includes(idx);
  
    for (let step = 0; step < maxPlugAdds; step++) {
-     const coreIdxs = [plazaIdx2, citadelIdx2, ...innerIdxs].filter((x) => Number.isInteger(x));
-     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs });
+    // Target: inner-only union (matches districts_voronoi grouping for role === "inner").
+    const targetIdxs = innerIdxs.slice();
+    const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: targetIdxs });
      if (holesBefore === 0) break;
  
   const candidateSet = new Set();
@@ -441,7 +442,7 @@ export function assignWardRoles({ wards, centre, params }) {
      const evalLimit = Math.min(10, candidates.length);
      for (let i = 0; i < evalLimit; i++) {
        const v = candidates[i];
-       const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: [...coreIdxs, v] });
+       const holesAfter = coreHoleCount({ wards: wardsCopy, coreIdxs: [...targetIdxs, v] });
        if (holesAfter < bestHoles) {
          bestHoles = holesAfter;
          best = v;
