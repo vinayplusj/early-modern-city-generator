@@ -52,3 +52,14 @@ export function safeNormalize(v, fallback = { x: 1, y: 0 }) {
   return fallback;
 }
 
+export function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+export function clampPointToCanvas(p, w, h, pad = 8) {
+  if (!p) return p;
+  return {
+    x: clamp(p.x, pad, w - pad),
+    y: clamp(p.y, pad, h - pad),
+  };
+}
