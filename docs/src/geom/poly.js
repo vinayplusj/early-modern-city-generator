@@ -1,4 +1,4 @@
-import { clamp, add, sub, mul, dist, lerp } from "./primitives.js";
+import { add, sub, mul, dist, lerp, clamp, vec, safeNormalize } from "./primitives.js";
 
 export function centroid(poly) {
   let a = 0, cx = 0, cy = 0;
@@ -62,6 +62,51 @@ export function pointInPolyOrOn(pt, poly, eps = 1e-6) {
     if (pointOnSeg(pt, a, b, eps)) return true;
   }
   return pointInPoly(pt, poly);
+}
+
+export function supportPoint(poly, dir) {
+  if (!Array.isArray(poly) || poly.length < 1) return null;
+
+  let best = poly[0];
+  let bestDot = best.x * dir.x + best.y * dir.y;
+
+  for (let i = 1; i < poly.length; i++) {
+    const p = poly[i];
+    const d = p.x * dir.x + p.y * dir.y;
+    if (d > bestDot) {
+      bestDot = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+// Deterministic “pull point into polygon” by stepping toward `toward`
+export function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
+  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
+
+  let q = p;
+  const dir = safeNormalize(vec(q, toward));
+
+  for (let i = 0; i < iters; i++) {
+    if (pointInPolyOrOn(q, poly, 1e-6)) return q;
+    q = add(q, mul(dir, step));
+  }
+  return q;
+}
+
+// Deterministic “push point out of polygon” by stepping away from `awayFrom`
+export function pushOutsidePoly(p, poly, awayFrom, step = 4, iters = 80) {
+  if (!p || !Array.isArray(poly) || poly.length < 3) return p;
+
+  let q = p;
+  const dir = safeNormalize(vec(awayFrom, q)); // move away from centre
+
+  for (let i = 0; i < iters; i++) {
+    if (!pointInPolyOrOn(q, poly, 1e-6)) return q;
+    q = add(q, mul(dir, step));
+  }
+  return q;
 }
 
 export function segIntersect(a, b, c, d) {
