@@ -62,7 +62,7 @@ function pickBestEdge(poly, nearPoint) {
 export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR } = {}) {
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
-  iif (kind === "none") {
+  if (kind === "none") {
   return {
     kind: "none",
     river: null,
