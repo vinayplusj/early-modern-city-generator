@@ -28,3 +28,27 @@ export function rotate(v, ang) {
 export function polar(cx, cy, angle, radius) {
   return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
 }
+
+export function isPoint(p) {
+  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+export function finitePointOrNull(p) {
+  return (p && Number.isFinite(p.x) && Number.isFinite(p.y)) ? p : null;
+}
+
+// Vector from a -> b
+export function vec(a, b) {
+  return { x: b.x - a.x, y: b.y - a.y };
+}
+
+export function len(v) {
+  return Math.hypot(v.x, v.y);
+}
+
+export function safeNormalize(v, fallback = { x: 1, y: 0 }) {
+  const m = len(v);
+  if (m > 1e-9) return { x: v.x / m, y: v.y / m };
+  return fallback;
+}
+
