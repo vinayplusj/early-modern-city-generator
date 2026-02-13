@@ -442,6 +442,53 @@ export function assignWardRoles({ wards, centre, params }) {
  const innerWards = innerIdxs.map((i) => wardsCopy[i]).filter(Boolean);
  for (const w of innerWards) setRole(wardsCopy, w.id, "inner");
 
+ // ---------------- Fort hull memberships: core + ring1 ----------------
+
+  // Core = wards that are inside the fort: plaza + citadel + inner.
+  const coreIds = wardsCopy
+    .filter((w) => w && (w.role === "plaza" || w.role === "citadel" || w.role === "inner"))
+    .map((w) => w.id)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  // Convert core ids to indices (adjacency is index-based).
+  const coreIdxSet = new Set(
+    coreIds
+      .map((id) => idToIndex.get(id))
+      .filter((idx) => Number.isInteger(idx))
+  );
+
+  // Ring 1 = immediate neighbours of ANY core ward, excluding the core wards themselves.
+  const ring1IdxSet = new Set();
+  for (const coreIdx of coreIdxSet) {
+    const nbrs = adj[coreIdx] || [];
+    for (const nbrIdx of nbrs) {
+      if (!coreIdxSet.has(nbrIdx)) ring1IdxSet.add(nbrIdx);
+    }
+  }
+
+  const ring1Ids = Array.from(ring1IdxSet)
+    .map((idx) => wardsCopy[idx]?.id)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  // Inner Hull = boundary loops of the core region.
+  const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds);
+
+  // Outer Hull = boundary loops of the (core + ring1) region.
+  const outerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds.concat(ring1Ids));
+
+  // Optional: export to debug (recommended).
+  if (typeof window !== "undefined") {
+    window.__wardDebug = window.__wardDebug || {};
+    window.__wardDebug.last = window.__wardDebug.last || {};
+    window.__wardDebug.last.fortHulls = {
+      coreIds,
+      ring1Ids,
+      innerHull,
+      outerHull,
+    };
+  }
 
   const used = new Set([plazaWard.id, citadelId, ...innerIdxs.map((i) => wardsCopy[i]?.id).filter(Number.isFinite)]);
 
