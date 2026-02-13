@@ -263,20 +263,25 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Warp field ----------------
   const fortCentre = { x: cx, y: cy };
-  // Use the ward-derived outer hull (if present) to drive the warp field so the fort
-  // stops behaving like a warped regular polygon and instead conforms to the ward core.
-  const wardOuterHull = (typeof window !== "undefined")
-    ? window.__wardDebug?.last?.fortHulls?.outerHull?.outerLoop
-    : null;
+  
+  const fortOuterHull =
+    (typeof window !== "undefined")
+      ? window.__wardDebug?.last?.fortHulls?.outerHull?.outerLoop
+      : null;
 
-    const warp = buildFortWarp({
-    enabled: WARP_FORT.enabled,
-    centre: fortCentre,
+  ctx.params.warpFort = WARP_FORT;
+
+  const warp = buildFortWarp({
+    enabled: true,
+    centre: { x: cx, y: cy },
     wallPoly: wallFinal,
-    fieldPoly: (Array.isArray(wardOuterHull) && wardOuterHull.length >= 3) ? wardOuterHull : null,
+  
+    // NEW: warp field derives rFort from the ward-based outer hull
+    fieldPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+  
     districts,
     bastions: bastionsForWarp,
-    params: WARP_FORT,
+    params: ctx.params.warpFort,
   });
 
   const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
