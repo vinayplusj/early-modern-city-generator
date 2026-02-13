@@ -26,6 +26,28 @@ import { drawCitadel } from "./stages/citadel.js";
 import { drawLandmarksAndCentre } from "./stages/landmarks.js";
 import { drawWardsDebug } from "./stages/wards_debug.js";
 
+function drawPolyline(ctx, poly, opts = {}) {
+  if (!ctx || !Array.isArray(poly) || poly.length < 2) return;
+
+  const {
+    stroke = "rgba(255,255,255,0.9)",
+    width = 2,
+    closed = true,
+  } = opts;
+
+  ctx.save();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  ctx.moveTo(poly[0].x, poly[0].y);
+  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+
+  if (closed) ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ---------- Public render ----------
 export function render(ctx, model) {
   const {
@@ -93,6 +115,55 @@ export function render(ctx, model) {
     warp,
   });
 
+    // ---- Debug: ward-derived fort hulls ----
+    if (typeof window !== "undefined") {
+      const fh = window.__wardDebug?.last?.fortHulls;
+  
+      const inner = fh?.innerHull?.outerLoop;
+      const outer = fh?.outerHull?.outerLoop;
+  
+      // Inner hull (core wards boundary)
+      drawPolyline(ctx, inner, {
+        stroke: "rgba(0,255,255,0.9)",
+        width: 2,
+        closed: true,
+      });
+  
+      // Outer hull (core + ring1 wards boundary)
+      drawPolyline(ctx, outer, {
+        stroke: "rgba(255,0,255,0.9)",
+        width: 2,
+        closed: true,
+      });
+    }
+
+  if (typeof window !== "undefined") {
+    const fh = window.__wardDebug?.last?.fortHulls;
+    const coreIds = new Set(fh?.coreIds || []);
+    const ring1Ids = new Set(fh?.ring1Ids || []);
+  
+    const wards = window.model?.wards || [];
+  
+    for (const w of wards) {
+      const poly = w?.poly;
+      if (!Array.isArray(poly) || poly.length < 3) continue;
+  
+      let fill = null;
+      if (coreIds.has(w.id)) fill = "rgba(0,255,255,0.10)";     // core = cyan tint
+      else if (ring1Ids.has(w.id)) fill = "rgba(255,0,255,0.10)"; // ring1 = magenta tint
+      else continue;
+  
+      ctx.save();
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   drawRoadGraph(ctx, { roadGraph });
 
   drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
@@ -106,4 +177,5 @@ export function render(ctx, model) {
     anchors: A,
     site,
   });
+ 
 }
