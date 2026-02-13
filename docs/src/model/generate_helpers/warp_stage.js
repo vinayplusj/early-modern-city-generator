@@ -15,14 +15,19 @@ export function buildFortWarp({
   if (!enabled) return null;
   if (!wallPoly || !Array.isArray(wallPoly) || wallPoly.length < 3) return null;
 
+  const fieldPolyUse = (Array.isArray(fieldPoly) && fieldPoly.length >= 3)
+    ? fieldPoly
+    : wallPoly;
+
+  // First pass: measure rMean from the SAME boundary we will use for the field.
   const tmp = buildWarpField({
     centre,
-    wallPoly,
+    wallPoly: fieldPolyUse,
     districts,
-    bastions, // ADD
+    bastions,
     params: { ...params, bandInner: 0, bandOuter: 0 },
   });
-
+  
     // Debug-only invariant: centre-to-wall rays should usually hit the wall.
   // If many rays miss, the centre is likely outside the wall, or the wall is degenerate/self-intersecting.
   if (params.debug && tmp && tmp.stats && Number.isFinite(tmp.stats.rFortNullSamples)) {
@@ -52,16 +57,11 @@ export function buildFortWarp({
   
   const rMean = sum / count;
 
-
   const tuned = {
     ...params,
     bandOuter: rMean,
     bandInner: Math.max(0, rMean - params.bandThickness),
   };
-
-  const fieldPolyUse = (Array.isArray(fieldPoly) && fieldPoly.length >= 3)
-    ? fieldPoly
-    : wallPoly;
 
   const field = buildWarpField({
     centre,
