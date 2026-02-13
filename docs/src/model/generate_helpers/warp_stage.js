@@ -16,13 +16,12 @@ export function buildFortWarp({
   if (!wallPoly || !Array.isArray(wallPoly) || wallPoly.length < 3) return null;
 
   const fieldPolyUse = (Array.isArray(fieldPoly) && fieldPoly.length >= 3)
-    ? fieldPoly
-    : wallPoly;
+    ? fieldPoly : null;
 
   // First pass: measure rMean from the SAME boundary we will use for the field.
   const tmp = buildWarpField({
     centre,
-    wallPoly: fieldPolyUse,
+    targetPoly: targetPolyUse,
     districts,
     bastions,
     params: { ...params, bandInner: 0, bandOuter: 0 },
@@ -65,7 +64,7 @@ export function buildFortWarp({
 
   const field = buildWarpField({
     centre,
-    wallPoly: fieldPolyUse,
+    targetPoly: targetPolyUse,
     districts,
     bastions,
     params: tuned,
