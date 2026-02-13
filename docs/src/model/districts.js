@@ -1,5 +1,5 @@
 // docs/src/model/districts.js
-import { centroid as polyCentroid } from "../geom/poly.js";
+import { centroid, pointInPolyOrOn } from "../geom/poly.js";
 
 function angle(cx, cy, p) {
   return Math.atan2(p.y - cy, p.x - cx);
@@ -312,5 +312,237 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
   }
 
   return districts;
+}
+
+// ---------------------------------------------------------------------------
+// District geometry helpers (membership lists only; no district poly ownership)
+// ---------------------------------------------------------------------------
+
+function polyAreaSigned(poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a * 0.5;
+}
+
+function buildLoopsFromPolys(polys) {
+  // Edge-cancellation union boundary via quantised point keys.
+  // Returns all boundary loops (outer + holes, if any).
+  const bbox = (() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const poly of polys) {
+      if (!Array.isArray(poly) || poly.length < 3) continue;
+      for (const p of poly) {
+        if (!p) continue;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  })();
+
+  if (!bbox) return [];
+
+  const dx = bbox.maxX - bbox.minX;
+  const dy = bbox.maxY - bbox.minY;
+  const diag = Math.sqrt(dx * dx + dy * dy);
+
+  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
+  const inv = 1 / eps;
+
+  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
+  const eKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+  const rep = new Map();     // pointKey -> representative {x,y}
+  const edgeCount = new Map(); // edgeKey -> count
+
+  for (const poly of polys) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (!a || !b) continue;
+
+      const ak = keyOf(a);
+      const bk = keyOf(b);
+      if (ak === bk) continue;
+
+      if (!rep.has(ak)) rep.set(ak, { x: a.x, y: a.y });
+      if (!rep.has(bk)) rep.set(bk, { x: b.x, y: b.y });
+
+      const k = eKey(ak, bk);
+      edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+    }
+  }
+
+  // Boundary edges are those that appear exactly once.
+  const adj = new Map();   // pointKey -> Set(pointKey)
+  const unused = new Set(); // boundary edge keys not yet consumed
+
+  function addAdj(u, v) {
+    if (!adj.has(u)) adj.set(u, new Set());
+    adj.get(u).add(v);
+  }
+
+  for (const [k, c] of edgeCount.entries()) {
+    if (c !== 1) continue;
+    const parts = k.split("|");
+    const a = parts[0];
+    const b = parts[1];
+    addAdj(a, b);
+    addAdj(b, a);
+    unused.add(k);
+  }
+
+  function nextNeighbour(curr, prev) {
+    const nbrs = adj.get(curr);
+    if (!nbrs) return null;
+
+    const ordered = Array.from(nbrs).sort();
+    for (const n of ordered) {
+      if (n === prev) continue;
+      const k = eKey(curr, n);
+      if (unused.has(k)) return n;
+    }
+    for (const n of ordered) {
+      const k = eKey(curr, n);
+      if (unused.has(k)) return n;
+    }
+    return null;
+  }
+
+  const loops = [];
+
+  const keysSorted = () => Array.from(adj.keys()).sort();
+
+  while (unused.size > 0) {
+    let start = null;
+
+    for (const u of keysSorted()) {
+      const nbrs = adj.get(u);
+      if (!nbrs) continue;
+      for (const v of nbrs) {
+        if (unused.has(eKey(u, v))) {
+          start = u;
+          break;
+        }
+      }
+      if (start) break;
+    }
+
+    if (!start) break;
+
+    const nbrs0 = Array.from(adj.get(start) || []).sort();
+    let first = null;
+    for (const v of nbrs0) {
+      if (unused.has(eKey(start, v))) {
+        first = v;
+        break;
+      }
+    }
+    if (!first) break;
+
+    const loopKeys = [start, first];
+    unused.delete(eKey(start, first));
+
+    let prev = start;
+    let curr = first;
+
+    for (let step = 0; step < 200000; step++) {
+      const nxt = nextNeighbour(curr, prev);
+      if (!nxt) break;
+
+      unused.delete(eKey(curr, nxt));
+
+      if (nxt === start) break;
+
+      prev = curr;
+      curr = nxt;
+      loopKeys.push(curr);
+    }
+
+    const loop = loopKeys.map((k) => rep.get(k)).filter(Boolean);
+    if (loop.length >= 3) loops.push(loop);
+  }
+
+  return loops;
+}
+
+/**
+ * Build boundary loops for a district defined as a membership list of wards.
+ *
+ * Districts remain membership lists only:
+ * - kind
+ * - memberWardIds
+ *
+ * This helper does NOT mutate districts or create a district polygon.
+ *
+ * @param {Array} wards - ward objects (each may have .poly or .polygon)
+ * @param {number[]} memberWardIds - ward ids included in the feature
+ * @returns {{ loops: Array, holeCount: number, outerLoop: Array|null }}
+ */
+export function buildDistrictLoopsFromWards(wards, memberWardIds) {
+  const wardArr = Array.isArray(wards) ? wards : [];
+  const ids = Array.isArray(memberWardIds) ? memberWardIds : [];
+
+  if (wardArr.length === 0 || ids.length === 0) {
+    return { loops: [], holeCount: 0, outerLoop: null };
+  }
+
+  const idSet = new Set(ids);
+
+  const polys = [];
+  for (const w of wardArr) {
+    if (!w || !idSet.has(w.id)) continue;
+
+    const poly =
+      (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
+      (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
+      null;
+
+    if (Array.isArray(poly) && poly.length >= 3) polys.push(poly);
+  }
+
+  if (polys.length === 0) {
+    return { loops: [], holeCount: 0, outerLoop: null };
+  }
+
+  const loops = buildLoopsFromPolys(polys);
+
+  if (loops.length === 0) {
+    return { loops: [], holeCount: 0, outerLoop: null };
+  }
+
+  // Outer loop = max absolute area
+  let outerLoop = null;
+  let outerAbs = -Infinity;
+
+  for (const l of loops) {
+    const aa = Math.abs(polyAreaSigned(l));
+    if (aa > outerAbs) {
+      outerAbs = aa;
+      outerLoop = l;
+    }
+  }
+
+  if (!outerLoop) {
+    return { loops, holeCount: 0, outerLoop: null };
+  }
+
+  // Holes: loop centroid inside outer loop
+  let holeCount = 0;
+  for (const l of loops) {
+    if (l === outerLoop) continue;
+    const c = centroid(l);
+    if (isPoint(c) && pointInPolyOrOn(c, outerLoop, 1e-6)) holeCount += 1;
+  }
+
+  return { loops, holeCount, outerLoop };
 }
 
