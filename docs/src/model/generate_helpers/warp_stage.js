@@ -18,10 +18,10 @@ export function buildFortWarp({
   const fieldPolyUse = (Array.isArray(fieldPoly) && fieldPoly.length >= 3)
     ? fieldPoly : null;
 
-  // First pass: measure rMean from the SAME boundary we will use for the field.
+    // First pass: measure rMean from the SAME boundary we will use for the field.
   const tmp = buildWarpField({
     centre,
-    targetPoly: targetPolyUse,
+    wallPoly: fieldPolyUse || wallPoly,
     districts,
     bastions,
     params: { ...params, bandInner: 0, bandOuter: 0 },
@@ -64,11 +64,12 @@ export function buildFortWarp({
 
   const field = buildWarpField({
     centre,
-    targetPoly: targetPolyUse,
+    wallPoly: fieldPolyUse || wallPoly,
     districts,
     bastions,
     params: tuned,
   });
+
 
   const wallWarped = warpPolylineRadial(wallPoly, centre, field, tuned);
 
@@ -76,5 +77,12 @@ export function buildFortWarp({
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
   }
 
-  return { centre, params: tuned, field, wallOriginal: wallPoly, wallWarped };
+  return {
+    centre,
+    params: tuned,
+    field,
+    wallOriginal: wallPoly,
+    wallWarped,
+    _debug: { fieldPolyUsed: fieldPolyUse ? "hull" : "wall" },
+  };
 }
