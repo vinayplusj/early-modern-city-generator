@@ -1,5 +1,6 @@
 // docs/src/model/districts.js
 import { centroid, pointInPolyOrOn } from "../geom/poly.js";
+import { isPoint } from "../geom/primitives.js";
 
 function angle(cx, cy, p) {
   return Math.atan2(p.y - cy, p.x - cx);
@@ -459,8 +460,11 @@ function buildLoopsFromPolys(polys) {
       if (!nxt) break;
 
       unused.delete(eKey(curr, nxt));
-
-      if (nxt === start) break;
+      
+      if (nxt === start) {
+        if (loopKeys[loopKeys.length - 1] !== start) loopKeys.push(start);
+        break;
+      }
 
       prev = curr;
       curr = nxt;
@@ -468,7 +472,7 @@ function buildLoopsFromPolys(polys) {
     }
 
     const loop = loopKeys.map((k) => rep.get(k)).filter(Boolean);
-    if (loop.length >= 3) loops.push(loop);
+    if (loop.length >= 4) loops.push(loop);
   }
 
   return loops;
@@ -489,7 +493,9 @@ function buildLoopsFromPolys(polys) {
  */
 export function buildDistrictLoopsFromWards(wards, memberWardIds) {
   const wardArr = Array.isArray(wards) ? wards : [];
-  const ids = Array.isArray(memberWardIds) ? memberWardIds : [];
+  const ids = Array.isArray(memberWardIds)
+    ? memberWardIds.map(Number).filter(Number.isFinite)
+    : [];
 
   if (wardArr.length === 0 || ids.length === 0) {
     return { loops: [], holeCount: 0, outerLoop: null };
@@ -545,4 +551,3 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds) {
 
   return { loops, holeCount, outerLoop };
 }
-
