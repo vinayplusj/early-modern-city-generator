@@ -54,8 +54,13 @@ export function buildFortWarp({
 
   const field = buildWarpField({
     centre,
+  
+    // What we are warping (current fort wall)
     wallPoly,
-    targetPoly: targetPolyUse,
+  
+    // What we want to conform to (ward-derived outer hull)
+    targetPoly: fieldPolyUse || wallPoly,
+  
     districts,
     bastions,
     params: tuned,
