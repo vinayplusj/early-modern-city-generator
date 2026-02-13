@@ -5,8 +5,11 @@ export function buildFortWarp({
   enabled,
   centre,
   wallPoly,
+  // Optional: use a different boundary to build the warp field (sampling rFort).
+  // This lets the bastioned wall be warped toward a ward-derived "outer hull".
+  fieldPoly,
   districts,
-  bastions,   // ADD
+  bastions,
   params,
 }) {
   if (!enabled) return null;
@@ -56,11 +59,15 @@ export function buildFortWarp({
     bandInner: Math.max(0, rMean - params.bandThickness),
   };
 
+  const fieldPolyUse = (Array.isArray(fieldPoly) && fieldPoly.length >= 3)
+    ? fieldPoly
+    : wallPoly;
+
   const field = buildWarpField({
     centre,
-    wallPoly,
+    wallPoly: fieldPolyUse,
     districts,
-    bastions, // ADD
+    bastions,
     params: tuned,
   });
 
