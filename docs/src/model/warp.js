@@ -1,7 +1,7 @@
 // docs/src/model/warp.js
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
 
-export function buildWarpField({ centre, wallPoly, targetPoly, districts, bastions, params }) {
+export function buildWarpField({ centre, wallPoly, targetPoly = null, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
@@ -79,6 +79,18 @@ export function buildWarpField({ centre, wallPoly, targetPoly, districts, bastio
     const fallback = (first >= 0) ? rFort[first] : 0;
     for (let i = 0; i < N; i++) {
       if (rFort[i] == null) rFort[i] = fallback;
+    }
+  }
+
+  // Ensure rTarget has no nulls after rFort backfill (prevents delta spikes at i=0).
+  const polyForTarget =
+    (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : wallPoly;
+  
+  for (let i = 0; i < N; i++) {
+    if (rTarget[i] == null || !Number.isFinite(rTarget[i])) {
+      let rawTargetR = sampleRadiusAtAngle(centre, thetas[i], polyForTarget);
+      if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
+      rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districts, rawTargetR, params);
     }
   }
 
