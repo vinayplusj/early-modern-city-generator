@@ -69,6 +69,68 @@ export function buildWardSeedsSpiral({ rng, centre, footprintPoly, params }) {
   return seeds;
 }
 
+function polyPerimeter(poly) {
+  let L = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    L += Math.hypot(dx, dy);
+  }
+  return L;
+}
+
+function pointAtDistanceOnPoly(poly, dist) {
+  // Walk edges until we reach the requested distance along the perimeter.
+  let remaining = dist;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+
+    if (seg <= 1e-9) continue;
+
+    if (remaining <= seg) {
+      const t = remaining / seg;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+
+    remaining -= seg;
+  }
+
+  // Fallback: if numerical drift, return first vertex.
+  return { x: poly[0].x, y: poly[0].y };
+}
+
+function buildBoundarySeeds({ footprintPoly, count, inset }) {
+  const poly = Array.isArray(footprintPoly) ? footprintPoly : [];
+  if (poly.length < 3 || count <= 0) return [];
+
+  const c = polygonCentroid(poly);
+  const perim = polyPerimeter(poly);
+  if (!Number.isFinite(perim) || perim <= 1e-6) return [];
+
+  const step = perim / count;
+  const seeds = [];
+
+  for (let i = 0; i < count; i++) {
+    const p = pointAtDistanceOnPoly(poly, i * step);
+
+    // Push slightly inward toward centroid so the seed is inside after clipping.
+    const vx = c.x - p.x;
+    const vy = c.y - p.y;
+    const vlen = Math.hypot(vx, vy) || 1;
+
+    seeds.push({
+      x: p.x + (vx / vlen) * inset,
+      y: p.y + (vy / vlen) * inset,
+    });
+  }
+
+  return seeds;
+}
 /**
  * Build Voronoi wards (seed + polygon + centroid).
  *
@@ -83,6 +145,16 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
   const p = normaliseParams(params);
 
   const wardSeeds = buildWardSeedsSpiral({ rng, centre, footprintPoly, params: p });
+
+  // NEW: add a boundary seed ring to reduce skewed outer cells
+  if (p.boundarySeedCount > 0) {
+    const ring = buildBoundarySeeds({
+      footprintPoly,
+      count: p.boundarySeedCount,
+      inset: p.boundaryInset,
+    });
+    for (const s of ring) wardSeeds.push(s);
+  }
 
   // Build Voronoi over a padded bounding box.
   const bbox = computeBBox(footprintPoly, p.bboxPadding);
@@ -146,6 +218,10 @@ function normaliseParams(params) {
     jitterAngle: numberOr(params?.jitterAngle, 0.25),
     bboxPadding: numberOr(params?.bboxPadding, 250),
     clipToFootprint: Boolean(params?.clipToFootprint ?? false),
+
+    // NEW: add one deterministic “ring” of seeds near the boundary
+    boundarySeedCount: clampInt(params?.boundarySeedCount ?? 0, 0, 400),
+    boundaryInset: numberOr(params?.boundaryInset, 6), // world units (pixels)
   };
 }
 
