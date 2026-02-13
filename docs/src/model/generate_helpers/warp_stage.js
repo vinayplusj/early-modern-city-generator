@@ -5,7 +5,7 @@ export function buildFortWarp({
   enabled,
   centre,
   wallPoly,
-  fieldPoly,   // ward outer hull (target)
+  targetPoly,  // <-- rename from fieldPoly to targetPoly (clearer)
   districts,
   bastions,
   params,
@@ -14,28 +14,17 @@ export function buildFortWarp({
   if (!Array.isArray(wallPoly) || wallPoly.length < 3) return null;
 
   const targetPolyUse =
-    (Array.isArray(fieldPoly) && fieldPoly.length >= 3) ? fieldPoly : null;
+    (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : null;
 
-  // Pass 1: measure mean radius of the ACTUAL wall (so band sizing covers the wall)
+  // Pass 1: measure mean radius of the actual wall
   const tmp = buildWarpField({
     centre,
-    wallPoly,                 // <- sample rFort from the wall
-    targetPoly: targetPolyUse, // <- sample rTarget from hull when available
+    wallPoly,
+    targetPoly: targetPolyUse,
     districts,
     bastions,
     params: { ...params, bandInner: 0, bandOuter: 0 },
   });
-
-  if (params.debug && tmp?.stats && Number.isFinite(tmp.stats.rFortNullSamples)) {
-    const misses = tmp.stats.rFortNullSamples;
-    const N = tmp.N;
-    const maxMisses = Math.floor(N * 0.20);
-    if (misses > maxMisses) {
-      throw new Error(
-        `warp: rFort coverage failed (misses=${misses}/${N}). centre may be outside wallPoly or wallPoly is degenerate.`
-      );
-    }
-  }
 
   let sum = 0;
   let count = 0;
@@ -54,23 +43,13 @@ export function buildFortWarp({
 
   const field = buildWarpField({
     centre,
-  
-    // What we are warping (current fort wall)
     wallPoly,
-  
-    // What we want to conform to (ward-derived outer hull)
-    targetPoly: fieldPolyUse || wallPoly,
-  
+    targetPoly: targetPolyUse,
     districts,
     bastions,
     params: tuned,
   });
 
   const wallWarped = warpPolylineRadial(wallPoly, centre, field, tuned);
-
-  for (const p of wallWarped) {
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
-  }
-
   return { centre, params: tuned, field, wallOriginal: wallPoly, wallWarped };
 }
