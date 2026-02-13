@@ -51,8 +51,10 @@
  * @param {object} [args.params.outsideBands] - Optional distance-band based role distribution.
  * @returns {{wards: Ward[], indices: {plaza:number, citadel:number, inner:number[], outside:number[]}}}
  */
-import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
+import { buildDistrictLoopsFromWards } from "../districts.js";
+import { centroid } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
+
 
 function wardAdjacency(wards) {
   // Build adjacency by shared polygon edges using quantised point keys.
@@ -124,153 +126,6 @@ function wardAdjacency(wards) {
   }
 
   return adj.map((s) => Array.from(s).sort((a, b) => a - b));
-}
-
-function coreHoleCount({ wards, coreIdxs }) {
-  const polys = [];
-  for (const idx of coreIdxs) {
-    const poly = wards[idx]?.poly;
-    if (Array.isArray(poly) && poly.length >= 3) polys.push(poly);
-  }
-  if (polys.length === 0) return 0;
-
-  // Inline: union boundary via edge cancellation (same method as districts).
-  // We only need hole count, so minimal implementation is acceptable here.
-  const bbox = (() => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const poly of polys) for (const p of poly) {
-      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
-    }
-    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
-  })();
-  if (!bbox) return 0;
-
-  const dx = bbox.maxX - bbox.minX, dy = bbox.maxY - bbox.minY;
-  const diag = Math.sqrt(dx * dx + dy * dy);
-  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
-  const inv = 1 / eps;
-  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
-  const eKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-
-  const rep = new Map();
-  const edgeCount = new Map();
-
-  for (const poly of polys) {
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i], b = poly[(i + 1) % poly.length];
-      const ak = keyOf(a), bk = keyOf(b);
-      if (ak === bk) continue;
-      if (!rep.has(ak)) rep.set(ak, { x: a.x, y: a.y });
-      if (!rep.has(bk)) rep.set(bk, { x: b.x, y: b.y });
-      const k = eKey(ak, bk);
-      edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
-    }
-  }
-
-  // Boundary edges = count === 1, build adjacency.
-  const adj = new Map();
-  const unused = new Set();
-  function addAdj(u, v) {
-    if (!adj.has(u)) adj.set(u, new Set());
-    adj.get(u).add(v);
-  }
-
-  for (const [k, c] of edgeCount.entries()) {
-    if (c !== 1) continue;
-    const [a, b] = k.split("|");
-    addAdj(a, b); addAdj(b, a);
-    unused.add(k);
-  }
-
-  function nextNeighbour(curr, prev) {
-    const nbrs = adj.get(curr);
-    if (!nbrs) return null;
-    const ordered = Array.from(nbrs).sort();
-    for (const n of ordered) {
-      if (n === prev) continue;
-      const k = eKey(curr, n);
-      if (unused.has(k)) return n;
-    }
-    for (const n of ordered) {
-      const k = eKey(curr, n);
-      if (unused.has(k)) return n;
-    }
-    return null;
-  }
-
-  const loops = [];
-  const keysSorted = () => Array.from(adj.keys()).sort();
-
-  while (unused.size > 0) {
-    let start = null;
-    for (const u of keysSorted()) {
-      for (const v of (adj.get(u) || [])) {
-        if (unused.has(eKey(u, v))) { start = u; break; }
-      }
-      if (start) break;
-    }
-    if (!start) break;
-
-    const nbrs0 = Array.from(adj.get(start) || []).sort();
-    let first = null;
-    for (const v of nbrs0) {
-      if (unused.has(eKey(start, v))) { first = v; break; }
-    }
-    if (!first) break;
-
-    const loopKeys = [start, first];
-    unused.delete(eKey(start, first));
-
-    let prev = start, curr = first;
-    for (let step = 0; step < 200000; step++) {
-      const nxt = nextNeighbour(curr, prev);
-      if (!nxt) break;
-      if (nxt === start) { unused.delete(eKey(curr, nxt)); break; }
-      unused.delete(eKey(curr, nxt));
-      prev = curr; curr = nxt;
-      loopKeys.push(curr);
-    }
-
-    const loop = loopKeys.map((k) => rep.get(k)).filter(Boolean);
-    if (loop.length >= 3) loops.push(loop);
-  }
-
-  if (loops.length <= 1) return 0;
- 
-
-  const area = (poly) => {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i], q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a * 0.5;
-};
-// Find outer by abs area.
-  let outer = null;
-  let outerAbs = -Infinity;
-
-  for (const l of loops) {
-    const aa = Math.abs(area(l));
-    if (aa > outerAbs) {
-      outerAbs = aa;
-      outer = l;
-    }
-  }
-
-  if (!outer) return 0;
-
-  // Hole test matches districts_voronoi.js:
-  // A loop is a hole if its centroid lies inside the outer loop.
-  let holes = 0;
-  for (const l of loops) {
-    if (l === outer) continue;
-    const c = centroid(l);
-    if (c && pointInPolyOrOn(c, outer, 1e-6)) holes += 1;
-  }
-  return holes;
-
 }
 
 export function assignWardRoles({ wards, centre, params }) {
@@ -360,7 +215,17 @@ export function assignWardRoles({ wards, centre, params }) {
    return out;
  };
  
-  const visited = new Set([plazaIdx]);
+  const fortCoreWardIds = (innerArr = innerIdxs) => {
+   const idxs = fortCoreIdxs(innerArr);
+   const ids = [];
+   for (const i of idxs) {
+     const id = wardsCopy[i]?.id;
+     if (Number.isFinite(id)) ids.push(id);
+   }
+   return ids;
+ };
+
+ const visited = new Set([plazaIdx]);
   let frontier = [plazaIdx];
 
   while (frontier.length && innerIdxs.length < innerCount) {
@@ -402,17 +267,25 @@ export function assignWardRoles({ wards, centre, params }) {
   }
 
   // Now ensure citadel is distinct from plaza and inner wards.
-  // If collision, pick next available by order.
-  {
-    const usedIds = new Set([plazaWard.id, ...innerIdxs.map((i) => wardsCopy[i].id)]);
-    if (usedIds.has(citadelId)) {
-      const alt = order.find((w) => !usedIds.has(w.id));
-      if (alt) {
-        citadelId = alt.id;
-        citadelIdx = idToIndex.get(citadelId);
-      }
-    }
-  }
+ // If collision, pick next available by order.
+ {
+   const usedIds = new Set([plazaWard.id, ...innerIdxs.map((i) => wardsCopy[i].id)]);
+ 
+   if (usedIds.has(citadelId)) {
+     // Try to pick an alternative citadel.
+     const alt = order.find((w) => !usedIds.has(w.id));
+     if (alt) {
+       citadelId = alt.id;
+       citadelIdx = idToIndex.get(citadelId);
+     }
+ 
+     // Always ensure citadel is not in innerIdxs, even if no alt exists.
+     if (Number.isInteger(citadelIdx)) {
+       const pos = innerIdxs.indexOf(citadelIdx);
+       if (pos >= 0) innerIdxs.splice(pos, 1);
+     }
+   }
+ }
  
   exclude.clear();
   exclude.add(plazaIdx);
@@ -475,7 +348,11 @@ export function assignWardRoles({ wards, centre, params }) {
    }
  
    function score(innerArr) {
-    const holes = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerArr) });
+    const { holeCount: holes } = buildDistrictLoopsFromWards(
+     wardsCopy,
+     fortCoreWardIds(innerArr)
+   );
+
     let distSum = 0;
     for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
     return { holes, distSum };
@@ -532,7 +409,11 @@ export function assignWardRoles({ wards, centre, params }) {
  if (maxPlugAdds > 0) {
    let addsLeft = maxPlugAdds;   
    while (addsLeft > 0) {
-     const holesBefore = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
+     const holesBefore = buildDistrictLoopsFromWards(
+      wardsCopy,
+      fortCoreWardIds(innerIdxs)
+    ).holeCount;
+
      if (holesBefore === 0) break;
    
      const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
@@ -547,7 +428,11 @@ export function assignWardRoles({ wards, centre, params }) {
        }
      }
    
-    const holesAfter  = coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) });
+    const holesAfter = buildDistrictLoopsFromWards(
+     wardsCopy,
+     fortCoreWardIds(innerIdxs)
+   ).holeCount;
+
     if (holesAfter >= holesBefore) break;
    }
 
@@ -585,12 +470,22 @@ export function assignWardRoles({ wards, centre, params }) {
   if (typeof window !== "undefined") {
    window.__wardDebug = window.__wardDebug || {};
    window.__wardDebug.last = window.__wardDebug.last || {};
-   window.__wardDebug.last.fortCore = {
-     plazaId: plazaWard.id,
-     citadelId,
-     innerIds: innerIdxs.map(i => wardsCopy[i]?.id).filter(Number.isFinite),
-     coreHoleCount: coreHoleCount({ wards: wardsCopy, coreIdxs: fortCoreIdxs(innerIdxs) }),
-   };
+   const fortCore = buildDistrictLoopsFromWards(
+    wardsCopy,
+    fortCoreWardIds(innerIdxs)
+  );
+  
+  window.__wardDebug.last.fortCore = {
+    plazaId: plazaWard.id,
+    citadelId,
+    innerIds: innerIdxs.map((i) => wardsCopy[i]?.id).filter(Number.isFinite),
+    coreHoleCount: fortCore.holeCount,
+    _debug: {
+      loops: fortCore.loops,
+      outerLoop: fortCore.outerLoop,
+    },
+  };
+
  }
 
  return {
@@ -735,6 +630,7 @@ export function wardCentroid(w) {
 
 if (typeof window !== "undefined") {
   window.__wardDebug = window.__wardDebug || {};
-  window.__wardDebug.coreHoleCount = coreHoleCount;
+  window.__wardDebug.buildDistrictLoopsFromWards = buildDistrictLoopsFromWards;
+
 }
 
