@@ -1,7 +1,7 @@
 // docs/src/model/warp.js
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
 
-export function buildWarpField({ centre, wallPoly, districts, bastions, params }) {
+export function buildWarpField({ centre, wallPoly, targetPoly, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
@@ -32,16 +32,26 @@ export function buildWarpField({ centre, wallPoly, districts, bastions, params }
   for (let i = 0; i < N; i++) {
     const theta = (i / N) * Math.PI * 2;
     thetas[i] = theta;
-    const rawR = sampleRadiusAtAngle(centre, theta, wallPoly);
-    if (rawR == null) rFortNullSamples++;
-    rFort[i] = rawR;
-
+    // 1) Current wall radius (what we are warping)
+    const rawWallR = sampleRadiusAtAngle(centre, theta, wallPoly);
+    if (rawWallR == null) rFortNullSamples++;
+    rFort[i] = rawWallR;
+    
     // Stable fallback: carry previous, else use next later
     if (rFort[i] == null) {
       rFort[i] = (i > 0) ? rFort[i - 1] : null;
     }
+    
+    // 2) Target radius from the hull (what we want the wall to conform to)
+    const polyForTarget =
+      (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : wallPoly;
+    
+    let rawTargetR = sampleRadiusAtAngle(centre, theta, polyForTarget);
+    if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
+    
+    // 3) Apply your existing per-district offsets *on top* of that target hull radius
+    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rawTargetR, params);
 
-    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rFort[i] ?? 0, params);
     if (params.debug && i % 120 === 0) {
       const d = districtAtAngle(theta, districts);
     }
