@@ -21,7 +21,8 @@ export function buildFortWarp({
     // First pass: measure rMean from the SAME boundary we will use for the field.
   const tmp = buildWarpField({
     centre,
-    wallPoly: fieldPolyUse || wallPoly,
+    wallPoly,                              // sample rFort from the current wall
+    targetPoly: fieldPolyUse || null,       // sample rTarget from the hull (if provided)
     districts,
     bastions,
     params: { ...params, bandInner: 0, bandOuter: 0 },
@@ -63,13 +64,13 @@ export function buildFortWarp({
   };
 
   const field = buildWarpField({
-    centre,
-    wallPoly: fieldPolyUse || wallPoly,
-    districts,
-    bastions,
-    params: tuned,
-  });
-
+  centre,
+  wallPoly,
+  targetPoly: fieldPolyUse || null,
+  districts,
+  bastions,
+  params: tuned,
+});
 
   const wallWarped = warpPolylineRadial(wallPoly, centre, field, tuned);
 
