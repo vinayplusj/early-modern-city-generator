@@ -218,12 +218,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
-    seedCount: 24,
+    seedCount: 24,                 // spiral seeds (core density)
     spiralScale: baseR * 0.14,
     jitterRadius: baseR * 0.03,
     jitterAngle: 0.25,
     bboxPadding: baseR * 1.2,
     clipToFootprint: true,
+  
+    // NEW: boundary ring to create more “rings” and reduce skew
+    boundarySeedCount: 16,         // start with 16–32; 24 is a good default
+    boundaryInset: Math.max(4, baseR * 0.015),
   };
 
   const { wardSeeds, wards } = buildWardsVoronoi({
