@@ -50,7 +50,7 @@ function sampleOnRing(thetas, values, theta) {
   return lerp(v0, v1, u);
 }
 
-function clampPolylineRadial(poly, centre, minField, maxField, minMargin, maxMargin) {
+export function clampPolylineRadial(poly, centre, minField, maxField, minMargin, maxMargin) {
   if (!Array.isArray(poly) || poly.length < 2) return poly;
 
   const out = [];
@@ -97,6 +97,8 @@ export function buildFortWarp({
   targetPoly,
   fieldPoly,
 
+  // Optional tuning polygon (defaults to wallPoly).
+  tuningPoly,
   // Optional clamps.
   clampMinPoly,
   clampMaxPoly,
@@ -115,24 +117,21 @@ export function buildFortWarp({
       ? targetPoly
       : ((Array.isArray(fieldPoly) && fieldPoly.length >= 3) ? fieldPoly : null);
 
-  // Pass 1: measure mean radius of the actual wall.
-  const tmp = buildWarpField({
-    centre,
-    wallPoly,
-    targetPoly: targetPolyUse,
-    districts,
-    bastions,
-    params: { ...params, bandInner: 0, bandOuter: 0 },
-  });
+  // Pass 1: measure mean radius of the tuning polygon (defaults to wall).
+  const tunePoly =
+    (Array.isArray(tuningPoly) && tuningPoly.length >= 3) ? tuningPoly : wallPoly;
 
   let sum = 0;
   let count = 0;
-  for (const r of tmp.rFort || []) {
-    if (Number.isFinite(r)) {
-      sum += r;
-      count += 1;
-    }
+
+  for (const p of tunePoly) {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    const r = dist(p, centre);
+    if (!Number.isFinite(r)) continue;
+    sum += r;
+    count += 1;
   }
+
   if (count === 0) return null;
 
   const rMean = sum / count;
@@ -205,6 +204,11 @@ export function buildFortWarp({
     centre,
     params: tuned,
     field,
+    // Expose clamp fields so callers can clamp other geometry (outworks).
+    minField,
+    maxField,
+    clampMinMargin,
+    clampMaxMargin,
     wallOriginal: wallPoly,
     wallWarped,
     rMean,
