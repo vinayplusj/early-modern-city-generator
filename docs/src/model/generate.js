@@ -241,10 +241,13 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.wards.seeds = wardSeeds;
 
-  const { wards: wardsWithRoles, indices: wardRoleIndices } = assignWardRoles({
+  const {
+    wards: wardsWithRoles,
+    indices: wardRoleIndices,
+    fortHulls,
+  } = assignWardRoles({
     wards,
     centre: { x: cx, y: cy },
-    fortHulls,
     params: { innerCount: 8 },
   });
 
@@ -392,7 +395,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // ---------------- Outworks ----------------
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
   // Invariant: length aligns with bastions, but consumers must handle nulls.
-  // NOTE: bastion polygons were already warped for outworks using warpOutworks (see above).
 
   const wallForOutworks = wallForDraw;
   const ravelins = (gatesWarped || [])
