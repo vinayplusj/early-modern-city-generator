@@ -54,7 +54,7 @@ import { snapGatesToWall } from "./generate_helpers/snap.js";
 import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
 import { placeNewTown } from "./generate_helpers/new_town.js";
 
-import { buildFortWarp } from "./generate_helpers/warp_stage.js";
+import { buildFortWarp, clampPolylineRadial } from "./generate_helpers/warp_stage.js";
 import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
 import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
 
@@ -305,6 +305,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     centre: { x: cx, y: cy },
     wallPoly: wallFinal,
     targetPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+    tuningPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     clampMinMargin: 2,
@@ -322,7 +323,22 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   if (warpOutworks?.field && Array.isArray(bastionPolys)) {
     bastionPolysWarpedSafe = bastionPolys.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
-      return warpPolylineRadial(poly, { x: cx, y: cy }, warpOutworks.field, warpOutworks.params);
+      const warped = warpPolylineRadial(poly, { x: cx, y: cy }, warpOutworks.field, warpOutworks.params);
+
+      // Clamp invariants for outworks:
+      // - Outside inner hull (minField + margin)
+      // - Inside outer hull (maxField - margin)
+      const clamped = clampPolylineRadial(
+        warped,
+        { x: cx, y: cy },
+        warpOutworks.minField,
+        warpOutworks.maxField,
+        warpOutworks.clampMinMargin,
+        warpOutworks.clampMaxMargin
+      );
+
+      return clamped;
+
     });
   } else {
     bastionPolysWarpedSafe = bastionPolys;
