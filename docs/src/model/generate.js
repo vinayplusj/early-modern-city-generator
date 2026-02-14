@@ -69,7 +69,6 @@ import { buildDocks } from "./stages/docks.js";
 import { createCtx } from "./ctx.js";
 import { warpPolylineRadial } from "./warp.js";
 
-
 const WARP_FORT = {
   enabled: true,
   debug: true,
@@ -137,8 +136,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     bastionCount
   );
 
-  let ditchWidth = wallR * 0.035;
-  let glacisWidth = wallR * 0.08;
+  const ditchWidth = wallR * 0.035;
+  const glacisWidth = wallR * 0.08;
   ctx.params.baseR = baseR;
   ctx.params.minWallClear = ditchWidth * 1.25;
   // Keep separation proportional, but bounded so it is always satisfiable.
@@ -147,9 +146,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.geom.wallBase = wallBase;
 
-  let ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-  let ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-  let glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+  const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
+  const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
+  const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
   ctx.geom.centre = centre;
@@ -268,6 +267,18 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const citadel = generateBastionedWall(rng, anchors.citadel.x, anchors.citadel.y, citSize, 5).wall;
 
   // ---------------- Warp field ----------------
+  // We use TWO warp passes:
+  // 1) The curtain wall is pulled toward the INNER hull, but clamped to stay outside it.
+  // 2) Bastions / ravelins are pulled toward the OUTER hull, but clamped to stay inside it.
+  //
+  // This matches the requirement that fortifications fill the “magenta band”:
+  //   inner hull < wall < outworks < outer hull
+
+  const fortInnerHull =
+    (typeof window !== "undefined")
+      ? window.__wardDebug?.last?.fortHulls?.innerHull?.outerLoop
+      : null;
+
   const fortOuterHull =
     (typeof window !== "undefined")
       ? window.__wardDebug?.last?.fortHulls?.outerHull?.outerLoop
@@ -275,67 +286,65 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.params.warpFort = WARP_FORT;
 
-  const warp = buildFortWarp({
+  // Pass A: warp the wall toward the inner hull (with clamps).
+  const warpWall = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
     wallPoly: wallFinal,
-  
-    // NEW: warp field derives rFort from the ward-based outer hull
-    fieldPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-  
+    targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
+    clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
+    clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+    clampMinMargin: 2,
+    clampMaxMargin: 2,
     districts,
     bastions: bastionsForWarp,
     params: ctx.params.warpFort,
   });
 
-  const wallWarped = (warp && warp.wallWarped) ? warp.wallWarped : null;
+  // Pass B: warp outworks toward the outer hull (with clamps).
+  const warpOutworks = buildFortWarp({
+    enabled: true,
+    centre: { x: cx, y: cy },
+    wallPoly: wallFinal,
+    targetPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+    clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
+    clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+    clampMinMargin: 2,
+    clampMaxMargin: 2,
+    districts,
+    bastions: bastionsForWarp,
+    params: ctx.params.warpFort,
+  });
+
+  const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
 
-  // ---------------- Warp-dependent fort geometry (moatworks + rings + bastions) ----------------
-
-  // Effective fort radius for proportional widths after warp.
-  const fortR = (warp && warp.params && Number.isFinite(warp.params.bandOuter))
-    ? warp.params.bandOuter
+  // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
+  // Keep widths proportional to the *effective* (warped) wall radius.
+  const fortR = (warpWall && warpWall.params && Number.isFinite(warpWall.params.bandOuter))
+    ? warpWall.params.bandOuter
     : wallR;
-  
+
   ctx.geom.wallR = fortR;
-
-  // Recompute moatwork widths from the effective radius so they scale with the hull.
   ditchWidth = fortR * 0.035;
-  ctx.params.minWallClear = ditchWidth * 1.25;
   glacisWidth = fortR * 0.08;
+  ctx.params.minWallClear = ditchWidth * 1.25;
 
-  ctx.params.minAnchorSep = Math.max(
-    ditchWidth * 3.0,
-    Math.min(baseR * 0.14, fortR * 0.22)
-  );
-  
-  // Use a warped version of wallBase for all radial offsets (ditch/glacis/rings).
-  const wallBaseWarped = (warp && warp.field)
-    ? warpPolylineRadial(wallBase, { x: cx, y: cy }, warp.field, warp.params)
+  // IMPORTANT: downstream logic should use a warped version of the base wall for offsets.
+  const wallBaseForDraw = (warpWall && warpWall.field)
+    ? warpPolylineRadial(wallBase, { x: cx, y: cy }, warpWall.field, warpWall.params)
     : wallBase;
-  
-  // Recompute moatworks from the warped base so they conform to the magenta hull.
-  ditchOuter = offsetRadial(wallBaseWarped, cx, cy, ditchWidth);
-  ditchInner = offsetRadial(wallBaseWarped, cx, cy, ditchWidth * 0.35);
-  glacisOuter = offsetRadial(wallBaseWarped, cx, cy, ditchWidth + glacisWidth);
-  
-  // Recompute inner rings from the warped base so roads/rings match the warped fort.
-  ring  = offsetRadial(wallBaseWarped, cx, cy, -fortR * 0.06);
-  ring2 = offsetRadial(wallBaseWarped, cx, cy, -fortR * 0.13);
-  
-  // IMPORTANT: render + downstream logic should use the warped base, not the original regular polygon.
-  const wallBaseForDraw = wallBaseWarped;
-  ctx.geom.wallBase = wallBaseForDraw; // update after warp
 
-  // Warp bastion polygons too (otherwise ravelin intersection tests and visuals will be wrong).
-  const bastionPolysWarpedSafe = Array.isArray(bastionPolys)
-    ? bastionPolys.map((p) => {
-        if (!Array.isArray(p) || p.length < 3) return null;
-        if (!warp || !warp.field) return p;
-        return warpPolylineRadial(p, { x: cx, y: cy }, warp.field, warp.params);
-      })
-    : [];
+  ctx.geom.wallBase = wallBaseForDraw;
+
+  // Recompute moatworks from the warped base so they match the warped wall.
+  ditchOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth);
+  ditchInner = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth * 0.35);
+  glacisOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth + glacisWidth);
+
+  // Recompute inner rings from the warped base so roads/rings track the warped fort.
+  ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
+  ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
 
   const gatesWarped = wallWarped ? snapGatesToWall(gates, cx, cy, wallWarped) : gates;
 
@@ -371,9 +380,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // ---------------- Outworks ----------------
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
   // Invariant: length aligns with bastions, but consumers must handle nulls.
+  // NOTE: bastion polygons were already warped for outworks using warpOutworks (see above).
 
   const wallForOutworks = wallForDraw;
-  
   const ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
     .map((g) =>
@@ -435,8 +444,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   }
 
   // Ensure it is inside the wall, not near the wall, and on-canvas.
-  anchors.market = ensureInside(wallBaseForDraw, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBaseForDraw, anchors.market, ctx.params.minWallClear, centre);
+  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
 
   // If you want market to live in an inner ward region, enforce that intent here.
   if (marketFallback) {
@@ -445,16 +454,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     const mv = vec(anchors.market, marketFallback);
     if (len(mv) > baseR * 0.18) {
       anchors.market = add(anchors.market, mul(safeNormalize(mv), baseR * 0.08));
-      anchors.market = ensureInside(wallBaseForDraw, anchors.market, centre, 1.0);
-      anchors.market = pushAwayFromWall(wallBaseForDraw, anchors.market, ctx.params.minWallClear, centre);
+      anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+      anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
     }
   }
 
   anchors.market = clampPointToCanvas(anchors.market, width, height, 10);
 
   // Re-ensure inside after clamping.
-  anchors.market = ensureInside(wallBaseForDraw, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBaseForDraw, anchors.market, ctx.params.minWallClear, centre);
+  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
+  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
 
   // Keep legacy field aligned with the final anchor.
   marketCentre = anchors.market;
@@ -510,17 +519,17 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
     const plazaOk =
       finitePointOrNull(anchors.plaza) &&
-      isInsidePolyOrSkip(anchors.plaza, wallBaseForDraw) &&
+      isInsidePolyOrSkip(anchors.plaza, wallBase) &&
       (anchors.plaza.x >= 0 && anchors.plaza.x <= width && anchors.plaza.y >= 0 && anchors.plaza.y <= height);
 
     const citadelOk =
       finitePointOrNull(anchors.citadel) &&
-      isInsidePolyOrSkip(anchors.citadel, wallBaseForDraw) &&
+      isInsidePolyOrSkip(anchors.citadel, wallBase) &&
       (anchors.citadel.x >= 0 && anchors.citadel.x <= width && anchors.citadel.y >= 0 && anchors.citadel.y <= height);
 
     const marketOk =
       finitePointOrNull(anchors.market) &&
-      isInsidePolyOrSkip(anchors.market, wallBaseForDraw) &&
+      isInsidePolyOrSkip(anchors.market, wallBase) &&
       (anchors.market.x >= 0 && anchors.market.x <= width && anchors.market.y >= 0 && anchors.market.y <= height);
 
     let docksOk = true;
@@ -528,7 +537,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       docksOk =
         (anchors.docks === null) ||
         (finitePointOrNull(anchors.docks) &&
-          !pointInPolyOrOn(anchors.docks, wallBaseForDraw, 1e-6) &&
+          !pointInPolyOrOn(anchors.docks, wallBase, 1e-6) &&
           isInsidePolyOrSkip(anchors.docks, outerBoundary) &&
           (anchors.docks.x >= 0 && anchors.docks.x <= width && anchors.docks.y >= 0 && anchors.docks.y <= height));
     }
@@ -556,7 +565,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     cy,
 
     // Walls + moatworks
-    wallBase: wallBaseForDraw,
+    wallBase,
     wall: wallForDraw,
     bastionPolys: bastionPolysWarpedSafe,
     gates: gatesWarped,
