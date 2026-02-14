@@ -10,6 +10,9 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
   const thetas = new Array(N);
   const rFort = new Array(N);
   const rTarget = new Array(N);
+    // Defensive defaults: some callers build the warp field before districts exist.
+  // Treat missing districts as an empty list (no district modulation).
+  const districtsUse = Array.isArray(districts) ? districts : [];
   let nullCount = 0;
 
   // Debug-only: how often the centre-to-wall ray does not hit the wall at a sample angle.
@@ -50,7 +53,7 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
     
     // 3) Apply your existing per-district offsets *on top* of that target hull radius
-    rTarget[i] = targetRadiusAtAngle(centre, theta, districts, rawTargetR, params);
+    rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
 
     if (params.debug && i % 120 === 0) {
       const d = districtAtAngle(theta, districts);
@@ -90,7 +93,7 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     if (rTarget[i] == null || !Number.isFinite(rTarget[i])) {
       let rawTargetR = sampleRadiusAtAngle(centre, thetas[i], polyForTarget);
       if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
-      rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districts, rawTargetR, params);
+      rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districtsUse, rawTargetR, params);
     }
   }
 
@@ -236,6 +239,7 @@ function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
 }
 
 function districtAtAngle(theta, districts) {
+  if (!Array.isArray(districts) || districts.length === 0) return null;
   const t = wrapAngle(theta);
 
   for (const d of districts) {
