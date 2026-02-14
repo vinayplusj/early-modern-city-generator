@@ -136,8 +136,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     bastionCount
   );
 
-  let  ditchWidth = wallR * 0.035;
-  let  glacisWidth = wallR * 0.08;
+  let ditchWidth = wallR * 0.035;
+  let glacisWidth = wallR * 0.08;
   ctx.params.baseR = baseR;
   ctx.params.minWallClear = ditchWidth * 1.25;
   // Keep separation proportional, but bounded so it is always satisfiable.
@@ -146,9 +146,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.geom.wallBase = wallBase;
 
-  let  ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-  let  ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-  let  glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+  let ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
+  let ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
+  let glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
   ctx.geom.centre = centre;
@@ -282,7 +282,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
 
-  const fortHulls = { coreIds, ring1Ids, fortInnerHull, fortOuterHull };
   ctx.params.warpFort = WARP_FORT;
 
   // Pass A: warp the wall toward the inner hull (with clamps).
@@ -321,14 +320,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // Apply outworks warp to bastion polygons (two-target system).
   // Invariant: outworks must remain inside fortOuterHull (clamped by warpOutworks).
   if (warpOutworks?.field && Array.isArray(bastionPolys)) {
-    // Preserve nulls (flattened bastions) deterministically.
     bastionPolysWarpedSafe = bastionPolys.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
-      // Use the same warp primitive as wall warping uses.
-      // If your field API differs, adapt here (point-by-point mapping).
-      return warpOutworks.field.warpPolygon
-        ? warpOutworks.field.warpPolygon(poly)
-        : poly.map((pt) => warpOutworks.field.warpPoint(pt));
+      return warpPolylineRadial(poly, { x: cx, y: cy }, warpOutworks.field, warpOutworks.params);
     });
   } else {
     bastionPolysWarpedSafe = bastionPolys;
