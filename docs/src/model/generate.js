@@ -136,8 +136,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     bastionCount
   );
 
-  const ditchWidth = wallR * 0.035;
-  const glacisWidth = wallR * 0.08;
+  let  ditchWidth = wallR * 0.035;
+  let  glacisWidth = wallR * 0.08;
   ctx.params.baseR = baseR;
   ctx.params.minWallClear = ditchWidth * 1.25;
   // Keep separation proportional, but bounded so it is always satisfiable.
@@ -146,9 +146,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.geom.wallBase = wallBase;
 
-  const ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-  const ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-  const glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+  let  ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
+  let  ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
+  let  glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
   ctx.geom.centre = centre;
@@ -161,6 +161,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // Start with the full bastioned wall.
   let wallFinal = wall;
   let bastionPolys = bastions.map((b) => b.pts);
+  let bastionPolysWarpedSafe = bastionPolys;
 
   // ---------------- New Town placement ----------------
   const placed = placeNewTown({
@@ -243,6 +244,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const { wards: wardsWithRoles, indices: wardRoleIndices } = assignWardRoles({
     wards,
     centre: { x: cx, y: cy },
+    fortHulls,
     params: { innerCount: 8 },
   });
 
@@ -274,16 +276,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // This matches the requirement that fortifications fill the “magenta band”:
   //   inner hull < wall < outworks < outer hull
 
-  const fortInnerHull =
-    (typeof window !== "undefined")
-      ? window.__wardDebug?.last?.fortHulls?.innerHull?.outerLoop
-      : null;
+  const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
+  const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
 
-  const fortOuterHull =
-    (typeof window !== "undefined")
-      ? window.__wardDebug?.last?.fortHulls?.outerHull?.outerLoop
-      : null;
-
+  const fortHulls = { coreIds, ring1Ids, fortInnerHull, fortOuterHull };
   ctx.params.warpFort = WARP_FORT;
 
   // Pass A: warp the wall toward the inner hull (with clamps).
@@ -318,6 +314,22 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
+
+  // Apply outworks warp to bastion polygons (two-target system).
+  // Invariant: outworks must remain inside fortOuterHull (clamped by warpOutworks).
+  if (warpOutworks?.field && Array.isArray(bastionPolys)) {
+    // Preserve nulls (flattened bastions) deterministically.
+    bastionPolysWarpedSafe = bastionPolys.map((poly) => {
+      if (!Array.isArray(poly) || poly.length < 3) return poly;
+      // Use the same warp primitive as wall warping uses.
+      // If your field API differs, adapt here (point-by-point mapping).
+      return warpOutworks.field.warpPolygon
+        ? warpOutworks.field.warpPolygon(poly)
+        : poly.map((pt) => warpOutworks.field.warpPoint(pt));
+    });
+  } else {
+    bastionPolysWarpedSafe = bastionPolys;
+  }
 
   // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
   // Keep widths proportional to the *effective* (warped) wall radius.
@@ -578,7 +590,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
     districts,
     blocks,
-    warp,
+    warp: {
+      wall: warpWall ?? null,
+      outworks: warpOutworks ?? null,
+    },
+    fortHulls,
 
     wards: wardsWithRoles,
     wardSeeds,
