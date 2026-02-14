@@ -49,7 +49,12 @@
  * @param {object} args.params
  * @param {number} [args.params.innerCount] - How many wards after plaza are considered inner wards.
  * @param {object} [args.params.outsideBands] - Optional distance-band based role distribution.
- * @returns {{wards: Ward[], indices: {plaza:number, citadel:number, inner:number[], outside:number[]}}}
+ *  * @returns {{
+ *   wards: Ward[],
+ *   indices: { plaza:number, citadel:number, inner:number[], outside:number[] },
+ *   fortHulls: { coreIds:number[], ring1Ids:number[], innerHull:any, outerHull:any }
+ * }}
+
  */
 import { buildDistrictLoopsFromWards } from "../districts.js";
 import { centroid } from "../../geom/poly.js";
@@ -478,20 +483,15 @@ export function assignWardRoles({ wards, centre, params }) {
   // Outer Hull = boundary loops of the (core + ring1) region.
   const outerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds.concat(ring1Ids));
 
+  const fortHulls = { coreIds, ring1Ids, innerHull, outerHull };
   // Optional: export to debug (recommended).
-  if (typeof window !== "undefined") {
-    window.__wardDebug = window.__wardDebug || {};
-    window.__wardDebug.last = window.__wardDebug.last || {};
-    window.__wardDebug.last.fortHulls = {
-      coreIds,
-      ring1Ids,
-      innerHull,
-      outerHull,
-    };
-  }
+   if (typeof window !== "undefined" && window.__wardDebug?.last){
+   window.__wardDebug = window.__wardDebug || {};
+   window.__wardDebug.last = window.__wardDebug.last || {};
+   window.__wardDebug.last.fortHulls = fortHulls;
+ }
 
   const used = new Set([plazaWard.id, citadelId, ...innerIdxs.map((i) => wardsCopy[i]?.id).filter(Number.isFinite)]);
-
 
   // Remaining wards are "outside candidates".
   const outside = order.filter((w) => !used.has(w.id));
@@ -514,7 +514,7 @@ export function assignWardRoles({ wards, centre, params }) {
     if (idx >= 0) wardsCopy[idx].ringIndex = i;
   }
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && window.__wardDebug?.last){
    window.__wardDebug = window.__wardDebug || {};
    window.__wardDebug.last = window.__wardDebug.last || {};
    const fortCore = buildDistrictLoopsFromWards(
@@ -542,6 +542,7 @@ export function assignWardRoles({ wards, centre, params }) {
       citadel: citadelId,
       inner: innerWards.map((w) => w.id),
       outside: outside.map((w) => w.id),
+    fortHulls,
     },
   };
 }
