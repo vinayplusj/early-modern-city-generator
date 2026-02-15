@@ -33,12 +33,6 @@ function isFinitePoint(p) {
   return p && isFiniteNumber(p.x) && isFiniteNumber(p.y);
 }
 
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.hypot(dx, dy);
-}
-
 function quantKey(x, y, eps) {
   const qx = Math.round(x / eps);
   const qy = Math.round(y / eps);
@@ -64,6 +58,59 @@ function wardPoly(ward) {
 function ensureAdjSize(adj, n) {
   while (adj.length < n) adj.push([]);
 }
+function midpointOfEdge(nodes, e) {
+  const a = nodes[e.a];
+  const b = nodes[e.b];
+  return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+}
+
+function pointDist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function pointToSegmentDistance(p, a, b) {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const wx = p.x - a.x;
+  const wy = p.y - a.y;
+
+  const vv = vx * vx + vy * vy;
+  if (!isFiniteNumber(vv) || vv <= 0) return Math.hypot(p.x - a.x, p.y - a.y);
+
+  let t = (wx * vx + wy * vy) / vv;
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+
+  const px = a.x + vx * t;
+  const py = a.y + vy * t;
+  return Math.hypot(p.x - px, p.y - py);
+}
+
+function pointToPolylineDistance(p, polyline) {
+  if (!Array.isArray(polyline) || polyline.length < 2) return Infinity;
+
+  let best = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    if (!isFinitePoint(a) || !isFinitePoint(b)) continue;
+
+    const d = pointToSegmentDistance(p, a, b);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+function pickWaterPolyline(waterModel) {
+  if (!waterModel || typeof waterModel !== "object") return null;
+
+  // Prefer shoreline, then coast, then river. Adjust if your water model differs.
+  if (Array.isArray(waterModel.shoreline) && waterModel.shoreline.length >= 2) return waterModel.shoreline;
+  if (Array.isArray(waterModel.coast) && waterModel.coast.length >= 2) return waterModel.coast;
+  if (Array.isArray(waterModel.river) && waterModel.river.length >= 2) return waterModel.river;
+
+  return null;
+}
 
 /**
  * Build a planar graph from ward polygons.
@@ -73,7 +120,7 @@ function ensureAdjSize(adj, n) {
  * @param {number} args.eps - merge tolerance in world units (default 1e-3).
  * @returns {Object} graph
  */
-export function buildVoronoiPlanarGraph({ wards, eps = 1e-3 }) {
+export function buildVoronoiPlanarGraph({ wards, eps = 1e-3, waterModel = null, anchors = null, params = null }) {
   if (!Array.isArray(wards)) {
     throw new Error("buildVoronoiPlanarGraph: wards must be an array");
   }
@@ -121,7 +168,17 @@ export function buildVoronoiPlanarGraph({ wards, eps = 1e-3 }) {
       if (!isFiniteNumber(length) || length <= 0) return;
 
       edgeId = edges.length;
-      edges.push({ id: edgeId, a: lo, b: hi, length });
+      edges.push({
+        id: edgeId,
+        a: lo,
+        b: hi,
+        length,
+        flags: {
+          isWater: false,
+          nearCitadel: false,
+        },
+      });
+
       edgeKeyToId.set(key, edgeId);
 
       // adjacency (both directions)
@@ -148,6 +205,35 @@ export function buildVoronoiPlanarGraph({ wards, eps = 1e-3 }) {
   // Sort adjacency for determinism.
   for (const list of adj) {
     list.sort((u, v) => (u.to - v.to) || (u.edgeId - v.edgeId));
+  }
+  // ---------------- Edge flagging (deterministic) ----------------
+  // Flags drive routing penalties in routing/weights.js.
+  const p = (params && typeof params === "object") ? params : {};
+
+  const citadelPt = (anchors && isFinitePoint(anchors.citadel)) ? anchors.citadel : null;
+  const citadelAvoidRadius = isFiniteNumber(p.roadCitadelAvoidRadius) ? p.roadCitadelAvoidRadius : 80;
+
+  const waterLine = pickWaterPolyline(waterModel);
+  const waterClearance = isFiniteNumber(p.roadWaterClearance) ? p.roadWaterClearance : 20;
+
+  for (const e of edges) {
+    if (!e || e.disabled) continue;
+    if (!e.flags || typeof e.flags !== "object") {
+      e.flags = { isWater: false, nearCitadel: false };
+    }
+
+    const m = midpointOfEdge(nodes, e);
+
+    // Citadel avoidance: mark edges whose midpoint is within a radius.
+    if (citadelPt) {
+      e.flags.nearCitadel = pointDist(m, citadelPt) <= citadelAvoidRadius;
+    }
+
+    // Water avoidance: mark edges close to shoreline/coast/river polyline.
+    if (waterLine) {
+      const d = pointToPolylineDistance(m, waterLine);
+      e.flags.isWater = d <= waterClearance;
+    }
   }
 
   return { eps, nodes, edges, adj };
@@ -282,19 +368,36 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
   }
 
   // Add two new edges (a-new) and (new-b)
-  function addEdgeUndirected(lo, hi) {
+  // Add two new edges (a-new) and (new-b), inheriting parent flags deterministically.
+  function addEdgeUndirected(lo, hi, parentFlags) {
     const a = Math.min(lo, hi);
     const b = Math.max(lo, hi);
-    const length = Math.hypot(nodes[b].x - nodes[a].x, nodes[b].y - nodes[a].y);
+
+    const na = nodes[a];
+    const nb = nodes[b];
+    if (!na || !nb) return;
+
+    const length = Math.hypot(nb.x - na.x, nb.y - na.y);
+    if (!isFiniteNumber(length) || length <= 0) return;
+
     const id = edges.length;
-    edges.push({ id, a, b, length });
+    edges.push({
+      id,
+      a,
+      b,
+      length,
+      flags: parentFlags ? { ...parentFlags } : { isWater: false, nearCitadel: false },
+    });
+
     while (adj.length < Math.max(a, b) + 1) adj.push([]);
     adj[a].push({ to: b, edgeId: id });
     adj[b].push({ to: a, edgeId: id });
   }
 
-  addEdgeUndirected(edge.a, newNodeId);
-  addEdgeUndirected(newNodeId, edge.b);
+  const parentFlags = (edge.flags && typeof edge.flags === "object") ? { ...edge.flags } : null;
+  addEdgeUndirected(edge.a, newNodeId, parentFlags);
+  addEdgeUndirected(newNodeId, edge.b, parentFlags);
+
 
   // Re-sort adjacency for determinism after mutation.
   for (const list of adj) {
