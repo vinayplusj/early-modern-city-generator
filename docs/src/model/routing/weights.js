@@ -41,6 +41,9 @@ function clampNonNegative(x) {
  * - params.roadWaterPenalty (default 5000): added if edge.flags.isWater === true
  * - params.roadCitadelPenalty (default 1500): added if edge.flags.nearCitadel === true
  * - params.roadDisabledPenalty (default Infinity): used if edge.disabled
+  * - params.roadHardAvoidWater (default false): if true, edges flagged isWater are forbidden
+ * - params.roadHardAvoidCitadel (default false): if true, edges flagged nearCitadel are forbidden
+
  *
  * @returns {(edgeId:number, fromNode:number, toNode:number)=>number}
  */
@@ -62,6 +65,9 @@ export function makeRoadWeightFn({ graph, waterModel, anchors, params } = {}) {
   const roadDisabledPenalty =
     isFiniteNumber(p.roadDisabledPenalty) ? p.roadDisabledPenalty : Infinity;
 
+  const roadHardAvoidWater = Boolean(p.roadHardAvoidWater);
+  const roadHardAvoidCitadel = Boolean(p.roadHardAvoidCitadel);
+
   return (edgeId /*, fromNode, toNode */) => {
     const e = graph.edges[edgeId];
     if (!e) return Infinity;
@@ -73,6 +79,10 @@ export function makeRoadWeightFn({ graph, waterModel, anchors, params } = {}) {
     if (!isFiniteNumber(base)) return Infinity;
 
     const flags = (e.flags && typeof e.flags === "object") ? e.flags : null;
+
+        // Hard avoidance (deterministic): treat flagged edges as unreachable.
+    if (flags && roadHardAvoidWater && flags.isWater) return Infinity;
+    if (flags && roadHardAvoidCitadel && flags.nearCitadel) return Infinity;
 
     let cost = base;
 
