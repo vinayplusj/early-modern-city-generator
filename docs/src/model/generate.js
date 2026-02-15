@@ -100,6 +100,27 @@ const WARP_FORT = {
   bastionClearFeather: 0.06,
 };
 
+// ---------------- Build / version stamp ----------------
+// Update this string when you make meaningful changes.
+export const GENERATOR_BUILD = {
+  version: "14 feb",
+  buildDate: "2026-02-14",
+  commit: "manual",
+};
+
+let __buildLogged = false;
+
+function logBuildOnce(seed, width, height, site) {
+  if (__buildLogged) return;
+  __buildLogged = true;
+
+  // Allow index.html (or other code) to override this at runtime if desired.
+  const build = globalThis.__EMCG_BUILD__ || GENERATOR_BUILD;
+
+  console.info("[EMCG] Generator build:", build);
+  console.info("[EMCG] First run params:", { seed, width, height, site });
+}
+
 function isInsidePolyOrSkip(p, poly) {
   if (!p) return false;
   if (!Array.isArray(poly) || poly.length < 3) return true; // pass-through
@@ -107,6 +128,8 @@ function isInsidePolyOrSkip(p, poly) {
 }
 
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
+  logBuildOnce(seed, width, height, site);
+
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
 
@@ -318,6 +341,68 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
 
+      function sampleOnRing(thetas, values, theta) {
+    const n = thetas.length;
+    if (!n) return null;
+    const twoPi = Math.PI * 2;
+
+    let a = theta % twoPi;
+    if (a < 0) a += twoPi;
+
+    const step = twoPi / n;
+    const i0 = Math.floor(a / step) % n;
+    const i1 = (i0 + 1) % n;
+    const t0 = i0 * step;
+    const u = (a - t0) / step;
+
+    const v0 = values[i0];
+    const v1 = values[i1];
+    if (!Number.isFinite(v0) && !Number.isFinite(v1)) return null;
+    if (!Number.isFinite(v0)) return v1;
+    if (!Number.isFinite(v1)) return v0;
+    return v0 + (v1 - v0) * u;
+  }
+
+  function auditRadialClamp(name, polys, minField, maxField, minMargin, maxMargin) {
+    if (!WARP_FORT.debug) return;
+    if ((!minField && !maxField) || !Array.isArray(polys)) return;
+
+    let belowMin = 0;
+    let aboveMax = 0;
+    let total = 0;
+
+    for (const poly of polys) {
+      if (!Array.isArray(poly)) continue;
+      for (const p of poly) {
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const r = Math.hypot(dx, dy);
+        if (r < 1e-6) continue;
+
+        const theta = Math.atan2(dy, dx);
+
+        const rMinRaw = minField ? sampleOnRing(minField.thetas, minField.rTarget, theta) : null;
+        const rMaxRaw = maxField ? sampleOnRing(maxField.thetas, maxField.rTarget, theta) : null;
+
+        const rMin = Number.isFinite(rMinRaw) ? (rMinRaw + (minMargin || 0)) : null;
+        const rMax = Number.isFinite(rMaxRaw) ? (rMaxRaw - (maxMargin || 0)) : null;
+
+        if (Number.isFinite(rMin) && r < rMin - 1e-6) belowMin += 1;
+        if (Number.isFinite(rMax) && r > rMax + 1e-6) aboveMax += 1;
+
+        total += 1;
+      }
+    }
+
+    if (belowMin || aboveMax) {
+      console.warn("[FortWarp Audit]", name, { belowMin, aboveMax, total });
+    } else {
+      console.info("[FortWarp Audit]", name, "OK", { total });
+    }
+  }
+
   // Apply outworks warp to bastion polygons (two-target system).
   // Invariant: outworks must remain inside fortOuterHull (clamped by warpOutworks).
   if (warpOutworks?.field && Array.isArray(bastionPolys)) {
@@ -407,7 +492,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // Invariant: length aligns with bastions, but consumers must handle nulls.
 
   const wallForOutworks = wallForDraw;
-  const ravelins = (gatesWarped || [])
+  let ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
     .map((g) =>
       makeRavelin(
@@ -424,6 +509,49 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       )
     )
     .filter(Boolean);
+
+    // Milestone 4.5: clamp ravelins with the same two-target constraints as outworks.
+    if (warpOutworks?.minField || warpOutworks?.maxField) {
+      ravelins = ravelins.map((rv) =>
+        clampPolylineRadial(
+          rv,
+          { x: cx, y: cy },
+          warpOutworks.minField,
+          warpOutworks.maxField,
+          warpOutworks.clampMinMargin,
+          warpOutworks.clampMaxMargin
+        )
+      );
+    }
+
+    if (WARP_FORT.debug) {
+    auditRadialClamp(
+      "WALL",
+      [wallForDraw],
+      warpWall?.minField,
+      warpWall?.maxField,
+      warpWall?.clampMinMargin,
+      warpWall?.clampMaxMargin
+    );
+
+    auditRadialClamp(
+      "BASTIONS",
+      bastionPolysWarpedSafe,
+      warpOutworks?.minField,
+      warpOutworks?.maxField,
+      warpOutworks?.clampMinMargin,
+      warpOutworks?.clampMaxMargin
+    );
+
+    auditRadialClamp(
+      "RAVELINS",
+      ravelins,
+      warpOutworks?.minField,
+      warpOutworks?.maxField,
+      warpOutworks?.clampMinMargin,
+      warpOutworks?.clampMaxMargin
+    );
+  }
 
   let marketCentre = computeInitialMarketCentre({
     squareCentre: anchors.plaza,
