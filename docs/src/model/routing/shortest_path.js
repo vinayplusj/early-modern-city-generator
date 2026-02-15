@@ -131,6 +131,7 @@ export function dijkstra({ graph, startNode, goalNode, weightFn, blockedEdgeIds 
     const nbrs = graph.adj[u] || [];
     for (const step of nbrs) {
       const v = step.to;
+      if (!Number.isInteger(v) || v < 0 || v >= n) continue;
       const edgeId = step.edgeId;
 
       if (visited[v]) continue;
