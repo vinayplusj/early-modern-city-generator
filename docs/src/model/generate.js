@@ -171,6 +171,15 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // Keep separation proportional, but bounded so it is always satisfiable.
   ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
   ctx.params.canvasPad = 10;
+  ctx.params.roadWaterPenalty = 5000;      // or larger if you want near-hard avoidance
+  ctx.params.roadCitadelPenalty = 1500;    // scale to taste
+  ctx.params.roadWaterClearance = 20;
+  
+  ctx.params.roadCitadelAvoidRadius = 80;
+
+  // Hard avoid toggles (safe defaults)
+  ctx.params.roadHardAvoidWater = true;     // roads should not enter water edges
+  ctx.params.roadHardAvoidCitadel = false; // start soft; flip to true once you confirm connectivity
 
   ctx.geom.wallBase = wallBase;
 
@@ -281,19 +290,22 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.wards.cells = wardsWithRoles;
   ctx.wards.roleIndices = wardRoleIndices;
-  // ---------------- Voronoi planar graph (routing mesh) ----------------
-  // Build AFTER wards are finalized (clipped) and roles assigned.
-  const vorGraph = buildVoronoiPlanarGraph({
-    wards: wardsWithRoles,
-    eps: 1e-3,
-  });
-
-  ctx.mesh = ctx.mesh || {};
-  ctx.mesh.vorGraph = vorGraph;
-
   anchors = buildAnchors(ctx);
 
-  // ---------------- Inner rings ----------------
+    // ---------------- Voronoi planar graph (routing mesh) ----------------
+    // Build AFTER wards are finalized (clipped) and roles assigned.
+    const vorGraph = buildVoronoiPlanarGraph({
+      wards: wardsWithRoles,
+      eps: 1e-3,
+      waterModel,
+      anchors,          // ✅ use anchors so nearCitadel can be flagged
+      params: ctx.params,
+    });
+  
+    ctx.mesh = ctx.mesh || {};
+    ctx.mesh.vorGraph = vorGraph;
+
+// ---------------- Inner rings ----------------
   let ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   let ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
@@ -749,14 +761,26 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   if (WARP_FORT.debug) {
     const bad = [];
 
-  if (WARP_FORT.debug) {
     console.info("[Routing] vorGraph", {
       nodes: vorGraph?.nodes?.length,
       edges: vorGraph?.edges?.length,
       primaryRoads: primaryRoads?.length,
     });
-  }
 
+        if (vorGraph && Array.isArray(vorGraph.edges)) {
+      let waterEdges = 0;
+      let citadelEdges = 0;
+      let activeEdges = 0;
+
+      for (const e of vorGraph.edges) {
+        if (!e || e.disabled) continue;
+        activeEdges += 1;
+        if (e.flags && e.flags.isWater) waterEdges += 1;
+        if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
+      }
+
+      console.info("[Routing] edge flags", { activeEdges, waterEdges, citadelEdges });
+    }
 
     const plazaOk =
       finitePointOrNull(anchors.plaza) &&
