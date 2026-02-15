@@ -68,6 +68,10 @@ import { buildAnchors } from "./stages/anchors.js";
 import { buildDocks } from "./stages/docks.js";
 import { createCtx } from "./ctx.js";
 import { warpPolylineRadial } from "./warp.js";
+import { buildVoronoiPlanarGraph, snapPointToGraph } from "./mesh/voronoi_planar_graph.js";
+import { dijkstra, pathNodesToPolyline } from "./routing/shortest_path.js";
+import { makeRoadWeightFn } from "./routing/weights.js";
+
 
 const WARP_FORT = {
   enabled: true,
@@ -129,6 +133,7 @@ function isInsidePolyOrSkip(p, poly) {
 
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
+  
 
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
@@ -276,6 +281,15 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.wards.cells = wardsWithRoles;
   ctx.wards.roleIndices = wardRoleIndices;
+  // ---------------- Voronoi planar graph (routing mesh) ----------------
+  // Build AFTER wards are finalized (clipped) and roles assigned.
+  const vorGraph = buildVoronoiPlanarGraph({
+    wards: wardsWithRoles,
+    eps: 1e-3,
+  });
+
+  ctx.mesh = ctx.mesh || {};
+  ctx.mesh.vorGraph = vorGraph;
 
   anchors = buildAnchors(ctx);
 
@@ -487,6 +501,60 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     snapPointToPolyline,
   });
 
+    // ---------------- Primary roads (routed on Voronoi planar graph) ----------------
+  // Routing mesh is the Voronoi planar graph built from ward polygons.
+  //
+  // Determinism / coupling:
+  // - snapPointToGraph with splitEdges=true mutates vorGraph (splits edges).
+  // - To keep determinism, snap all endpoints in a fixed order before routing.
+  const roadWeight = makeRoadWeightFn({
+    graph: vorGraph,
+    waterModel,
+    anchors,
+    params: ctx.params,
+  });
+
+  // Snap endpoints in a stable order (mutates graph if splitEdges=true).
+  const snapCfg = { graph: vorGraph, maxSnapDist: 40, splitEdges: true };
+
+  const gateForRoad = primaryGateWarped || (Array.isArray(gatesWarped) ? gatesWarped[0] : null);
+
+  const nGate = gateForRoad ? snapPointToGraph({ point: gateForRoad, ...snapCfg }) : null;
+  const nPlaza = anchors.plaza ? snapPointToGraph({ point: anchors.plaza, ...snapCfg }) : null;
+  const nCitadel = anchors.citadel ? snapPointToGraph({ point: anchors.citadel, ...snapCfg }) : null;
+  const nDocks = anchors.docks ? snapPointToGraph({ point: anchors.docks, ...snapCfg }) : null;
+
+  function routeNodesOrFallback(nA, nB, pA, pB) {
+    if (nA == null || nB == null) return [pA, pB];
+    const nodePath = dijkstra({
+      graph: vorGraph,
+      startNode: nA,
+      goalNode: nB,
+      weightFn: roadWeight,
+      blockedEdgeIds: null,
+    });
+    if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
+    const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
+    return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
+  }
+
+  const primaryRoads = [];
+
+  // Gate → Plaza (only one, using primary gate if available)
+  if (gateForRoad && anchors.plaza) {
+    primaryRoads.push(routeNodesOrFallback(nGate, nPlaza, gateForRoad, anchors.plaza));
+  }
+
+  // Plaza → Citadel
+  if (anchors.plaza && anchors.citadel) {
+    primaryRoads.push(routeNodesOrFallback(nPlaza, nCitadel, anchors.plaza, anchors.citadel));
+  }
+
+  // Plaza → Docks (only if docks exists)
+  if (anchors.plaza && anchors.docks) {
+    primaryRoads.push(routeNodesOrFallback(nPlaza, nDocks, anchors.plaza, anchors.docks));
+  }
+
   // ---------------- Outworks ----------------
   // Bastion polys may include nulls (flattened to avoid New Town intersections).
   // Invariant: length aligns with bastions, but consumers must handle nulls.
@@ -626,16 +694,19 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  const roads = (gatesWarped || []).map((g) => [g, anchors.plaza]);
+  // Legacy fields retained, but now sourced from routed primaries.
+  const roads = primaryRoads;
+  const avenue = (Array.isArray(primaryRoads) && primaryRoads.length >= 2)
+    ? primaryRoads[1]
+    : [anchors.plaza, anchors.citadel];
 
-  const avenue = [anchors.plaza, anchors.citadel];
 
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
   const squareCentre = anchors.plaza;
   const citCentre = anchors.citadel;
 
-  const { polylines, secondaryRoads: secondaryRoadsLegacy } = buildRoadPolylines({
+  const builtRoads = buildRoadPolylines({
     rng,
     gatesWarped,
     ring,
@@ -645,7 +716,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     newTown,
   });
 
+  let polylines = builtRoads.polylines;
+  const secondaryRoadsLegacy = builtRoads.secondaryRoads;
+
+  // Prepend routed primaries so the road graph and block extraction reflect them.
+  if (Array.isArray(primaryRoads) && primaryRoads.length) {
+    polylines = [...primaryRoads, ...polylines];
+  }
+
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
+
 
   // ---------------- Milestone 3.6: blocks (debug) ----------------
   const BLOCKS_ANGLE_EPS = 1e-9;
@@ -668,6 +748,15 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // ---------------- Anchor invariants (debug only) ----------------
   if (WARP_FORT.debug) {
     const bad = [];
+
+  if (WARP_FORT.debug) {
+    console.info("[Routing] vorGraph", {
+      nodes: vorGraph?.nodes?.length,
+      edges: vorGraph?.edges?.length,
+      primaryRoads: primaryRoads?.length,
+    });
+  }
+
 
     const plazaOk =
       finitePointOrNull(anchors.plaza) &&
@@ -739,6 +828,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     wards: wardsWithRoles,
     wardSeeds,
     wardRoleIndices,
+        mesh: {
+      vorGraph,
+    },
+
 
     // Anchors
     centre,
@@ -751,7 +844,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     water: waterModel,
 
     // Roads
-    roads,
+    roads,                 // routed primaries
+    primaryRoads,          // explicit alias (useful for later stages)
     ring,
     ring2,
     secondaryRoads: secondaryRoadsLegacy,
