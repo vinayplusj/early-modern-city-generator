@@ -45,6 +45,7 @@ export function runWarpFieldStage({
     centre: { x: cx, y: cy },
     wallPoly: wallFinal,
     targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
+    // Invariant: wall must stay outside inner hull.
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     clampMaxPoly: null,
     clampMinMargin: 2,
@@ -60,6 +61,7 @@ export function runWarpFieldStage({
     wallPoly: wallFinal,
     targetPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     tuningPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
+    // Invariant: outworks must stay inside outer hull.
     clampMinPoly: null,
     clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     clampMinMargin: 2,
@@ -68,6 +70,23 @@ export function runWarpFieldStage({
     bastions: bastionsForWarp,
     params: ctx.params.warpFort,
   });
+
+  // ---- Draw style hints (consumed by renderer) ----
+  // Wall: light blue
+  if (warpWall) {
+    warpWall.draw = {
+      stroke: "#7fdcff", // light blue
+      width: 3,
+    };
+  }
+
+  // Outworks (bastions, ravelins, etc.): light orange
+  if (warpOutworks) {
+    warpOutworks.draw = {
+      stroke: "#ffcc80", // light orange
+      width: 2,
+    };
+  }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
