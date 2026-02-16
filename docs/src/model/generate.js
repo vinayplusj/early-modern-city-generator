@@ -77,7 +77,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "Noon refactor 2",
+  version: "Noon refactor 3",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -206,7 +206,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const fortHulls = wardsOut.fortHulls;
 
   // Build anchors first so we can flag edges near the citadel.
-  anchors = runAnchorsStage(ctx);
+  let anchors = runAnchorsStage(ctx);
 
   // ---------------- Voronoi planar graph (routing mesh) ----------------
   const meshOut = runRoutingMeshStage({
