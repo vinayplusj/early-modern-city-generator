@@ -14,65 +14,39 @@ import {
   add,
   mul,
   normalize,
-  finitePointOrNull,
   vec,
   len,
   safeNormalize,
   clampPointToCanvas,
 } from "../geom/primitives.js";
 import {
-  centroid,
   pointInPolyOrOn,
   supportPoint,
   pushOutsidePoly,
   snapPointToPolyline,
 } from "../geom/poly.js";
 
-import { offsetRadial } from "../geom/offset.js";
-import { convexHull } from "../geom/hull.js";
-
-import { buildRoadGraphWithIntersections } from "../roads/graph.js";
-import { assignWardRoles, wardCentroid } from "./wards/ward_roles.js";
-
-import {
-  generateFootprint,
-  generateBastionedWall,
-  pickGates,
-  makeRavelin,
-} from "./features.js";
-
-// Milestone 3.6: blocks extraction (faces) - debug use
-import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
-
-// Change 3: Voronoi-driven districts (role-grouped wards) replace radial sector districts.
-import {
-  buildVoronoiDistrictsFromWards,
-  assignBlocksToDistrictsByWards,
-} from "./districts_voronoi.js";
-
-import { snapGatesToWall } from "./generate_helpers/snap.js";
-import { safeMarketNudge, computeInitialMarketCentre } from "./generate_helpers/market.js";
-import { placeNewTown } from "./generate_helpers/new_town.js";
-
-import { buildFortWarp, clampPolylineRadial } from "./generate_helpers/warp_stage.js";
-import { buildRoadPolylines } from "./generate_helpers/roads_stage.js";
-import { buildWardsVoronoi } from "./wards/wards_voronoi.js";
-
-import {
-  ensureInside,
-  pushAwayFromWall,
-} from "./anchors/anchor_constraints.js";
-
-import { buildWaterModel } from "./water.js";
-import { buildWaterOnMesh } from "./water_on_mesh.js"; // NEW: snap river/coast to mesh edges
-
-import { buildAnchors } from "./stages/anchors.js";
-import { buildDocks } from "./stages/docks.js";
 import { createCtx } from "./ctx.js";
-import { warpPolylineRadial } from "./warp.js";
-import { buildVoronoiPlanarGraph, snapPointToGraph } from "./mesh/voronoi_planar_graph.js";
-import { dijkstra, pathNodesToPolyline } from "./routing/shortest_path.js";
-import { makeRoadWeightFn } from "./routing/weights.js";
+import { runPipeline } from "./pipeline/run_pipeline.js";
+import { runFortificationsStage } from "./stages/10_fortifications.js";
+import { runNewTownStage } from "./stages/20_new_town.js";
+import { runOuterBoundaryStage } from "./stages/30_outer_boundary.js";
+import { runWaterStage } from "./stages/40_water.js";
+import { runWardsStage } from "./stages/50_wards.js";
+import { runAnchorsStage } from "./stages/60_anchors.js";
+import { runRoutingMeshStage } from "./stages/70_routing_mesh.js";
+import { runInnerRingsStage } from "./stages/80_inner_rings.js";
+import { runDistrictsStage } from "./stages/90_districts.js";
+import { runCitadelStage } from "./stages/100_citadel.js";
+import { runWarpFieldStage } from "./stages/110_warp_field.js";
+import { runWarpDependentFortGeometryStage } from "./stages/120_warp_dependent_fort_geometry.js";
+import { runDocksStage } from "./stages/130_docks.js";
+import { runPrimaryRoadsStage } from "./stages/140_primary_roads.js";
+import { runOutworksStage } from "./stages/150_outworks.js";
+import { runMarketStage } from "./stages/160_market.js";
+import { runRoadGraphAndBlocksStage } from "./stages/170_road_graph_and_blocks.js";
+import { runDebugInvariantsStage } from "./stages/900_debug_invariants.js";
+import { assembleModel } from "./assemble_model.js";
 
 const WARP_FORT = {
   enabled: true,
@@ -108,7 +82,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "late morning",
+  version: "Noon refactor",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -126,31 +100,6 @@ function logBuildOnce(seed, width, height, site) {
   console.info("[EMCG] First run params:", { seed, width, height, site });
 }
 
-function isInsidePolyOrSkip(p, poly) {
-  if (!p) return false;
-  if (!Array.isArray(poly) || poly.length < 3) return true; // pass-through
-  return pointInPolyOrOn(p, poly, 1e-6);
-}
-
-function buildBlockedEdgeSet(graph, params) {
-  const p = (params && typeof params === "object") ? params : {};
-  const hardWater = Boolean(p.roadHardAvoidWater);
-  const hardCitadel = Boolean(p.roadHardAvoidCitadel);
-
-  if (!hardWater && !hardCitadel) return null;
-
-  const blocked = new Set();
-
-  for (const e of graph.edges || []) {
-    if (!e || e.disabled) continue;
-    const f = e.flags || {};
-    if (hardWater && f.isWater) blocked.add(e.id);
-    if (hardCitadel && f.nearCitadel) blocked.add(e.id);
-  }
-
-  return blocked;
-}
-
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
 
@@ -165,6 +114,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     params: { bastions: bastionCount, gates: gateCount },
   });
 
+  // Pipeline seam (Phase 1): no-op, preserves existing behaviour.
+  runPipeline(ctx);
+
   const rng = mulberry32(seed);
 
   const cx = width * 0.5;
@@ -172,58 +124,33 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const baseR = Math.min(width, height) * 0.33;
 
   // ---------------- Footprint + main fortifications ----------------
-  const footprint = generateFootprint(rng, cx, cy, baseR, 22);
-  const wallR = baseR * 0.78;
+  const fort = runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount);
 
-  const { base: wallBase, wall, bastions } = generateBastionedWall(
-    rng,
-    cx,
-    cy,
-    wallR,
-    bastionCount
-  );
+  const footprint = fort.footprint;
+  const wallR = fort.wallR;
 
-  let ditchWidth = wallR * 0.035;
-  let glacisWidth = wallR * 0.08;
-  ctx.params.baseR = baseR;
-  ctx.params.minWallClear = ditchWidth * 1.25;
+  const wallBase = fort.wallBase;
 
-  // Keep separation proportional, but bounded so it is always satisfiable.
-  ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
-  ctx.params.canvasPad = 10;
+  let wallFinal = fort.wallFinal;
+  const bastions = fort.bastions;
 
-  // Routing tuning
-  ctx.params.roadWaterPenalty = 5000;
-  ctx.params.roadCitadelPenalty = 1500;
-  ctx.params.roadWaterClearance = 20;
-  ctx.params.roadCitadelAvoidRadius = 80;
-
-  // Hard avoid toggles (safe defaults)
-  ctx.params.roadHardAvoidWater = true;
-  ctx.params.roadHardAvoidCitadel = false;
-
-  ctx.geom.wallBase = wallBase;
-
-  let ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-  let ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-  let glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
-
-  const centre = centroid(footprint);
-  ctx.geom.centre = centre;
-  ctx.geom.footprint = footprint;
-
-  let anchors = null;
-
-  const gates = pickGates(rng, wallBase, gateCount, bastionCount);
-
-  // Start with the full bastioned wall.
-  let wallFinal = wall;
-  let bastionPolys = bastions.map((b) => b.pts);
+  let bastionPolys = fort.bastionPolys;
   let bastionPolysWarpedSafe = bastionPolys;
 
+  const gates = fort.gates;
+
+  let ditchWidth = fort.ditchWidth;
+  let glacisWidth = fort.glacisWidth;
+  let ditchOuter = fort.ditchOuter;
+  let ditchInner = fort.ditchInner;
+  let glacisOuter = fort.glacisOuter;
+
+  const centre = fort.centre;
+
+
   // ---------------- New Town placement ----------------
-  const placed = placeNewTown({
-    rng: ctx.rng.newTown,
+  const nt = runNewTownStage({
+    ctx,
     gates,
     bastions,
     cx,
@@ -236,29 +163,21 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     glacisWidth,
     wallFinal,
     bastionPolys,
+    warpDebugEnabled: WARP_FORT.debug,
   });
 
-  let newTown = placed.newTown;
-  const primaryGate = placed.primaryGate;
+  let newTown = nt.newTown;
+  const primaryGate = nt.primaryGate;
   ctx.primaryGate = primaryGate;
-  wallFinal = (placed.wallFinal && Array.isArray(placed.wallFinal)) ? placed.wallFinal : wallFinal;
-  bastionPolys = (placed.bastionPolys && Array.isArray(placed.bastionPolys)) ? placed.bastionPolys : bastionPolys;
 
-  if (WARP_FORT.debug) {
-    const okLen = Array.isArray(bastionPolys) && Array.isArray(bastions) && bastionPolys.length === bastions.length;
-    if (!okLen) {
-      throw new Error("bastionPolys length must match bastions length");
-    }
-  }
+  wallFinal = nt.wallFinal;
+  bastionPolys = nt.bastionPolys;
 
-  const hitBastionSet = new Set(placed.hitBastions || []);
-  const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
+  const bastionsForWarp = nt.bastionsForWarp;
+
 
   // ---------------- Overall boundary ----------------
-  const outerBoundary = convexHull([
-    ...footprint,
-    ...((newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : []),
-  ]);
+  const outerBoundary = runOuterBoundaryStage(footprint, newTown);
   ctx.geom.outerBoundary = outerBoundary;
   ctx.geom.cx = cx;
   ctx.geom.cy = cy;
@@ -266,267 +185,127 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Water (river/coast) ----------------
   // We build an initial geometric water model (legacy), then snap it to the ward mesh
-  // edges via buildWaterOnMesh, and finally rebuild the routing graph using exact edge
+  // edges via , and finally rebuild the routing graph using exact edge
   // ids so roads can hard-block water edges deterministically.
-  let waterModel = (waterKind === "none")
-    ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
-    : buildWaterModel({
-        rng: ctx.rng.water,
-        siteWater: waterKind,
-        outerBoundary,
-        cx,
-        cy,
-        baseR,
-      });
+  let waterModel = runWaterStage({
+    waterKind,
+    ctx,
+    outerBoundary,
+    cx,
+    cy,
+    baseR,
+  });
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
-  const WARDS_PARAMS = {
-    seedCount: 24, // spiral seeds (core density)
-    spiralScale: baseR * 0.14,
-    jitterRadius: baseR * 0.03,
-    jitterAngle: 0.25,
-    bboxPadding: baseR * 1.2,
-    clipToFootprint: true,
-
-    // boundary ring to create more “rings” and reduce skew
-    boundarySeedCount: 16,
-    boundaryInset: Math.max(4, baseR * 0.015),
-  };
-
-  const { wardSeeds, wards } = buildWardsVoronoi({
-    rng: ctx.rng.wards,
-    centre: { x: cx, y: cy },
-    footprintPoly: outerBoundary,
-    params: WARDS_PARAMS,
+  const wardsOut = runWardsStage({
+    ctx,
+    baseR,
+    cx,
+    cy,
+    outerBoundary,
   });
 
-  ctx.wards.seeds = wardSeeds;
-
-  const {
-    wards: wardsWithRoles,
-    indices: wardRoleIndices,
-    fortHulls,
-  } = assignWardRoles({
-    wards,
-    centre: { x: cx, y: cy },
-    params: { innerCount: 8 },
-  });
-
-  ctx.wards.cells = wardsWithRoles;
-  ctx.wards.roleIndices = wardRoleIndices;
+  const wardSeeds = wardsOut.wardSeeds;
+  const wardsWithRoles = wardsOut.wardsWithRoles;
+  const wardRoleIndices = wardsOut.wardRoleIndices;
+  const fortHulls = wardsOut.fortHulls;
 
   // Build anchors first so we can flag edges near the citadel.
-  anchors = buildAnchors(ctx);
+  anchors = runAnchorsStage(ctx);
 
   // ---------------- Voronoi planar graph (routing mesh) ----------------
-  // Pass 1: build graph for snapping water to edges (flags do not matter yet).
-  const VOR_EPS = 1e-3;
-
-  let vorGraph = buildVoronoiPlanarGraph({
-    wards: wardsWithRoles,
-    eps: VOR_EPS,
-    waterModel: null,
+  const meshOut = runRoutingMeshStage({
+    ctx,
+    wardsWithRoles,
     anchors,
-    params: ctx.params,
+    waterKind,
+    waterModel,
+    outerBoundary,
+    cx,
+    cy,
+    baseR,
   });
 
-  // Snap river/coast to mesh edges (exact edge id sets stored on waterModel.mesh).
-  if (waterKind !== "none" && waterModel && waterModel.kind !== "none") {
-    waterModel = buildWaterOnMesh({
-      rng: ctx.rng.water,
-      siteWater: waterKind,
-      outerBoundary,
-      cx,
-      cy,
-      baseR,
-      wards: wardsWithRoles,
-      graph: vorGraph,
-      waterModel,
-      params: ctx.params,
-    });
-
-    // Pass 2: rebuild graph so edge.flags.isWater is driven by waterModel.mesh edge ids.
-    vorGraph = buildVoronoiPlanarGraph({
-      wards: wardsWithRoles,
-      eps: VOR_EPS,
-      waterModel,
-      anchors,
-      params: ctx.params,
-    });
-  }
+  let vorGraph = meshOut.vorGraph;
+  waterModel = meshOut.waterModel;
 
   ctx.mesh = ctx.mesh || {};
   ctx.mesh.vorGraph = vorGraph;
 
   // ---------------- Inner rings ----------------
-  let ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
-  let ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
+  const ringsOut = runInnerRingsStage(wallBase, cx, cy, wallR);
+  let ring = ringsOut.ring;
+  let ring2 = ringsOut.ring2;
 
   // ---------------- Districts (Voronoi role groups) ----------------
-  const districts = buildVoronoiDistrictsFromWards({
-    wards: wardsWithRoles,
-    centre: { x: cx, y: cy },
-  });
+  const districts = runDistrictsStage(wardsWithRoles, cx, cy);
 
   // ---------------- Citadel ----------------
-  const citSize = baseR * 0.1;
-  const citadel = generateBastionedWall(rng, anchors.citadel.x, anchors.citadel.y, citSize, 5).wall;
+  const citadel = runCitadelStage(rng, anchors, baseR);
 
   // ---------------- Warp field ----------------
-  const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
-  const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
+  const warpOut = runWarpFieldStage({
+    ctx,
+    cx,
+    cy,
 
-  ctx.params.warpFort = WARP_FORT;
+    wallFinal,
+    wallBase,
 
-  const warpWall = buildFortWarp({
-    enabled: true,
-    centre: { x: cx, y: cy },
-    wallPoly: wallFinal,
-    targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-    clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-    clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-    clampMinMargin: 2,
-    clampMaxMargin: 2,
+    fortHulls,
     districts,
-    bastions: bastionsForWarp,
-    params: ctx.params.warpFort,
+
+    bastionsForWarp,
+    bastionPolys,
+
+    warpFortParams: WARP_FORT,
+    warpDebugEnabled: WARP_FORT.debug,
   });
 
-  const warpOutworks = buildFortWarp({
-    enabled: true,
-    centre: { x: cx, y: cy },
-    wallPoly: wallFinal,
-    targetPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-    tuningPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-    clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-    clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-    clampMinMargin: 2,
-    clampMaxMargin: 2,
-    districts,
-    bastions: bastionsForWarp,
-    params: ctx.params.warpFort,
-  });
+  const warpWall = warpOut.warpWall;
+  const warpOutworks = warpOut.warpOutworks;
 
-  const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  const wallForDraw = wallWarped || wallFinal;
+  const wallForDraw = warpOut.wallForDraw;
 
-  function sampleOnRing(thetas, values, theta) {
-    const n = thetas.length;
-    if (!n) return null;
-    const twoPi = Math.PI * 2;
-
-    let a = theta % twoPi;
-    if (a < 0) a += twoPi;
-
-    const step = twoPi / n;
-    const i0 = Math.floor(a / step) % n;
-    const i1 = (i0 + 1) % n;
-    const t0 = i0 * step;
-    const u = (a - t0) / step;
-
-    const v0 = values[i0];
-    const v1 = values[i1];
-    if (!Number.isFinite(v0) && !Number.isFinite(v1)) return null;
-    if (!Number.isFinite(v0)) return v1;
-    if (!Number.isFinite(v1)) return v0;
-    return v0 + (v1 - v0) * u;
-  }
-
-  function auditRadialClamp(name, polys, minField, maxField, minMargin, maxMargin) {
-    if (!WARP_FORT.debug) return;
-    if ((!minField && !maxField) || !Array.isArray(polys)) return;
-
-    let belowMin = 0;
-    let aboveMax = 0;
-    let total = 0;
-
-    for (const poly of polys) {
-      if (!Array.isArray(poly)) continue;
-      for (const p of poly) {
-        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-
-        const dx = p.x - cx;
-        const dy = p.y - cy;
-        const r = Math.hypot(dx, dy);
-        if (r < 1e-6) continue;
-
-        const theta = Math.atan2(dy, dx);
-
-        const rMinRaw = minField ? sampleOnRing(minField.thetas, minField.rTarget, theta) : null;
-        const rMaxRaw = maxField ? sampleOnRing(maxField.thetas, maxField.rTarget, theta) : null;
-
-        const rMin = Number.isFinite(rMinRaw) ? (rMinRaw + (minMargin || 0)) : null;
-        const rMax = Number.isFinite(rMaxRaw) ? (rMaxRaw - (maxMargin || 0)) : null;
-
-        if (Number.isFinite(rMin) && r < rMin - 1e-6) belowMin += 1;
-        if (Number.isFinite(rMax) && r > rMax + 1e-6) aboveMax += 1;
-
-        total += 1;
-      }
-    }
-
-    if (belowMin || aboveMax) {
-      console.warn("[FortWarp Audit]", name, { belowMin, aboveMax, total });
-    } else {
-      console.info("[FortWarp Audit]", name, "OK", { total });
-    }
-  }
-
-  // Apply outworks warp to bastion polygons (two-target system).
-  if (warpOutworks?.field && Array.isArray(bastionPolys)) {
-    bastionPolysWarpedSafe = bastionPolys.map((poly) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-      const warped = warpPolylineRadial(poly, { x: cx, y: cy }, warpOutworks.field, warpOutworks.params);
-
-      const clamped = clampPolylineRadial(
-        warped,
-        { x: cx, y: cy },
-        warpOutworks.minField,
-        warpOutworks.maxField,
-        warpOutworks.clampMinMargin,
-        warpOutworks.clampMaxMargin
-      );
-
-      return clamped;
-    });
-  } else {
-    bastionPolysWarpedSafe = bastionPolys;
-  }
+  bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
 
   // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
-  const fortR = (warpWall && warpWall.params && Number.isFinite(warpWall.params.bandOuter))
-    ? warpWall.params.bandOuter
-    : wallR;
+  const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
 
-  ctx.geom.wallR = fortR;
-  ditchWidth = fortR * 0.035;
-  glacisWidth = fortR * 0.08;
-  ctx.params.minWallClear = ditchWidth * 1.25;
+  const fortGeom = runWarpDependentFortGeometryStage({
+    ctx,
+    cx,
+    cy,
+    wallR,
+    wallBase,
+    wallWarped,
+    warpWall,
+    gates,
+    primaryGate,
+  });
 
-  const wallBaseForDraw = (warpWall && warpWall.field)
-    ? warpPolylineRadial(wallBase, { x: cx, y: cy }, warpWall.field, warpWall.params)
-    : wallBase;
+  const fortR = fortGeom.fortR;
 
-  ctx.geom.wallBase = wallBaseForDraw;
+  ditchWidth = fortGeom.ditchWidth;
+  glacisWidth = fortGeom.glacisWidth;
 
-  ditchOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth);
-  ditchInner = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth * 0.35);
-  glacisOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth + glacisWidth);
+  const wallBaseForDraw = fortGeom.wallBaseForDraw;
 
-  ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
-  ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
+  ditchOuter = fortGeom.ditchOuter;
+  ditchInner = fortGeom.ditchInner;
+  glacisOuter = fortGeom.glacisOuter;
 
-  const gatesWarped = wallWarped ? snapGatesToWall(gates, cx, cy, wallWarped) : gates;
+  ring = fortGeom.ring;
+  ring2 = fortGeom.ring2;
 
-  const primaryGateWarped = (primaryGate && wallWarped)
-    ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
-    : primaryGate;
+  const gatesWarped = fortGeom.gatesWarped;
+  const primaryGateWarped = fortGeom.primaryGateWarped;
 
   anchors.gates = gatesWarped;
   anchors.primaryGate = primaryGateWarped;
 
   // ---------------- Docks ----------------
-  anchors.docks = buildDocks({
+  anchors.docks = runDocksStage({
     hasDock,
     anchors,
     newTown,
@@ -548,214 +327,57 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   });
 
   // ---------------- Primary roads (routed on Voronoi planar graph) ----------------
-  const roadWeight = makeRoadWeightFn({
-    graph: vorGraph,
+  const primaryOut = runPrimaryRoadsStage({
+    ctx,
+    vorGraph,
     waterModel,
     anchors,
-    params: ctx.params,
+    waterKind,
+    primaryGateWarped,
+    gatesWarped,
   });
 
-  // Snap endpoints in a stable order (mutates graph if splitEdges=true).
-  const snapCfg = { graph: vorGraph, maxSnapDist: 40, splitEdges: true };
-
-  const gateForRoad = primaryGateWarped || (Array.isArray(gatesWarped) ? gatesWarped[0] : null);
-
-  const nGate = gateForRoad ? snapPointToGraph({ point: gateForRoad, ...snapCfg }) : null;
-  const nPlaza = anchors.plaza ? snapPointToGraph({ point: anchors.plaza, ...snapCfg }) : null;
-  const nCitadel = anchors.citadel ? snapPointToGraph({ point: anchors.citadel, ...snapCfg }) : null;
-  const nDocks = anchors.docks ? snapPointToGraph({ point: anchors.docks, ...snapCfg }) : null;
-
-  // Debug: log once after snapping begins, to confirm flags and blocking are active.
-  let __loggedRoutingFlagsOnce = false;
-
-  function routeNodesOrFallback(nA, nB, pA, pB) {
-    if (nA == null || nB == null) return [pA, pB];
-
-    const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
-
-    if (WARP_FORT.debug && !__loggedRoutingFlagsOnce && vorGraph && Array.isArray(vorGraph.edges)) {
-      __loggedRoutingFlagsOnce = true;
-
-      let activeEdges = 0;
-      let waterEdges = 0;
-      let citadelEdges = 0;
-
-      for (const e of vorGraph.edges) {
-        if (!e || e.disabled) continue;
-        activeEdges += 1;
-        if (e.flags && e.flags.isWater) waterEdges += 1;
-        if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
-      }
-
-      const blockedCount = blocked ? blocked.size : 0;
-
-      console.info("[Routing] flags+blocked (post-snap)", {
-        activeEdges,
-        waterEdges,
-        citadelEdges,
-        blockedCount,
-        hardAvoidWater: Boolean(ctx.params.roadHardAvoidWater),
-        hardAvoidCitadel: Boolean(ctx.params.roadHardAvoidCitadel),
-        waterKind,
-      });
-    }
-
-    const nodePath = dijkstra({
-      graph: vorGraph,
-      startNode: nA,
-      goalNode: nB,
-      weightFn: roadWeight,
-      blockedEdgeIds: blocked,
-    });
-
-    if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
-    const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
-    return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
-  }
-
-  const primaryRoads = [];
-
-  // Gate → Plaza
-  if (gateForRoad && anchors.plaza) {
-    primaryRoads.push(routeNodesOrFallback(nGate, nPlaza, gateForRoad, anchors.plaza));
-  }
-
-  // Plaza → Citadel
-  if (anchors.plaza && anchors.citadel) {
-    primaryRoads.push(routeNodesOrFallback(nPlaza, nCitadel, anchors.plaza, anchors.citadel));
-  }
-
-  // Plaza → Docks
-  if (anchors.plaza && anchors.docks) {
-    primaryRoads.push(routeNodesOrFallback(nPlaza, nDocks, anchors.plaza, anchors.docks));
-  }
+  const primaryRoads = primaryOut.primaryRoads;
 
   // ---------------- Outworks ----------------
   const wallForOutworks = wallForDraw;
-  let ravelins = (gatesWarped || [])
-    .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
-    .map((g) =>
-      makeRavelin(
-        g,
-        cx,
-        cy,
-        fortR,
-        ditchWidth,
-        glacisWidth,
-        newTown ? newTown.poly : null,
-        bastionCount,
-        bastionPolysWarpedSafe,
-        wallForOutworks
-      )
-    )
-    .filter(Boolean);
 
-  if (warpOutworks?.minField || warpOutworks?.maxField) {
-    ravelins = ravelins.map((rv) =>
-      clampPolylineRadial(
-        rv,
-        { x: cx, y: cy },
-        warpOutworks.minField,
-        warpOutworks.maxField,
-        warpOutworks.clampMinMargin,
-        warpOutworks.clampMaxMargin
-      )
-    );
-  }
+  const ravelins = runOutworksStage({
+    gatesWarped,
+    primaryGateWarped,
+    cx,
+    cy,
+    fortR,
+    ditchWidth,
+    glacisWidth,
+    newTown,
+    bastionCount,
+    bastionPolysWarpedSafe,
+    wallForOutworks,
+    warpOutworks,
+    warpDebugEnabled: WARP_FORT.debug,
+  });
 
-  if (WARP_FORT.debug) {
-    auditRadialClamp(
-      "WALL",
-      [wallForDraw],
-      warpWall?.minField,
-      warpWall?.maxField,
-      warpWall?.clampMinMargin,
-      warpWall?.clampMaxMargin
-    );
-
-    auditRadialClamp(
-      "BASTIONS",
-      bastionPolysWarpedSafe,
-      warpOutworks?.minField,
-      warpOutworks?.maxField,
-      warpOutworks?.clampMinMargin,
-      warpOutworks?.clampMaxMargin
-    );
-
-    auditRadialClamp(
-      "RAVELINS",
-      ravelins,
-      warpOutworks?.minField,
-      warpOutworks?.maxField,
-      warpOutworks?.clampMinMargin,
-      warpOutworks?.clampMaxMargin
-    );
-  }
-
-  let marketCentre = computeInitialMarketCentre({
-    squareCentre: anchors.plaza,
+  const marketOut = runMarketStage({
+    anchors,
+    wardsWithRoles,
+    wallBaseForDraw,
+    centre,
     primaryGateWarped,
     cx,
     cy,
     baseR,
     footprint,
-    wallBase: wallBaseForDraw,
+    width,
+    height,
+    citadel,
+    minWallClear: ctx.params.minWallClear,
   });
 
-  marketCentre = safeMarketNudge({
-    squareCentre: anchors.plaza,
-    marketCentre,
-    centre,
-    primaryGate: primaryGateWarped,
-    cx,
-    cy,
-    baseR,
-    footprint,
-    wallBase: wallBaseForDraw,
-  });
+  anchors.market = marketOut.marketAnchor;
+  let marketCentre = marketOut.marketCentre;
 
-  // ---------------- Market anchor (always-on, always valid) ----------------
-  anchors.market = finitePointOrNull(marketCentre);
-
-  const innerWards = (wardsWithRoles || []).filter((w) => w && w.role === "inner");
-  let marketFallback = null;
-
-  for (const w of innerWards) {
-    const c = wardCentroid(w);
-    if (finitePointOrNull(c)) {
-      marketFallback = c;
-      break;
-    }
-  }
-
-  if (!anchors.market) {
-    anchors.market = add(anchors.plaza, { x: baseR * 0.03, y: -baseR * 0.02 });
-  }
-
-  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
-
-  if (marketFallback) {
-    const mv = vec(anchors.market, marketFallback);
-    if (len(mv) > baseR * 0.18) {
-      anchors.market = add(anchors.market, mul(safeNormalize(mv), baseR * 0.08));
-      anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-      anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
-    }
-  }
-
-  anchors.market = clampPointToCanvas(anchors.market, width, height, 10);
-
-  anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
-  anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
-
-  marketCentre = anchors.market;
-
-  const landmarks = [
-    { id: "square", pointOrPolygon: anchors.plaza, kind: "main_square", label: "Main Square" },
-    { id: "market", pointOrPolygon: anchors.market, kind: "market", label: "Market" },
-    { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
-  ];
+  const landmarks = marketOut.landmarks;
 
   // Legacy fields retained, but now sourced from routed primaries.
   const roads = primaryRoads;
@@ -764,125 +386,50 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     : [anchors.plaza, anchors.citadel];
 
   // ---------------- Road polylines -> road graph ----------------
-  const ROAD_EPS = 2.0;
   const squareCentre = anchors.plaza;
   const citCentre = anchors.citadel;
 
-  const builtRoads = buildRoadPolylines({
+  const roadsOut = runRoadGraphAndBlocksStage({
     rng,
+    primaryRoads,
     gatesWarped,
     ring,
     ring2,
     squareCentre,
     citCentre,
     newTown,
-  });
-
-  let polylines = builtRoads.polylines;
-  const secondaryRoadsLegacy = builtRoads.secondaryRoads;
-
-  // Prepend routed primaries so the road graph and block extraction reflect them.
-  if (Array.isArray(primaryRoads) && primaryRoads.length) {
-    polylines = [...primaryRoads, ...polylines];
-  }
-
-  const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
-
-  // ---------------- Milestone 3.6: blocks (debug) ----------------
-  const BLOCKS_ANGLE_EPS = 1e-9;
-  const BLOCKS_AREA_EPS = 8.0;
-  const BLOCKS_MAX_FACE_STEPS = 10000;
-
-  const blocks = extractBlocksFromRoadGraph(roadGraph, {
-    ANGLE_EPS: BLOCKS_ANGLE_EPS,
-    AREA_EPS: BLOCKS_AREA_EPS,
-    MAX_FACE_STEPS: BLOCKS_MAX_FACE_STEPS,
-  });
-
-  // Change 3: Assign blocks by ward containment, then map ward role -> district id.
-  assignBlocksToDistrictsByWards({
-    blocks,
-    wards: wardsWithRoles,
     districts,
+    wardsWithRoles,
   });
+
+  // Keep local names consistent with return object.
+  const secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
+  const roadGraph = roadsOut.roadGraph;
+  const blocks = roadsOut.blocks;
 
   // ---------------- Anchor invariants (debug only) ----------------
-  if (WARP_FORT.debug) {
-    const bad = [];
+  runDebugInvariantsStage({
+    debugEnabled: WARP_FORT.debug,
+    vorGraph,
+    primaryRoads,
+    anchors,
+    wallBase,
+    outerBoundary,
+    width,
+    height,
+    hasDock,
+    waterModel,
+  });
 
-    console.info("[Routing] vorGraph", {
-      nodes: vorGraph?.nodes?.length,
-      edges: vorGraph?.edges?.length,
-      primaryRoads: primaryRoads?.length,
-    });
-
-    if (vorGraph && Array.isArray(vorGraph.edges)) {
-      let waterEdges = 0;
-      let citadelEdges = 0;
-      let activeEdges = 0;
-
-      for (const e of vorGraph.edges) {
-        if (!e || e.disabled) continue;
-        activeEdges += 1;
-        if (e.flags && e.flags.isWater) waterEdges += 1;
-        if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
-      }
-
-      console.info("[Routing] edge flags", { activeEdges, waterEdges, citadelEdges });
-    }
-
-    const plazaOk =
-      finitePointOrNull(anchors.plaza) &&
-      isInsidePolyOrSkip(anchors.plaza, wallBase) &&
-      (anchors.plaza.x >= 0 && anchors.plaza.x <= width && anchors.plaza.y >= 0 && anchors.plaza.y <= height);
-
-    const citadelOk =
-      finitePointOrNull(anchors.citadel) &&
-      isInsidePolyOrSkip(anchors.citadel, wallBase) &&
-      (anchors.citadel.x >= 0 && anchors.citadel.x <= width && anchors.citadel.y >= 0 && anchors.citadel.y <= height);
-
-    const marketOk =
-      finitePointOrNull(anchors.market) &&
-      isInsidePolyOrSkip(anchors.market, wallBase) &&
-      (anchors.market.x >= 0 && anchors.market.x <= width && anchors.market.y >= 0 && anchors.market.y <= height);
-
-    let docksOk = true;
-    if (hasDock) {
-      docksOk =
-        (anchors.docks === null) ||
-        (finitePointOrNull(anchors.docks) &&
-          !pointInPolyOrOn(anchors.docks, wallBase, 1e-6) &&
-          isInsidePolyOrSkip(anchors.docks, outerBoundary) &&
-          (anchors.docks.x >= 0 && anchors.docks.x <= width && anchors.docks.y >= 0 && anchors.docks.y <= height));
-    }
-
-    if (!plazaOk) bad.push("plaza");
-    if (!citadelOk) bad.push("citadel");
-    if (!marketOk) bad.push("market");
-    if (!docksOk) bad.push("docks");
-
-    if (bad.length) {
-      console.warn("ANCHOR INVARIANTS FAILED", bad, {
-        plaza: anchors.plaza,
-        citadel: anchors.citadel,
-        market: anchors.market,
-        docks: anchors.docks,
-        hasDock,
-        water: waterModel?.kind,
-      });
-    }
-  }
-
-  return {
+  return assembleModel({
     footprint,
     cx,
     cy,
 
-    // Walls + moatworks
     wallBase,
-    wall: wallForDraw,
-    bastionPolys: bastionPolysWarpedSafe,
-    gates: gatesWarped,
+    wallForDraw,
+    bastionPolysWarpedSafe,
+    gatesWarped,
     ravelins,
     ditchOuter,
     ditchInner,
@@ -892,47 +439,37 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
     districts,
     blocks,
-    warp: {
-      wall: warpWall ?? null,
-      outworks: warpOutworks ?? null,
-    },
+    warpWall,
+    warpOutworks,
     fortHulls,
 
-    wards: wardsWithRoles,
+    wardsWithRoles,
     wardSeeds,
     wardRoleIndices,
 
-    mesh: {
-      vorGraph,
-    },
+    vorGraph,
 
-    // Anchors
     centre,
-    squareR: baseR * 0.055,
+    baseR,
     citadel,
     avenue,
-    primaryGate: primaryGateWarped,
+    primaryGateWarped,
 
     site: { water: waterKind, hasDock },
-    water: waterModel,
+    waterModel,
 
-    // Roads
     roads,
     primaryRoads,
     ring,
     ring2,
-    secondaryRoads: secondaryRoadsLegacy,
+    secondaryRoadsLegacy,
     roadGraph,
 
-    // New Town
     newTown,
-
-    // District-ish boundary
     outerBoundary,
 
-    // Markers
     gatesOriginal: gates,
     landmarks,
     anchors,
-  };
+  });
 }
