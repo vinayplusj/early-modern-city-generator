@@ -149,8 +149,8 @@ export function render(ctx, model) {
       if (!Array.isArray(poly) || poly.length < 3) continue;
   
       let fill = null;
-      if (coreIds.has(w.id)) fill = "rgba(0,255,255,0.10)";     // core = cyan tint
-      else if (ring1Ids.has(w.id)) fill = "rgba(255,0,255,0.10)"; // ring1 = magenta tint
+      if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.30)";     // core = cyan tint
+      else if (ring1Ids.has(w.id)) fill = "rgba(0,255,255,0.30)"; // ring1 = magenta tint
       else continue;
   
       ctx.save();
