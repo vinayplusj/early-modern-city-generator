@@ -543,7 +543,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       startNode: nA,
       goalNode: nB,
       weightFn: roadWeight,
-      blockedEdgeIds: null,
+      blockedEdgeIds: roadWeight.blockedEdgeIds || null,
     });
     if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
     const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
