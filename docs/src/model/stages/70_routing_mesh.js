@@ -5,6 +5,9 @@
 
 import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph.js";
 import { buildWaterOnMesh } from "../water_on_mesh.js";
+import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
+import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
+
 
 const VOR_EPS = 1e-3;
 
@@ -45,6 +48,11 @@ export function runRoutingMeshStage({
       graph: vorGraph,
       waterModel,
       params: ctx.params,
+    
+      // Required routing helpers (buildWaterOnMesh still expects these)
+      dijkstra,
+      pathNodesToPolyline,
+      snapPointToGraph,
     });
 
     // Pass 2: rebuild graph so edge.flags.isWater is driven by waterModel.mesh edge ids.
