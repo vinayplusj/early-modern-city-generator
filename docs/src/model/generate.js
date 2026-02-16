@@ -13,17 +13,12 @@ import { mulberry32 } from "../rng/mulberry32.js";
 import {
   add,
   mul,
-  normalize,
   vec,
   len,
-  safeNormalize,
   clampPointToCanvas,
 } from "../geom/primitives.js";
 import {
-  pointInPolyOrOn,
-  supportPoint,
-  pushOutsidePoly,
-  snapPointToPolyline,
+  pointInPolyOrOn
 } from "../geom/poly.js";
 
 import { createCtx } from "./ctx.js";
@@ -82,7 +77,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "Noon refactor",
+  version: "Noon refactor 2",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -315,15 +310,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     waterModel,
     width,
     height,
-
-    add,
-    mul,
-    normalize,
-    clampPointToCanvas,
-    pointInPolyOrOn,
-    pushOutsidePoly,
-    supportPoint,
-    snapPointToPolyline,
   });
 
   // ---------------- Primary roads (routed on Voronoi planar graph) ----------------
