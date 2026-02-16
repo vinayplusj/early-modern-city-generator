@@ -46,7 +46,7 @@ export function runWarpFieldStage({
     wallPoly: wallFinal,
     targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-    clampMaxPoly: null
+    clampMaxPoly: null,
     clampMinMargin: 2,
     clampMaxMargin: 2,
     districts,
@@ -60,7 +60,7 @@ export function runWarpFieldStage({
     wallPoly: wallFinal,
     targetPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     tuningPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
-    clampMinPoly: null
+    clampMinPoly: null,
     clampMaxPoly: (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null,
     clampMinMargin: 2,
     clampMaxMargin: 2,
