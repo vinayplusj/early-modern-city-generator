@@ -2,6 +2,20 @@
 //
 // Docks anchor placement (optional). Behaviour should remain identical to the previous inline code.
 
+import {
+  add,
+  mul,
+  normalize,
+  clampPointToCanvas,
+} from "../../geom/primitives.js";
+
+import {
+  pointInPolyOrOn,
+  pushOutsidePoly,
+  supportPoint,
+  snapPointToPolyline,
+} from "../../geom/poly.js";
+
 export function buildDocks({
   hasDock,
   anchors,
@@ -12,17 +26,8 @@ export function buildDocks({
   waterModel,
   width,
   height,
-
-  // Functions injected to avoid cycles and keep determinism
-  add,
-  mul,
-  normalize,
-  clampPointToCanvas,
-  pointInPolyOrOn,
-  pushOutsidePoly,
-  supportPoint,
-  snapPointToPolyline,
 }) {
+
   // Deterministic docks point, created only when the UI enables it.
   // Invariant: anchors.docks is null unless hasDock is true.
   let docks = null;
