@@ -22,7 +22,7 @@ export function centroid(poly) {
   return { x: cx, y: cy };
 }
 
-export function offsetRadial(poly, cx, cy, offset) {
+function offsetRadial(poly, cx, cy, offset) {
   return poly.map(p => {
     const v = { x: p.x - cx, y: p.y - cy };
     const l = Math.hypot(v.x, v.y) || 1;
@@ -187,14 +187,14 @@ export function polyIntersectsPoly(A, B) {
   return false;
 }
 
-export function polyIntersectsPolyBuffered(A, B, eps = 1.5) {
+function polyIntersectsPolyBuffered(A, B, eps = 1.5) {
   if (polyIntersectsPoly(A, B)) return true;
   for (const p of A) if (pointInPolyOrOn(p, B, eps)) return true;
   for (const p of B) if (pointInPolyOrOn(p, A, eps)) return true;
   return false;
 }
 
-export function convexHull(points) {
+function convexHull(points) {
   const pts = points.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
   if (pts.length <= 2) return pts;
 
