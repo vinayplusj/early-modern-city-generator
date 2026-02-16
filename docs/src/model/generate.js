@@ -107,8 +107,8 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "14 feb",
-  buildDate: "2026-02-14",
+  version: "evening",
+  buildDate: "2026-02-15",
   commit: "manual",
 };
 
