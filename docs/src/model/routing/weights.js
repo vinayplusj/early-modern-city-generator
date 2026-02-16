@@ -60,33 +60,41 @@ export function makeRoadWeightFn({ graph, waterModel, anchors, params } = {}) {
   const roadCitadelPenalty =
     isFiniteNumber(p.roadCitadelPenalty) ? p.roadCitadelPenalty : 1500;
 
-  // If you want to hard-block certain edges, do it via blockedEdgeIds in dijkstra().
-  // This penalty is just a safety fallback.
   const roadDisabledPenalty =
     isFiniteNumber(p.roadDisabledPenalty) ? p.roadDisabledPenalty : Infinity;
 
-  const roadHardAvoidWater = Boolean(p.roadHardAvoidWater);
-  const roadHardAvoidCitadel = Boolean(p.roadHardAvoidCitadel);
+  const hardAvoidWater = Boolean(p.roadHardAvoidWater);
+  const hardAvoidCitadel = Boolean(p.roadHardAvoidCitadel);
 
-  return (edgeId /*, fromNode, toNode */) => {
+  // Optional hard-block set (edge ids). Deterministic because edges are deterministic.
+  let blockedEdgeIds = null;
+
+  if (hardAvoidWater || hardAvoidCitadel) {
+    blockedEdgeIds = new Set();
+    for (const e of graph.edges) {
+      if (!e || e.disabled) continue;
+      const f = (e.flags && typeof e.flags === "object") ? e.flags : null;
+      if (!f) continue;
+
+      if (hardAvoidWater && f.isWater) blockedEdgeIds.add(e.id);
+      if (hardAvoidCitadel && f.nearCitadel) blockedEdgeIds.add(e.id);
+    }
+  }
+
+  const fn = (edgeId /*, fromNode, toNode */) => {
     const e = graph.edges[edgeId];
     if (!e) return Infinity;
 
     if (e.disabled) return roadDisabledPenalty;
 
-    // Base cost: geometric length.
     const base = isFiniteNumber(e.length) ? e.length : Infinity;
     if (!isFiniteNumber(base)) return Infinity;
 
     const flags = (e.flags && typeof e.flags === "object") ? e.flags : null;
 
-        // Hard avoidance (deterministic): treat flagged edges as unreachable.
-    if (flags && roadHardAvoidWater && flags.isWater) return Infinity;
-    if (flags && roadHardAvoidCitadel && flags.nearCitadel) return Infinity;
-
     let cost = base;
 
-    // Optional penalties if flags exist. If flags do not exist, these contribute 0.
+    // Soft penalties remain useful when hard-avoid is off.
     if (flags && flags.isWater) {
       cost += clampNonNegative(roadWaterPenalty);
     }
@@ -96,8 +104,12 @@ export function makeRoadWeightFn({ graph, waterModel, anchors, params } = {}) {
 
     return cost;
   };
-}
 
+  // Attach blocked set for callers that want hard-avoid.
+  fn.blockedEdgeIds = blockedEdgeIds;
+
+  return fn;
+}
 /**
  * Create a deterministic weight function for rivers.
  *
