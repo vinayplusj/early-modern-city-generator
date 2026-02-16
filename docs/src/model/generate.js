@@ -108,7 +108,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "morning",
+  version: "late morning",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -340,7 +340,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       cy,
       baseR,
       wards: wardsWithRoles,
-      vorGraph,
+      graph: vorGraph,
       waterModel,
       params: ctx.params,
     });
