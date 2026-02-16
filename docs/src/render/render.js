@@ -59,6 +59,7 @@ export function render(ctx, model) {
     wall,
     wallBase,
     bastionPolys,
+    bastionHull,
     ring,
     ring2,
 
@@ -115,6 +116,13 @@ export function render(ctx, model) {
     warp,
   });
 
+  // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
+  drawPolyline(ctx, bastionHull, {
+    stroke: "rgba(255,255,0,0.95)", // bright yellow for visibility
+    width: 3,
+    closed: true,
+  });
+  
     // ---- Debug: ward-derived fort hulls ----
     if (typeof window !== "undefined") {
       const fh = window.__wardDebug?.last?.fortHulls;
