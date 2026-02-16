@@ -4,8 +4,7 @@
 
 import { closestPointOnPolyline } from "../../geom/poly.js";
 import { clamp, lerp, dist } from "../../geom/primitives.js";
-
-export function buildRoadPolylines({
+export function buildRoadIntents({
   rng,
   gatesWarped,
   squareCentre,
@@ -15,92 +14,76 @@ export function buildRoadPolylines({
   newTown,
   roadEps,
 }) {
-  const polylines = [];
+  const intents = [];
 
   // Secondary roads (legacy generator returns arrays of points)
   const secondaryRoads = generateSecondaryRoads(rng, gatesWarped, ring, ring2);
 
-  // Gate -> ring -> square (primary), to avoid cutting through bastions
-  for (const g of gatesWarped || []) {
-    const path = routeGateToSquareViaRing(g, ring, squareCentre);
-    if (!path || path.length < 2) continue;
-
-    if (path.length === 2) {
-      polylines.push({
-        points: [path[0], path[1]],
-        kind: "primary",
-        width: 2.5,
-        nodeKindA: "gate",
-        nodeKindB: "square",
-      });
-      continue;
-    }
-
-    // 3+ points: split at ring snap
-    polylines.push({
-      points: [path[0], path[1]],
-      kind: "primary",
-      width: 2.2,
-      nodeKindA: "gate",
-      nodeKindB: "junction",
-    });
-
-    polylines.push({
-      points: [path[1], path[2]],
-      kind: "primary",
-      width: 2.5,
-      nodeKindA: "junction",
-      nodeKindB: "square",
-    });
-  }
-
-  // Square -> citadel (primary)
-  polylines.push({
-    points: [squareCentre, citCentre],
-    kind: "primary",
-    width: 3.0,
-    nodeKindA: "square",
-    nodeKindB: "citadel",
-  });
-
+  // IMPORTANT:
+  // Primary roads are now generated in Stage 140 (routed on the Voronoi graph),
+  // so Stage 170 should not add Euclidean primary segments here.
   // Secondary roads
   for (const r of secondaryRoads || []) {
     if (!r || r.length < 2) continue;
-    polylines.push({ points: r, kind: "secondary", width: 1.25 });
+    intents.push({
+      a: r[0],
+      b: r[r.length - 1],
+      kind: "secondary",
+      width: 1.25,
+      nodeKindA: "junction",
+      nodeKindB: "junction",
+    });
   }
 
   // New Town streets
   if (newTown && newTown.streets) {
     for (const seg of newTown.streets) {
       if (!seg || seg.length < 2) continue;
-      polylines.push({ points: seg, kind: "secondary", width: 1.0 });
+      intents.push({
+        a: seg[0],
+        b: seg[seg.length - 1],
+        kind: "secondary",
+        width: 1.0,
+        nodeKindA: "junction",
+        nodeKindB: "junction",
+      });
     }
 
     // New Town main avenue: route into the city via the ring, then to the square
     if (newTown.mainAve && ring) {
       const entry = closestPointOnPolyline(newTown.mainAve[0], ring);
 
-      polylines.push({
-        points: [newTown.mainAve[0], entry],
+      intents.push({
+        a: newTown.mainAve[0],
+        b: entry,
         kind: "primary",
         width: 2.0,
         nodeKindA: "junction",
         nodeKindB: "junction",
       });
 
-      polylines.push({
-        points: [entry, squareCentre],
+      intents.push({
+        a: entry,
+        b: squareCentre,
         kind: "primary",
         width: 2.2,
         nodeKindA: "junction",
         nodeKindB: "square",
       });
     } else if (newTown.mainAve) {
-      polylines.push({ points: newTown.mainAve, kind: "primary", width: 2.0 });
+      // Fallback: represent the main avenue as a single intent between endpoints.
+      intents.push({
+        a: newTown.mainAve[0],
+        b: newTown.mainAve[newTown.mainAve.length - 1],
+        kind: "primary",
+        width: 2.0,
+        nodeKindA: "junction",
+        nodeKindB: "junction",
+      });
     }
   }
 
-  return { polylines, secondaryRoads, roadEps };
+  return { intents, secondaryRoadsLegacy: secondaryRoads, roadEps };
 }
 
 export function generateSecondaryRoads(rng, gates, ring1, ring2) {
