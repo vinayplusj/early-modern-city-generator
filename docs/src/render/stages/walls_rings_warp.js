@@ -5,8 +5,11 @@ import { drawPoly } from "../helpers/draw.js";
 export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, bastionPolys, ring, ring2, warp }) {
   // Bastioned wall (final)
   if (wall && wall.length >= 3) {
-    ctx.strokeStyle = "#d9d9d9";
-    ctx.lineWidth = 3;
+    const wallStroke = warp?.wall?.draw?.stroke ?? "#d9d9d9";
+    const wallWidth = warp?.wall?.draw?.width ?? 3;
+
+    ctx.strokeStyle = wallStroke;
+    ctx.lineWidth = wallWidth;
     drawPoly(ctx, wall, true);
     ctx.stroke();
   }
@@ -14,8 +17,12 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, bastionPolys, ri
     // Bastions (polygons). Some may be null if hidden due to New Town overlap.
   if (bastionPolys && Array.isArray(bastionPolys)) {
     ctx.save();
-    ctx.strokeStyle = "#d9d9d9";
-    ctx.lineWidth = 2;
+
+    const outworksStroke = warp?.outworks?.draw?.stroke ?? "#d9d9d9";
+    const outworksWidth = warp?.outworks?.draw?.width ?? 2;
+
+    ctx.strokeStyle = outworksStroke;
+    ctx.lineWidth = outworksWidth;
 
     for (const poly of bastionPolys) {
       if (!Array.isArray(poly) || poly.length < 3) continue; // skips nulls
@@ -25,8 +32,11 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, bastionPolys, ri
 
     ctx.restore();
   }
-// Warp overlay (debug)
-  if (warp && warp.params && warp.params.debug && warp.wallOriginal && warp.wallWarped) {
+
+  // Warp overlay (debug)
+  const ww = warp?.wall;
+  if (ww && ww.params && ww.params.debug && ww.wallOriginal && ww.wallWarped) {
+
     ctx.save();
 
     ctx.lineWidth = 2;
