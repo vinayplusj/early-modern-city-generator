@@ -131,6 +131,25 @@ function isInsidePolyOrSkip(p, poly) {
   return pointInPolyOrOn(p, poly, 1e-6);
 }
 
+function buildBlockedEdgeSet(graph, params) {
+  const p = (params && typeof params === "object") ? params : {};
+  const hardWater = Boolean(p.roadHardAvoidWater);
+  const hardCitadel = Boolean(p.roadHardAvoidCitadel);
+
+  if (!hardWater && !hardCitadel) return null;
+
+  const blocked = new Set();
+
+  for (const e of graph.edges || []) {
+    if (!e || e.disabled) continue;
+    const f = e.flags || {};
+    if (hardWater && f.isWater) blocked.add(e.id);
+    if (hardCitadel && f.nearCitadel) blocked.add(e.id);
+  }
+
+  return blocked;
+}
+
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
   
@@ -290,6 +309,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.wards.cells = wardsWithRoles;
   ctx.wards.roleIndices = wardRoleIndices;
+  
+  // Build anchors first so we can flag edges near the citadel.
   anchors = buildAnchors(ctx);
 
     // ---------------- Voronoi planar graph (routing mesh) ----------------
@@ -536,19 +557,54 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const nCitadel = anchors.citadel ? snapPointToGraph({ point: anchors.citadel, ...snapCfg }) : null;
   const nDocks = anchors.docks ? snapPointToGraph({ point: anchors.docks, ...snapCfg }) : null;
 
-  function routeNodesOrFallback(nA, nB, pA, pB) {
-    if (nA == null || nB == null) return [pA, pB];
-    const nodePath = dijkstra({
-      graph: vorGraph,
-      startNode: nA,
-      goalNode: nB,
-      weightFn: roadWeight,
-      blockedEdgeIds: roadWeight.blockedEdgeIds || null,
-    });
-    if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
-    const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
-    return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
-  }
+  // Debug: log once after snapping begins, to confirm flags and blocking are active.
+  let __loggedRoutingFlagsOnce = false;
+  
+    function routeNodesOrFallback(nA, nB, pA, pB) {
+      if (nA == null || nB == null) return [pA, pB];
+  
+      const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
+  
+      if (WARP_FORT.debug && !__loggedRoutingFlagsOnce && vorGraph && Array.isArray(vorGraph.edges)) {
+        __loggedRoutingFlagsOnce = true;
+  
+        let activeEdges = 0;
+        let waterEdges = 0;
+        let citadelEdges = 0;
+  
+        for (const e of vorGraph.edges) {
+          if (!e || e.disabled) continue;
+          activeEdges += 1;
+          if (e.flags && e.flags.isWater) waterEdges += 1;
+          if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
+        }
+  
+        const blockedCount = blocked ? blocked.size : 0;
+  
+        console.info("[Routing] flags+blocked (post-snap)", {
+          activeEdges,
+          waterEdges,
+          citadelEdges,
+          blockedCount,
+          hardAvoidWater: Boolean(ctx.params.roadHardAvoidWater),
+          hardAvoidCitadel: Boolean(ctx.params.roadHardAvoidCitadel),
+          waterKind,
+        });
+      }
+  
+      const nodePath = dijkstra({
+        graph: vorGraph,
+        startNode: nA,
+        goalNode: nB,
+        weightFn: roadWeight,
+        blockedEdgeIds: blocked,
+      });
+  
+      if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
+      const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
+      return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
+    }
+
 
   const primaryRoads = [];
 
