@@ -376,6 +376,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const citCentre = anchors.citadel;
 
   const roadsOut = runRoadGraphAndBlocksStage({
+    ctx,
+    vorGraph,
+    waterModel,
+    anchors,
+    waterKind,    
     rng,
     primaryRoads,
     gatesWarped,
