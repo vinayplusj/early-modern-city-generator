@@ -112,6 +112,52 @@ function pickWaterPolyline(waterModel) {
   return null;
 }
 
+function toIdSet(maybeIds) {
+  if (!maybeIds) return null;
+  if (maybeIds instanceof Set) return maybeIds;
+  if (Array.isArray(maybeIds)) return new Set(maybeIds);
+  return null;
+}
+
+// Apply water flags using one of two mechanisms:
+// 1) Exact edge id sets: waterModel.mesh.{riverEdgeIds, coastEdgeIds, waterEdgeIds}
+// 2) Legacy proximity to a geometric water polyline.
+function computeWaterFlagForEdge(edge, nodes, waterModel, params) {
+  if (!edge) return { isWater: false, waterKind: null };
+
+  const mesh = (waterModel && waterModel.mesh && typeof waterModel.mesh === "object") ? waterModel.mesh : null;
+  const riverSet = toIdSet(mesh && mesh.riverEdgeIds);
+  const coastSet = toIdSet(mesh && mesh.coastEdgeIds);
+  const waterSet = toIdSet(mesh && mesh.waterEdgeIds);
+
+  // Prefer explicit sets when present.
+  if (riverSet || coastSet || waterSet) {
+    const isCoast = coastSet ? coastSet.has(edge.id) : false;
+    const isRiver = riverSet ? riverSet.has(edge.id) : false;
+    const isWaterGeneric = waterSet ? waterSet.has(edge.id) : false;
+
+    const isWater = Boolean(isCoast || isRiver || isWaterGeneric);
+
+    // If multiple apply, prefer coast (it acts like a boundary water feature).
+    const waterKind = isCoast ? "coast" : (isRiver ? "river" : (isWaterGeneric ? "water" : null));
+    return { isWater, waterKind };
+  }
+
+  // Legacy: treat as water if close to generated polyline.
+  const waterLine = pickWaterPolyline(waterModel);
+  if (!waterLine) return { isWater: false, waterKind: null };
+
+  const a = nodes[edge.a];
+  const b = nodes[edge.b];
+  if (!a || !b) return { isWater: false, waterKind: null };
+
+  const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+  const clearance = (params && Number.isFinite(params.roadWaterClearance)) ? params.roadWaterClearance : 20;
+  const isWater = pointToPolylineDistance(mid, waterLine) <= clearance;
+  const waterKind = isWater ? (waterModel && waterModel.kind ? String(waterModel.kind) : "water") : null;
+  return { isWater, waterKind };
+}
+
 /**
  * Build a planar graph from ward polygons.
  *
@@ -213,9 +259,6 @@ export function buildVoronoiPlanarGraph({ wards, eps = 1e-3, waterModel = null, 
   const citadelPt = (anchors && isFinitePoint(anchors.citadel)) ? anchors.citadel : null;
   const citadelAvoidRadius = isFiniteNumber(p.roadCitadelAvoidRadius) ? p.roadCitadelAvoidRadius : 80;
 
-  const waterLine = pickWaterPolyline(waterModel);
-  const waterClearance = isFiniteNumber(p.roadWaterClearance) ? p.roadWaterClearance : 20;
-
   for (const e of edges) {
     if (!e || e.disabled) continue;
     if (!e.flags || typeof e.flags !== "object") {
@@ -229,10 +272,13 @@ export function buildVoronoiPlanarGraph({ wards, eps = 1e-3, waterModel = null, 
       e.flags.nearCitadel = pointDist(m, citadelPt) <= citadelAvoidRadius;
     }
 
-    // Water avoidance: mark edges close to shoreline/coast/river polyline.
-    if (waterLine) {
-      const d = pointToPolylineDistance(m, waterLine);
-      e.flags.isWater = d <= waterClearance;
+    // Water avoidance:
+    // Prefer explicit edge-id sets (waterModel.mesh.*EdgeIds) to guarantee water lies on mesh edges.
+    // Fall back to legacy proximity-to-polyline behaviour.
+    const wf = computeWaterFlagForEdge(e, nodes, waterModel, p);
+    e.flags.isWater = Boolean(wf && wf.isWater);
+    if (wf && wf.waterKind) {
+      e.flags.waterKind = wf.waterKind; // "river" | "coast" | "water"
     }
   }
 
@@ -397,7 +443,6 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
   const parentFlags = (edge.flags && typeof edge.flags === "object") ? { ...edge.flags } : null;
   addEdgeUndirected(edge.a, newNodeId, parentFlags);
   addEdgeUndirected(newNodeId, edge.b, parentFlags);
-
 
   // Re-sort adjacency for determinism after mutation.
   for (const list of adj) {
