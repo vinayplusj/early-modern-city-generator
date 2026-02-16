@@ -64,6 +64,8 @@ import {
 } from "./anchors/anchor_constraints.js";
 
 import { buildWaterModel } from "./water.js";
+import { buildWaterOnMesh } from "./water_on_mesh.js"; // NEW: snap river/coast to mesh edges
+
 import { buildAnchors } from "./stages/anchors.js";
 import { buildDocks } from "./stages/docks.js";
 import { createCtx } from "./ctx.js";
@@ -71,7 +73,6 @@ import { warpPolylineRadial } from "./warp.js";
 import { buildVoronoiPlanarGraph, snapPointToGraph } from "./mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "./routing/shortest_path.js";
 import { makeRoadWeightFn } from "./routing/weights.js";
-
 
 const WARP_FORT = {
   enabled: true,
@@ -152,7 +153,6 @@ function buildBlockedEdgeSet(graph, params) {
 
 export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
-  
 
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
   const hasDock = Boolean(site && site.hasDock) && waterKind !== "none";
@@ -187,18 +187,20 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   let glacisWidth = wallR * 0.08;
   ctx.params.baseR = baseR;
   ctx.params.minWallClear = ditchWidth * 1.25;
+
   // Keep separation proportional, but bounded so it is always satisfiable.
   ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
   ctx.params.canvasPad = 10;
-  ctx.params.roadWaterPenalty = 5000;      // or larger if you want near-hard avoidance
-  ctx.params.roadCitadelPenalty = 1500;    // scale to taste
+
+  // Routing tuning
+  ctx.params.roadWaterPenalty = 5000;
+  ctx.params.roadCitadelPenalty = 1500;
   ctx.params.roadWaterClearance = 20;
-  
   ctx.params.roadCitadelAvoidRadius = 80;
 
   // Hard avoid toggles (safe defaults)
-  ctx.params.roadHardAvoidWater = true;     // roads should not enter water edges
-  ctx.params.roadHardAvoidCitadel = false; // start soft; flip to true once you confirm connectivity
+  ctx.params.roadHardAvoidWater = true;
+  ctx.params.roadHardAvoidCitadel = false;
 
   ctx.geom.wallBase = wallBase;
 
@@ -263,7 +265,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   ctx.geom.wallR = wallR;
 
   // ---------------- Water (river/coast) ----------------
-  const waterModel = (waterKind === "none")
+  // We build an initial geometric water model (legacy), then snap it to the ward mesh
+  // edges via buildWaterOnMesh, and finally rebuild the routing graph using exact edge
+  // ids so roads can hard-block water edges deterministically.
+  let waterModel = (waterKind === "none")
     ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
     : buildWaterModel({
         rng: ctx.rng.water,
@@ -276,15 +281,15 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // ---------------- Wards (Voronoi) + deterministic roles ----------------
   const WARDS_PARAMS = {
-    seedCount: 24,                 // spiral seeds (core density)
+    seedCount: 24, // spiral seeds (core density)
     spiralScale: baseR * 0.14,
     jitterRadius: baseR * 0.03,
     jitterAngle: 0.25,
     bboxPadding: baseR * 1.2,
     clipToFootprint: true,
-  
-    // NEW: boundary ring to create more “rings” and reduce skew
-    boundarySeedCount: 16,         // start with 16–32; 24 is a good default
+
+    // boundary ring to create more “rings” and reduce skew
+    boundarySeedCount: 16,
     boundaryInset: Math.max(4, baseR * 0.015),
   };
 
@@ -309,29 +314,55 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   ctx.wards.cells = wardsWithRoles;
   ctx.wards.roleIndices = wardRoleIndices;
-  
+
   // Build anchors first so we can flag edges near the citadel.
   anchors = buildAnchors(ctx);
 
-    // ---------------- Voronoi planar graph (routing mesh) ----------------
-    // Build AFTER wards are finalized (clipped) and roles assigned.
-    const vorGraph = buildVoronoiPlanarGraph({
+  // ---------------- Voronoi planar graph (routing mesh) ----------------
+  // Pass 1: build graph for snapping water to edges (flags do not matter yet).
+  const VOR_EPS = 1e-3;
+
+  let vorGraph = buildVoronoiPlanarGraph({
+    wards: wardsWithRoles,
+    eps: VOR_EPS,
+    waterModel: null,
+    anchors,
+    params: ctx.params,
+  });
+
+  // Snap river/coast to mesh edges (exact edge id sets stored on waterModel.mesh).
+  if (waterKind !== "none" && waterModel && waterModel.kind !== "none") {
+    waterModel = buildWaterOnMesh({
+      rng: ctx.rng.water,
+      siteWater: waterKind,
+      outerBoundary,
+      cx,
+      cy,
+      baseR,
       wards: wardsWithRoles,
-      eps: 1e-3,
+      vorGraph,
       waterModel,
-      anchors,          // ✅ use anchors so nearCitadel can be flagged
       params: ctx.params,
     });
-  
-    ctx.mesh = ctx.mesh || {};
-    ctx.mesh.vorGraph = vorGraph;
 
-// ---------------- Inner rings ----------------
+    // Pass 2: rebuild graph so edge.flags.isWater is driven by waterModel.mesh edge ids.
+    vorGraph = buildVoronoiPlanarGraph({
+      wards: wardsWithRoles,
+      eps: VOR_EPS,
+      waterModel,
+      anchors,
+      params: ctx.params,
+    });
+  }
+
+  ctx.mesh = ctx.mesh || {};
+  ctx.mesh.vorGraph = vorGraph;
+
+  // ---------------- Inner rings ----------------
   let ring = offsetRadial(wallBase, cx, cy, -wallR * 0.06);
   let ring2 = offsetRadial(wallBase, cx, cy, -wallR * 0.13);
 
   // ---------------- Districts (Voronoi role groups) ----------------
-  // Change 3: districts are derived from wardsWithRoles, not from radial sectors.
   const districts = buildVoronoiDistrictsFromWards({
     wards: wardsWithRoles,
     centre: { x: cx, y: cy },
@@ -342,19 +373,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const citadel = generateBastionedWall(rng, anchors.citadel.x, anchors.citadel.y, citSize, 5).wall;
 
   // ---------------- Warp field ----------------
-  // We use TWO warp passes:
-  // 1) The curtain wall is pulled toward the INNER hull, but clamped to stay outside it.
-  // 2) Bastions / ravelins are pulled toward the OUTER hull, but clamped to stay inside it.
-  //
-  // This matches the requirement that fortifications fill the “magenta band”:
-  //   inner hull < wall < outworks < outer hull
-
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
 
   ctx.params.warpFort = WARP_FORT;
 
-  // Pass A: warp the wall toward the inner hull (with clamps).
   const warpWall = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
@@ -369,7 +392,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     params: ctx.params.warpFort,
   });
 
-  // Pass B: warp outworks toward the outer hull (with clamps).
   const warpOutworks = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
@@ -388,7 +410,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   const wallForDraw = wallWarped || wallFinal;
 
-      function sampleOnRing(thetas, values, theta) {
+  function sampleOnRing(thetas, values, theta) {
     const n = thetas.length;
     if (!n) return null;
     const twoPi = Math.PI * 2;
@@ -451,15 +473,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   }
 
   // Apply outworks warp to bastion polygons (two-target system).
-  // Invariant: outworks must remain inside fortOuterHull (clamped by warpOutworks).
   if (warpOutworks?.field && Array.isArray(bastionPolys)) {
     bastionPolysWarpedSafe = bastionPolys.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
       const warped = warpPolylineRadial(poly, { x: cx, y: cy }, warpOutworks.field, warpOutworks.params);
 
-      // Clamp invariants for outworks:
-      // - Outside inner hull (minField + margin)
-      // - Inside outer hull (maxField - margin)
       const clamped = clampPolylineRadial(
         warped,
         { x: cx, y: cy },
@@ -470,14 +488,12 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       );
 
       return clamped;
-
     });
   } else {
     bastionPolysWarpedSafe = bastionPolys;
   }
 
   // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
-  // Keep widths proportional to the *effective* (warped) wall radius.
   const fortR = (warpWall && warpWall.params && Number.isFinite(warpWall.params.bandOuter))
     ? warpWall.params.bandOuter
     : wallR;
@@ -487,19 +503,16 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   glacisWidth = fortR * 0.08;
   ctx.params.minWallClear = ditchWidth * 1.25;
 
-  // IMPORTANT: downstream logic should use a warped version of the base wall for offsets.
   const wallBaseForDraw = (warpWall && warpWall.field)
     ? warpPolylineRadial(wallBase, { x: cx, y: cy }, warpWall.field, warpWall.params)
     : wallBase;
 
   ctx.geom.wallBase = wallBaseForDraw;
 
-  // Recompute moatworks from the warped base so they match the warped wall.
   ditchOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth);
   ditchInner = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth * 0.35);
   glacisOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth + glacisWidth);
 
-  // Recompute inner rings from the warped base so roads/rings track the warped fort.
   ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
   ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
 
@@ -534,12 +547,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     snapPointToPolyline,
   });
 
-    // ---------------- Primary roads (routed on Voronoi planar graph) ----------------
-  // Routing mesh is the Voronoi planar graph built from ward polygons.
-  //
-  // Determinism / coupling:
-  // - snapPointToGraph with splitEdges=true mutates vorGraph (splits edges).
-  // - To keep determinism, snap all endpoints in a fixed order before routing.
+  // ---------------- Primary roads (routed on Voronoi planar graph) ----------------
   const roadWeight = makeRoadWeightFn({
     graph: vorGraph,
     waterModel,
@@ -559,56 +567,55 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   // Debug: log once after snapping begins, to confirm flags and blocking are active.
   let __loggedRoutingFlagsOnce = false;
-  
-    function routeNodesOrFallback(nA, nB, pA, pB) {
-      if (nA == null || nB == null) return [pA, pB];
-  
-      const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
-  
-      if (WARP_FORT.debug && !__loggedRoutingFlagsOnce && vorGraph && Array.isArray(vorGraph.edges)) {
-        __loggedRoutingFlagsOnce = true;
-  
-        let activeEdges = 0;
-        let waterEdges = 0;
-        let citadelEdges = 0;
-  
-        for (const e of vorGraph.edges) {
-          if (!e || e.disabled) continue;
-          activeEdges += 1;
-          if (e.flags && e.flags.isWater) waterEdges += 1;
-          if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
-        }
-  
-        const blockedCount = blocked ? blocked.size : 0;
-  
-        console.info("[Routing] flags+blocked (post-snap)", {
-          activeEdges,
-          waterEdges,
-          citadelEdges,
-          blockedCount,
-          hardAvoidWater: Boolean(ctx.params.roadHardAvoidWater),
-          hardAvoidCitadel: Boolean(ctx.params.roadHardAvoidCitadel),
-          waterKind,
-        });
+
+  function routeNodesOrFallback(nA, nB, pA, pB) {
+    if (nA == null || nB == null) return [pA, pB];
+
+    const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
+
+    if (WARP_FORT.debug && !__loggedRoutingFlagsOnce && vorGraph && Array.isArray(vorGraph.edges)) {
+      __loggedRoutingFlagsOnce = true;
+
+      let activeEdges = 0;
+      let waterEdges = 0;
+      let citadelEdges = 0;
+
+      for (const e of vorGraph.edges) {
+        if (!e || e.disabled) continue;
+        activeEdges += 1;
+        if (e.flags && e.flags.isWater) waterEdges += 1;
+        if (e.flags && e.flags.nearCitadel) citadelEdges += 1;
       }
-  
-      const nodePath = dijkstra({
-        graph: vorGraph,
-        startNode: nA,
-        goalNode: nB,
-        weightFn: roadWeight,
-        blockedEdgeIds: blocked,
+
+      const blockedCount = blocked ? blocked.size : 0;
+
+      console.info("[Routing] flags+blocked (post-snap)", {
+        activeEdges,
+        waterEdges,
+        citadelEdges,
+        blockedCount,
+        hardAvoidWater: Boolean(ctx.params.roadHardAvoidWater),
+        hardAvoidCitadel: Boolean(ctx.params.roadHardAvoidCitadel),
+        waterKind,
       });
-  
-      if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
-      const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
-      return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
     }
 
+    const nodePath = dijkstra({
+      graph: vorGraph,
+      startNode: nA,
+      goalNode: nB,
+      weightFn: roadWeight,
+      blockedEdgeIds: blocked,
+    });
+
+    if (!Array.isArray(nodePath) || nodePath.length < 2) return [pA, pB];
+    const poly = pathNodesToPolyline({ graph: vorGraph, nodePath });
+    return (Array.isArray(poly) && poly.length >= 2) ? poly : [pA, pB];
+  }
 
   const primaryRoads = [];
 
-  // Gate → Plaza (only one, using primary gate if available)
+  // Gate → Plaza
   if (gateForRoad && anchors.plaza) {
     primaryRoads.push(routeNodesOrFallback(nGate, nPlaza, gateForRoad, anchors.plaza));
   }
@@ -618,15 +625,12 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     primaryRoads.push(routeNodesOrFallback(nPlaza, nCitadel, anchors.plaza, anchors.citadel));
   }
 
-  // Plaza → Docks (only if docks exists)
+  // Plaza → Docks
   if (anchors.plaza && anchors.docks) {
     primaryRoads.push(routeNodesOrFallback(nPlaza, nDocks, anchors.plaza, anchors.docks));
   }
 
   // ---------------- Outworks ----------------
-  // Bastion polys may include nulls (flattened to avoid New Town intersections).
-  // Invariant: length aligns with bastions, but consumers must handle nulls.
-
   const wallForOutworks = wallForDraw;
   let ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
@@ -646,21 +650,20 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     )
     .filter(Boolean);
 
-    // Milestone 4.5: clamp ravelins with the same two-target constraints as outworks.
-    if (warpOutworks?.minField || warpOutworks?.maxField) {
-      ravelins = ravelins.map((rv) =>
-        clampPolylineRadial(
-          rv,
-          { x: cx, y: cy },
-          warpOutworks.minField,
-          warpOutworks.maxField,
-          warpOutworks.clampMinMargin,
-          warpOutworks.clampMaxMargin
-        )
-      );
-    }
+  if (warpOutworks?.minField || warpOutworks?.maxField) {
+    ravelins = ravelins.map((rv) =>
+      clampPolylineRadial(
+        rv,
+        { x: cx, y: cy },
+        warpOutworks.minField,
+        warpOutworks.maxField,
+        warpOutworks.clampMinMargin,
+        warpOutworks.clampMaxMargin
+      )
+    );
+  }
 
-    if (WARP_FORT.debug) {
+  if (WARP_FORT.debug) {
     auditRadialClamp(
       "WALL",
       [wallForDraw],
@@ -714,7 +717,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // ---------------- Market anchor (always-on, always valid) ----------------
   anchors.market = finitePointOrNull(marketCentre);
 
-  // Prefer an inner ward as a fallback source for market location.
   const innerWards = (wardsWithRoles || []).filter((w) => w && w.role === "inner");
   let marketFallback = null;
 
@@ -727,18 +729,13 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   }
 
   if (!anchors.market) {
-    // Last resort: near plaza, but slightly offset.
     anchors.market = add(anchors.plaza, { x: baseR * 0.03, y: -baseR * 0.02 });
   }
 
-  // Ensure it is inside the wall, not near the wall, and on-canvas.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
   anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
 
-  // If you want market to live in an inner ward region, enforce that intent here.
   if (marketFallback) {
-    // If market drifts too far out (or ends up in a non-inner ward), pull toward an inner ward centroid.
-    // This is a soft pull that keeps determinism and avoids hard snapping.
     const mv = vec(anchors.market, marketFallback);
     if (len(mv) > baseR * 0.18) {
       anchors.market = add(anchors.market, mul(safeNormalize(mv), baseR * 0.08));
@@ -749,11 +746,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   anchors.market = clampPointToCanvas(anchors.market, width, height, 10);
 
-  // Re-ensure inside after clamping.
   anchors.market = ensureInside(wallBase, anchors.market, centre, 1.0);
   anchors.market = pushAwayFromWall(wallBase, anchors.market, ctx.params.minWallClear, centre);
 
-  // Keep legacy field aligned with the final anchor.
   marketCentre = anchors.market;
 
   const landmarks = [
@@ -767,7 +762,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const avenue = (Array.isArray(primaryRoads) && primaryRoads.length >= 2)
     ? primaryRoads[1]
     : [anchors.plaza, anchors.citadel];
-
 
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
@@ -793,7 +787,6 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   }
 
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
-
 
   // ---------------- Milestone 3.6: blocks (debug) ----------------
   const BLOCKS_ANGLE_EPS = 1e-9;
@@ -823,7 +816,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
       primaryRoads: primaryRoads?.length,
     });
 
-        if (vorGraph && Array.isArray(vorGraph.edges)) {
+    if (vorGraph && Array.isArray(vorGraph.edges)) {
       let waterEdges = 0;
       let citadelEdges = 0;
       let activeEdges = 0;
@@ -908,10 +901,10 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     wards: wardsWithRoles,
     wardSeeds,
     wardRoleIndices,
-        mesh: {
+
+    mesh: {
       vorGraph,
     },
-
 
     // Anchors
     centre,
@@ -924,8 +917,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     water: waterModel,
 
     // Roads
-    roads,                 // routed primaries
-    primaryRoads,          // explicit alias (useful for later stages)
+    roads,
+    primaryRoads,
     ring,
     ring2,
     secondaryRoads: secondaryRoadsLegacy,
