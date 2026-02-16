@@ -7,15 +7,15 @@
 import { clamp } from "./primitives.js";
 
 // ---------- Vector helpers ----------
-export function sub(a, b) {
+function sub(a, b) {
   return { x: a.x - b.x, y: a.y - b.y };
 }
 
-export function add(a, b) {
+function add(a, b) {
   return { x: a.x + b.x, y: a.y + b.y };
 }
 
-export function mul(a, s) {
+function mul(a, s) {
   return { x: a.x * s, y: a.y * s };
 }
 
@@ -25,15 +25,15 @@ export function dist2(a, b) {
   return dx * dx + dy * dy;
 }
 
-export function lerp(a, b, t) {
+function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-export function lerpPoint(a, b, t) {
+function lerpPoint(a, b, t) {
   return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
 }
 
-export function snapKey(x, y, eps) {
+function snapKey(x, y, eps) {
   return `${Math.round(x / eps)}|${Math.round(y / eps)}`;
 }
 
