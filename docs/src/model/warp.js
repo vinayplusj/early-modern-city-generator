@@ -5,7 +5,7 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
-
+  
   const N = params.samples;
   const thetas = new Array(N);
   const rFort = new Array(N);
