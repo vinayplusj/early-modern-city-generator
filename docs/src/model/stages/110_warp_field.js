@@ -99,6 +99,7 @@ export function runWarpFieldStage({
   // Composite fort outline for renderer output.
   const wallForDraw = wallFinal;
 
+  const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
   // This is the "min clamp" for bastions (ensures points stay away from the wall base).
   const curtainMinField =
