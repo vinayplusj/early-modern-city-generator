@@ -535,15 +535,15 @@ export function assignWardRoles({ wards, centre, params }) {
 
  }
 
- return {
+  return {
     wards: wardsCopy,
     indices: {
       plaza: plazaWard.id,
       citadel: citadelId,
       inner: innerWards.map((w) => w.id),
       outside: outside.map((w) => w.id),
-    fortHulls,
     },
+    fortHulls,
   };
 }
 
