@@ -10,6 +10,7 @@ export function assembleModel({
 
   // Walls + moatworks
   wallBase,
+  wallCurtainForDraw,
   wallForDraw,
   bastionPolysWarpedSafe,
   bastionHull,
@@ -69,6 +70,7 @@ export function assembleModel({
 
     // Walls + moatworks
     wallBase,
+    wallCurtain: wallCurtainForDraw || wallBase,
     wall: wallForDraw,
     bastionPolys: bastionPolysWarpedSafe,
     bastionHull,
