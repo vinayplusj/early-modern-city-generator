@@ -157,14 +157,18 @@ export function runWarpFieldStage({
     });
   }
   // ---------------------------------------------------------------------------
-  // Per-bastion shrink-to-fit (independent), using a mixed shrink transform:
-  // 1) uniform centre scaling
-  // 2) inward push along "outward normal" (estimated)
-  // 3) inward push along radial line from centre (same line used by radial clamp)
+  // Per-bastion / per-ravelin shrink-to-fit (independent).
+  //
+  // Shrink strength is a combination of:
+  // (A) vertex distance from bastion centroid (per-vertex weight)
+  // (B) apex overshoot beyond outer hull, measured along a wall normal direction
+  // (C) centroid distance from global image centre (global-scale weight)
+  //
+  // Asymmetry is allowed.
   // ---------------------------------------------------------------------------
-  
+
   const EPS2 = 1.0; // 1 px squared tolerance
-  
+
   function centroidOfPoly(poly) {
     let sx = 0;
     let sy = 0;
@@ -178,165 +182,276 @@ export function runWarpFieldStage({
     if (n === 0) return null;
     return { x: sx / n, y: sy / n };
   }
-  
-  function norm2(v) {
-    return v.x * v.x + v.y * v.y;
+
+  function dot(a, b) {
+    return a.x * b.x + a.y * b.y;
   }
-  
+
   function normalize(v) {
     const m = Math.hypot(v.x, v.y);
     if (m < 1e-9) return { x: 0, y: 0 };
     return { x: v.x / m, y: v.y / m };
   }
-  
-  function dot(a, b) {
-    return a.x * b.x + a.y * b.y;
+
+  function dist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
   }
-  
-  // Estimate two directions for a bastion polygon:
-  // - radialDir: centre -> poly centroid
-  // - outwardDir: centroid -> farthest vertex (then aligned to radialDir)
-  function polyBasis(poly, centre) {
-    const c = centroidOfPoly(poly);
-    if (!c) return null;
-  
-    const radialDir = normalize({ x: c.x - centre.x, y: c.y - centre.y });
-  
-    // Find farthest valid vertex from centre.
-    let far = null;
-    let best = -Infinity;
-    for (const p of poly) {
-      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-      const d2 = (p.x - centre.x) * (p.x - centre.x) + (p.y - centre.y) * (p.y - centre.y);
-      if (d2 > best) {
-        best = d2;
-        far = p;
-      }
-    }
-  
-    // Fallback: if we cannot find farthest, use radialDir as outwardDir.
-    if (!far) {
-      return { c, radialDir, outwardDir: radialDir };
-    }
-  
-    let outwardDir = normalize({ x: far.x - c.x, y: far.y - c.y });
-  
-    // Align outwardDir to generally point outward (same hemisphere as radialDir).
-    if (dot(outwardDir, radialDir) < 0) {
-      outwardDir = { x: -outwardDir.x, y: -outwardDir.y };
-    }
-  
-    // If outwardDir is degenerate, fallback to radialDir.
-    if (norm2(outwardDir) < 1e-12) outwardDir = radialDir;
-  
-    return { c, radialDir, outwardDir };
-  }
-  
-  // Returns max squared displacement between original and clamped points.
-  // Also returns count of points that moved beyond tolerance.
+
+  // Clamp and return movement stats (how many points were moved by clamp).
   function clampDeltaStats(poly, centre, maxField, maxMargin) {
     const clamped = clampPolylineRadial(poly, centre, null, maxField, 0, maxMargin);
-  
+
     let maxD2 = 0;
     let moved = 0;
-  
+
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i];
       const q = clamped[i];
       if (!p || !q) continue;
-  
+
       const dx = q.x - p.x;
       const dy = q.y - p.y;
       const d2 = dx * dx + dy * dy;
       if (d2 > EPS2) moved++;
       if (d2 > maxD2) maxD2 = d2;
     }
-  
-    return { maxD2, moved };
+
+    return { clamped, maxD2, moved };
   }
-  
+
   function polyFitsMaxField(poly, centre, maxField, maxMargin) {
     const { moved } = clampDeltaStats(poly, centre, maxField, maxMargin);
     return moved === 0;
   }
-  
-  // Mixed shrink transform parameterised by t in [0,1].
-  // Uses an overshoot distance to scale translation magnitudes.
-  function applyMixedShrink(poly, centre, basis, t, overshoot, params) {
-    // Tunables (safe defaults).
-    const uniformK = params?.bastionShrinkUniformK ?? 1.0; // 1 means up to 100% *t* scaling effect
-    const normalK  = params?.bastionShrinkNormalK  ?? 0.7; // push along outwardDir
-    const radialK  = params?.bastionShrinkRadialK  ?? 0.7; // push along radialDir
-  
-    // Uniform scale factor around centre (bounded so it cannot invert).
-    const s = Math.max(0.20, 1.0 - t * 0.35 * uniformK);
-  
+
+  // Pick an apex: farthest vertex from global centre.
+  function findApex(poly, centre) {
+    let best = -Infinity;
+    let apex = null;
+    let apexIdx = -1;
+
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i];
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      const d2 = (p.x - centre.x) * (p.x - centre.x) + (p.y - centre.y) * (p.y - centre.y);
+      if (d2 > best) {
+        best = d2;
+        apex = p;
+        apexIdx = i;
+      }
+    }
+    return { apex, apexIdx, bestD2: best };
+  }
+
+  // Approximate a wall normal direction at the apex:
+  // Use the inward direction implied by the clamp: apex -> clamped(apex).
+  // This is stable and ties directly to "distance from wall along normal".
+  function apexWallNormal(poly, apexIdx, centre, maxField, maxMargin) {
+    const { clamped } = clampDeltaStats(poly, centre, maxField, maxMargin);
+    const p = poly[apexIdx];
+    const q = clamped[apexIdx];
+    if (!p || !q) return { nIn: { x: 0, y: 0 }, overshoot: 0 };
+
+    const v = { x: q.x - p.x, y: q.y - p.y }; // inward correction
+    const overshoot = Math.hypot(v.x, v.y);
+    const nIn = normalize(v);
+    return { nIn, overshoot };
+  }
+
+  // Build per-vertex weights from distance to centroid.
+  // Vertices farther from centroid get larger weight.
+  function vertexWeights(poly, centroid) {
+    const ds = [];
+    let dMax = 0;
+    for (const p of poly) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+        ds.push(0);
+        continue;
+      }
+      const d = dist(p, centroid);
+      ds.push(d);
+      if (d > dMax) dMax = d;
+    }
+
+    // Avoid divide-by-zero.
+    const inv = (dMax > 1e-6) ? (1 / dMax) : 0;
+
+    // Weight in [0.2, 1.0] so even inner vertices move a bit.
+    return ds.map((d) => 0.2 + 0.8 * (d * inv));
+  }
+
+  // Global centre distance weight for this bastion.
+  // Farther from centre => more shrink pressure.
+  function centroidGlobalWeight(centroid, centre, params) {
+    const d = dist(centroid, centre);
+
+    // Use rMean if present to normalise; else a safe fallback.
+    const base = (warpOutworks?.rMean && Number.isFinite(warpOutworks.rMean)) ? warpOutworks.rMean : 500;
+    const x = Math.min(2.0, d / Math.max(1, base)); // cap
+
+    // Map to [0.8, 1.4] by default.
+    const k = params?.bastionShrinkCentreK ?? 0.3;
+    return 1.0 + k * (x - 1.0);
+  }
+
+  // Apply shrink for a given bastion with per-vertex weighting.
+  // T in [0,1] is the bastion-level shrink amount.
+  function applyWeightedShrink(poly, centre, centroid, weights, dirIn, T, overshoot, params) {
+    // Uniform scale around centroid (not global centre) to respect shape.
+    const uniformK = params?.bastionShrinkUniformK ?? 0.35;
+    const s = Math.max(0.25, 1.0 - uniformK * T);
+
+    // Translation magnitude based on overshoot.
+    const maxPush = params?.bastionShrinkMaxPush ?? 300;
+    const push = Math.min(overshoot, maxPush) * (params?.bastionShrinkNormalK ?? 1.0);
+
     const out = new Array(poly.length);
+
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i];
       if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
         out[i] = p;
         continue;
       }
-  
-      // 1) uniform scaling about centre
-      let x = centre.x + (p.x - centre.x) * s;
-      let y = centre.y + (p.y - centre.y) * s;
-  
-      // 2) inward along outwardDir
-      x -= basis.outwardDir.x * (t * overshoot * normalK);
-      y -= basis.outwardDir.y * (t * overshoot * normalK);
-  
-      // 3) inward along radial line (centre->centroid direction)
-      x -= basis.radialDir.x * (t * overshoot * radialK);
-      y -= basis.radialDir.y * (t * overshoot * radialK);
-  
+
+      // (1) scale about the bastion centroid
+      let x = centroid.x + (p.x - centroid.x) * s;
+      let y = centroid.y + (p.y - centroid.y) * s;
+
+      // (2) translate inward along wall normal (inward clamp direction)
+      // Use per-vertex weight so the farther vertices move more.
+      const w = weights[i];
+      x += dirIn.x * (T * push * w);
+      y += dirIn.y * (T * push * w);
+
       out[i] = { x, y };
     }
-  
+
     return out;
   }
-  
-  // Binary search the smallest t that makes the poly fit the maxField.
-  // Returns { poly: bestPoly, tBest, overshoot, movedBefore }.
-  function shrinkPolyToMaxFieldMixed(poly, centre, maxField, maxMargin, params) {
-    // If it already fits, return unchanged.
+
+  // Solve for the smallest bastion-level T that makes the polygon fit maxField.
+  // T combines:
+  // - overshoot severity (apex correction magnitude)
+  // - centroid distance from global centre (global weight)
+  // Vertex weighting is applied inside applyWeightedShrink.
+  function shrinkPolyToFitWeighted(poly, centre, maxField, maxMargin, params) {
+    const c = centroidOfPoly(poly);
+    if (!c) return { poly, T: 0, movedBefore: 0, overshoot: 0 };
+
     const before = clampDeltaStats(poly, centre, maxField, maxMargin);
     if (before.moved === 0) {
-      return { poly, tBest: 0, overshoot: 0, movedBefore: 0 };
+      return { poly, T: 0, movedBefore: 0, overshoot: 0 };
     }
-  
-    const basis = polyBasis(poly, centre);
-    if (!basis) {
-      return { poly, tBest: 0, overshoot: 0, movedBefore: before.moved };
+
+    const { apex, apexIdx } = findApex(poly, centre);
+    if (!apex || apexIdx < 0) {
+      return { poly, T: 0, movedBefore: before.moved, overshoot: 0 };
     }
-  
-    // Use overshoot magnitude as the scale for translations.
-    const overshoot = Math.sqrt(before.maxD2);
-  
+
+    const { nIn, overshoot } = apexWallNormal(poly, apexIdx, centre, maxField, maxMargin);
+    const weights = vertexWeights(poly, c);
+    const gW = centroidGlobalWeight(c, centre, params);
+
+    // If overshoot is tiny, do not overreact.
+    const minOvershoot = params?.bastionShrinkMinOvershoot ?? 1.0;
+    if (overshoot < minOvershoot) {
+      return { poly, T: 0, movedBefore: before.moved, overshoot };
+    }
+
+    // Base target severity from overshoot.
+    // Convert overshoot pixels into a target T scale.
+    const overshootScale = params?.bastionShrinkOvershootScale ?? 180; // px
+    const baseT = Math.min(1.0, overshoot / Math.max(1, overshootScale));
+
+    // Combine with global weight.
+    const targetT = Math.min(1.0, baseT * gW);
+
+    // Now binary search actual T needed to pass the clamp.
     let lo = 0.0;
-    let hi = 1.0;
-    let bestT = 1.0;
+    let hi = Math.max(0.05, targetT);
+    let bestT = hi;
     let bestPoly = poly;
-  
-    // Deterministic iterations.
+
+    // Expand hi up to 1.0 if needed.
+    for (let expand = 0; expand < 6; expand++) {
+      const candidate = applyWeightedShrink(poly, centre, c, weights, nIn, hi, overshoot, params);
+      if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
+        bestPoly = candidate;
+        bestT = hi;
+        break;
+      }
+      hi = Math.min(1.0, hi * 1.6);
+      bestT = hi;
+      bestPoly = candidate;
+      if (hi >= 1.0) break;
+    }
+
+    // Refine smallest T that fits.
     for (let it = 0; it < 22; it++) {
       const mid = (lo + hi) * 0.5;
-      const candidate = applyMixedShrink(poly, centre, basis, mid, overshoot, params);
-  
+      const candidate = applyWeightedShrink(poly, centre, c, weights, nIn, mid, overshoot, params);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
-        bestT = mid;
         bestPoly = candidate;
-        hi = mid; // try smaller shrink
+        bestT = mid;
+        hi = mid;
       } else {
-        lo = mid; // need more shrink
+        lo = mid;
       }
     }
-  
-    return { poly: bestPoly, tBest: bestT, overshoot, movedBefore: before.moved };
+
+    return { poly: bestPoly, T: bestT, movedBefore: before.moved, overshoot };
   }
 
-  // ---------------------------------------------------------------------------
+  // Apply per-bastion shrink independently, then re-clamp to the band.
+  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
+    const shrinkStats = [];
+
+    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
+      if (!Array.isArray(poly) || poly.length < 3) return poly;
+
+      // Fast path.
+      if (polyFitsMaxField(poly, centre, warpOutworks.maxField, warpOutworks.clampMaxMargin)) {
+        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0 });
+        return poly;
+      }
+
+      const res = shrinkPolyToFitWeighted(
+        poly,
+        centre,
+        warpOutworks.maxField,
+        warpOutworks.clampMaxMargin,
+        warpOutworks.params
+      );
+
+      const reclamped = clampPolylineRadial(
+        res.poly,
+        centre,
+        curtainMinField,
+        warpOutworks.maxField,
+        2,
+        warpOutworks.clampMaxMargin
+      );
+
+      // Safety fallback.
+      if (!Array.isArray(reclamped) || reclamped.length < 3) {
+        shrinkStats.push({ idx, T: 1, movedBefore: res.movedBefore, overshoot: res.overshoot, note: "reclamp_invalid" });
+        return poly;
+      }
+
+      shrinkStats.push({
+        idx,
+        T: res.T,
+        movedBefore: res.movedBefore,
+        overshoot: res.overshoot,
+      });
+
+      return reclamped;
+    });
+
+    warpOutworks.bastionShrink = shrinkStats;
+  }
+
   // Apply per-bastion shrink independently (only when maxField exists).
   // Then re-clamp to the bastion band (outside curtain, inside outer hull).
   // ---------------------------------------------------------------------------
