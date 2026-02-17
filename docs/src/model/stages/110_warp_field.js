@@ -490,7 +490,7 @@ export function runWarpFieldStage({
   
       shrinkStats.push({
         idx,
-        t: res.tBest,
+        T: res.T,
         movedBefore: res.movedBefore,
         overshoot: res.overshoot,
       });
