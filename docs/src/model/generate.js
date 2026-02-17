@@ -77,7 +77,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "bastion Hull Warped",
+  version: "bastion Hull Warped edited",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -264,8 +264,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
 
-+  // Bastion hull is now computed and outer-clamped in Stage 110.
-+  const bastionHull = warpOut.bastionHullWarpedSafe;
+  // Bastion hull is now computed and outer-clamped in Stage 110.
+  const bastionHull = warpOut.bastionHullWarpedSafe;
   
   // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
