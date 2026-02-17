@@ -4,7 +4,6 @@
 // Extracted from generate.js without functional changes.
 
 import { offsetRadial } from "../../geom/offset.js";
-import { warpPolylineRadial } from "../warp.js";
 import { snapGatesToWall } from "../generate_helpers/snap.js";
 
 /**
@@ -44,9 +43,11 @@ export function runWarpDependentFortGeometryStage({
   let ditchWidth = fortR * 0.035;
   let glacisWidth = fortR * 0.08;
   ctx.params.minWallClear = ditchWidth * 1.25;
-
-  const wallBaseForDraw = (warpWall && warpWall.field)
-    ? warpPolylineRadial(wallBase, { x: cx, y: cy }, warpWall.field, warpWall.params)
+  
+  // wallWarped is now the already-warped-and-clamped CURTAIN wall from Stage 110.
+  // Do not warp wallBase again here.
+  const wallBaseForDraw = (Array.isArray(wallWarped) && wallWarped.length >= 3)
+    ? wallWarped
     : wallBase;
 
   ctx.geom.wallBase = wallBaseForDraw;
@@ -58,9 +59,11 @@ export function runWarpDependentFortGeometryStage({
   const ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
   const ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
 
-  const gatesWarped = wallWarped ? snapGatesToWall(gates, cx, cy, wallWarped) : gates;
-
-  const primaryGateWarped = (primaryGate && wallWarped)
+  const gatesWarped = (wallWarped && wallWarped.length >= 3)
+    ? snapGatesToWall(gates, cx, cy, wallWarped)
+    : gates;
+  
+  const primaryGateWarped = (primaryGate && wallWarped && wallWarped.length >= 3)
     ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
     : primaryGate;
 
