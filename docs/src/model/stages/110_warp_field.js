@@ -92,17 +92,21 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  // Wall-for-draw is the CURTAIN wall (not the bastion-composite).
-  const wallForDraw = wallWarped || wallBase;
+  
+  // Curtain wall (pre-bastion) for clamp + debug.
+  const wallCurtainForDraw = wallWarped || wallBase;
+  
+  // Composite fort outline for renderer output.
+  const wallForDraw = wallFinal;
 
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
   // This is the "min clamp" for bastions (ensures points stay away from the wall base).
   const curtainMinField =
-    (warpOutworks?.params && Array.isArray(wallForDraw) && wallForDraw.length >= 3)
+    (warpOutworks?.params && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
       ? buildWarpField({
           centre: { x: cx, y: cy },
-          wallPoly: wallForDraw,
-          targetPoly: wallForDraw,
+          wallPoly: wallCurtainForDraw,
+          targetPoly: wallCurtainForDraw,
           districts: [],
           bastions: [],
           params: { ...warpOutworks.params, debug: false },
@@ -126,9 +130,9 @@ export function runWarpFieldStage({
     const clamped = clampPolylineRadial(
       warped,
       { x: cx, y: cy },
-      null,
+      curtainMinField,
       warpOutworks.maxField,
-      0,
+      2,
       warpOutworks.clampMaxMargin
     );
 
@@ -298,7 +302,7 @@ export function runWarpFieldStage({
   if (warpDebugEnabled) {
     auditRadialClamp({
       name: "WALL",
-      polys: [wallForDraw],
+      polys: [wallCurtainForDraw],
       minField: warpWall?.minField,
       maxField: warpWall?.maxField,
       cx,
@@ -324,7 +328,8 @@ export function runWarpFieldStage({
   return {
     warpWall,
     warpOutworks,
-    wallForDraw,
+    wallForDraw,              // composite
+    wallCurtainForDraw,       // new, debug only
     bastionPolysWarpedSafe,
     bastionHullWarpedSafe,
   };
