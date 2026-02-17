@@ -6,6 +6,7 @@
 import { buildFortWarp, clampPolylineRadial } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial } from "../warp.js";
 import { auditRadialClamp } from "../debug/fortwarp_audit.js";
+import { convexHull } from "../../geom/hull.js";
 
 /**
  * @param {object} args
@@ -118,6 +119,36 @@ export function runWarpFieldStage({
     });
   }
 
+  // ---------------- Bastion hull (global convex hull) ----------------
+  // Compute convex hull of all (warped, clamped) bastion vertices, then clamp that hull
+  // so it is guaranteed to be inside the OUTER hull (even if the outer hull is concave).
+  let bastionHullWarpedSafe = null;
+  if (Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
+    const pts = [];
+    for (const poly of bastionPolysWarpedSafe) {
+      if (!Array.isArray(poly) || poly.length < 3) continue;
+      for (const p of poly) {
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
+      }
+    }
+
+    if (pts.length >= 3) {
+      const h = convexHull(pts);
+      if (Array.isArray(h) && h.length >= 3) {
+        // Only enforce: inside OUTER hull. (No inner constraint for this diagnostic shape.)
+        // Uses the same radial clamp semantics as bastion polygon clamping.
+        bastionHullWarpedSafe = clampPolylineRadial(
+          h,
+          { x: cx, y: cy },
+          null,
+          warpOutworks?.maxField ?? null,
+          0,
+          warpOutworks?.clampMaxMargin ?? 0
+        );
+      }
+    }
+  }
+
   // Debug audits (preserve same log behaviour).
   if (warpDebugEnabled) {
     auditRadialClamp({
@@ -150,5 +181,6 @@ export function runWarpFieldStage({
     warpOutworks,
     wallForDraw,
     bastionPolysWarpedSafe,
+    bastionHullWarpedSafe,
   };
 }
