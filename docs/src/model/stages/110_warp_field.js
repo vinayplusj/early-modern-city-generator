@@ -38,6 +38,7 @@ export function runWarpFieldStage({
 }) {
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
+  const curtainSamples = 72; // 72 is a safe floor
 
   // Keep behaviour: generator stores warp config on ctx.params.warpFort.
   ctx.params.warpFort = warpFortParams;
@@ -66,7 +67,7 @@ export function runWarpFieldStage({
     centre: { x: cx, y: cy },
     wallPoly: wallBase,
     targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-
+    tuningPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     // Invariant: wall must stay outside inner hull.
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     clampMaxPoly: null,
@@ -77,7 +78,13 @@ export function runWarpFieldStage({
     districts: [],
 
     bastions: bastionsForWarp,
-    params: curtainParams,
+    params: {
+      ...ctx.params.warpFort, 
+      samples: curtainSamples,
+      maxIn: Math.max(ctx.params.warpFort.maxIn ?? 0, 60),
+      maxStep: Math.max(ctx.params.warpFort.maxStep ?? 0, 2.25),
+      smoothRadius: Math.min(ctx.params.warpFort.smoothRadius ?? 10, 8),
+    },
   });
 
   const warpOutworks = buildFortWarp({
