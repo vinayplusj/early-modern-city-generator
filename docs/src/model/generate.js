@@ -77,8 +77,8 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "bastion Hull Warped edited",
-  buildDate: "2026-02-16",
+  version: "bastion Hull Warped",
+  buildDate: "2026-02-17",
   commit: "manual",
 };
 
@@ -256,7 +256,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     warpFortParams: WARP_FORT,
     warpDebugEnabled: WARP_FORT.debug,
   });
-
+  const wallCurtainForDraw = warpOut?.wallCurtainForDraw || null;
   const warpWall = warpOut.warpWall;
   const warpOutworks = warpOut.warpOutworks;
 
@@ -421,9 +421,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     cy,
 
     wallBase,
+    wallCurtainForDraw, 
     wallForDraw,
     bastionPolysWarpedSafe,
     bastionHull,
+    warp: { wall: warpWall, outworks: warpOutworks },
     gatesWarped,
     ravelins,
     ditchOuter,
