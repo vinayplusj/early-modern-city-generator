@@ -238,9 +238,10 @@ if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPo
 }
 
   // ---------------- Bastion hull (global convex hull) ----------------
-  // Compute convex hull of all (warped, clamped) bastion vertices, then clamp that hull
-  // so it is guaranteed to be inside the OUTER hull (even if the outer hull is concave).
+  // Compute convex hull of the FINAL bastion vertices (after any shrinking).
+  // This must remain a convex hull; do not clamp the hull itself.
   let bastionHullWarpedSafe = null;
+
   if (Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
     const pts = [];
     for (const poly of bastionPolysWarpedSafe) {
@@ -250,10 +251,9 @@ if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPo
       }
     }
 
-  if (pts.length >= 3) {
-    const h = convexHull(pts);
-    if (Array.isArray(h) && h.length >= 3) {
-        // This must remain a convex hull; do not clamp the hull itself.
+    if (pts.length >= 3) {
+      const h = convexHull(pts);
+      if (Array.isArray(h) && h.length >= 3) {
         bastionHullWarpedSafe = h;
       }
     }
