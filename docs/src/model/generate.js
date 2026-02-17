@@ -52,7 +52,7 @@ const WARP_FORT = {
   maxStep: 1.5,
 
   maxOut: 40,
-  maxIn: 20,
+  maxIn: 100,
 
   bandInner: 0,
   bandOuter: 0,
