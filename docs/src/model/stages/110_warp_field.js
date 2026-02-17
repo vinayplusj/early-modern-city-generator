@@ -252,17 +252,10 @@ if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPo
 
     if (pts.length >= 3) {
       const h = convexHull(pts);
-      if (Array.isArray(h) && h.length >= 3) {
-        // Only enforce: inside OUTER hull. (No inner constraint for this diagnostic shape.)
-        // Uses the same radial clamp semantics as bastion polygon clamping.
-        bastionHullWarpedSafe = clampPolylineRadial(
-          h,
-          { x: cx, y: cy },
-          null,
-          warpOutworks?.maxField ?? null,
-          0,
-          warpOutworks?.clampMaxMargin ?? 0
-        );
+        if (Array.isArray(h) && h.length >= 3) {
+          // This must remain a convex hull; do not clamp the hull itself.
+          bastionHullWarpedSafe = h;
+        }
       }
     }
   }
