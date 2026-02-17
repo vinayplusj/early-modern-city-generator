@@ -42,7 +42,6 @@ import { runMarketStage } from "./stages/160_market.js";
 import { runRoadGraphAndBlocksStage } from "./stages/170_road_graph_and_blocks.js";
 import { runDebugInvariantsStage } from "./stages/900_debug_invariants.js";
 import { assembleModel } from "./assemble_model.js";
-import { convexHull } from "../geom/hull.js";
 
 const WARP_FORT = {
   enabled: true,
@@ -78,7 +77,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "bastionHull",
+  version: "bastion Hull Warped",
   buildDate: "2026-02-16",
   commit: "manual",
 };
@@ -265,21 +264,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
 
-  // ---------------- Bastion envelope (convex hull) ----------------
-  // Smallest convex polygon that contains all bastion vertices.
-  const bastionHull = (() => {
-    if (!Array.isArray(bastionPolysWarpedSafe) || bastionPolysWarpedSafe.length === 0) return null;
-    const pts = [];
-    for (const poly of bastionPolysWarpedSafe) {
-      if (!Array.isArray(poly) || poly.length < 3) continue;
-      for (const p of poly) {
-        if (p && typeof p.x === "number" && typeof p.y === "number") pts.push(p);
-      }
-    }
-    if (pts.length < 3) return null;
-    const h = convexHull(pts);
-    return (Array.isArray(h) && h.length >= 3) ? h : null;
-  })();
++  // Bastion hull is now computed and outer-clamped in Stage 110.
++  const bastionHull = warpOut.bastionHullWarpedSafe;
+  
   // ---------------- Warp-dependent fort geometry (moatworks + rings) ----------------
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
 
