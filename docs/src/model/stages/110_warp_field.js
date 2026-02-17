@@ -200,29 +200,33 @@ export function runWarpFieldStage({
     let maxD2 = 0;
     let moved = 0;
   
-    let worstIdx = -1;
-    let worstVec = { x: 0, y: 0 };
+    const vecs = new Array(poly.length);
+    const mags = new Array(poly.length);
   
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i];
       const q = clamped[i];
-      if (!p || !q) continue;
   
-      const dx = q.x - p.x;
-      const dy = q.y - p.y;
-      const d2 = dx * dx + dy * dy;
+      if (!p || !q) {
+        vecs[i] = { x: 0, y: 0 };
+        mags[i] = 0;
+        continue;
+      }
+  
+      const vx = q.x - p.x;
+      const vy = q.y - p.y;
+      const d2 = vx * vx + vy * vy;
+  
+      vecs[i] = { x: vx, y: vy };
+      mags[i] = Math.sqrt(d2);
   
       if (d2 > EPS2) moved++;
-  
-      if (d2 > maxD2) {
-        maxD2 = d2;
-        worstIdx = i;
-        worstVec = { x: dx, y: dy }; // inward correction
-      }
+      if (d2 > maxD2) maxD2 = d2;
     }
   
-    return { clamped, maxD2, moved, worstIdx, worstVec };
+    return { clamped, vecs, mags, maxD2, moved };
   }
+
   
   function inwardDirsFromClamp(poly, clamped) {
     const dirs = new Array(poly.length);
@@ -315,14 +319,14 @@ export function runWarpFieldStage({
 
   // Apply shrink for a given bastion with per-vertex weighting.
   // T in [0,1] is the bastion-level shrink amount.
-  function applyWeightedShrink(poly, centroid, weights, dirsIn, T, overshoot, params) {
-    // (1) uniform scale about bastion centroid
-    const uniformK = params?.bastionShrinkUniformK ?? 0.35;
+  function applyWeightedShrink(poly, centroid, clampVecs, clampMags, T, params, gain) {
+    // Uniform scale about centroid
+    const uniformK = params?.bastionShrinkUniformK ?? 0.25;
     const s = Math.max(0.25, 1.0 - uniformK * T);
   
-    // (2) translate inward, per-vertex direction from clamp
-    const maxPush = params?.bastionShrinkMaxPush ?? 600; // increase default
-    const push = Math.min(overshoot, maxPush) * (params?.bastionShrinkNormalK ?? 1.0);
+    // Clamp-vector translation gain (lets it succeed without T=1 everywhere)
+    const clampGain = params?.bastionShrinkClampGain ?? 1.75; // try 1.5–3.0
+    const g = clampGain * gain;
   
     const out = new Array(poly.length);
   
@@ -333,15 +337,18 @@ export function runWarpFieldStage({
         continue;
       }
   
-      // scale
+      // 1) scale about centroid
       let x = centroid.x + (p.x - centroid.x) * s;
       let y = centroid.y + (p.y - centroid.y) * s;
   
-      // translate (asymmetric allowed)
-      const w = weights[i];
-      const d = dirsIn[i] || { x: 0, y: 0 };
-      x += d.x * (T * push * w);
-      y += d.y * (T * push * w);
+      // 2) translate by the clamp correction vector (asymmetric, per-vertex)
+      // Only apply if this vertex was actually violating
+      const m = clampMags[i] || 0;
+      if (m > 1e-6) {
+        const v = clampVecs[i]; // points inward
+        x += v.x * (T * g);
+        y += v.y * (T * g);
+      }
   
       out[i] = { x, y };
     }
@@ -438,48 +445,40 @@ export function runWarpFieldStage({
     const Wc = Math.max(0.10, Math.min(1.50, Number.isFinite(W) ? W : 0));
     const c = centroidOfPoly(poly);
     if (!c) return { poly, T: 0, movedBefore: 0, overshoot: 0, W: Wc };
-
+  
     const before = clampDeltaStats(poly, centre, maxField, maxMargin);
     if (before.moved === 0) {
       return { poly, T: 0, movedBefore: 0, overshoot: 0, W: Wc };
     }
-
-    const { apex, apexIdx } = findApex(poly, centre);
-    if (!apex || apexIdx < 0) {
-      return { poly, T: 0, movedBefore: before.moved, overshoot: 0, W: Wc };
-    }
-
-    const weights = vertexWeights(poly, c);
-    const gW = centroidGlobalWeight(c, centre, params);
-    
-    // Drive the shrink solve off the worst violating vertex, not the apex.
-    // This guarantees overshoot > 0 whenever any vertex violates maxField.
+  
+    // Worst violating vertex magnitude (pixels)
     const overshoot = Math.sqrt(before.maxD2);
-    const dirsIn0 = inwardDirsFromClamp(poly, before.clamped);
-
+  
     // If overshoot is tiny, do not overreact.
     const minOvershoot = params?.bastionShrinkMinOvershoot ?? 1.0;
     if (overshoot < minOvershoot) {
       return { poly, T: 0, movedBefore: before.moved, overshoot, W: Wc };
     }
-
-    // Base target severity from overshoot.
-    // Convert overshoot pixels into a target T scale.
-    const overshootScale = params?.bastionShrinkOvershootScale ?? 180; // px
+  
+    // Global weight (keep your existing behaviour)
+    const gW = centroidGlobalWeight(c, centre, params);
+  
+    // Combined gain for clamp-vector translation
+    const gain = Math.max(0.6, Math.min(2.5, gW * Wc));
+  
+    // Base target T from overshoot
+    const overshootScale = params?.bastionShrinkOvershootScale ?? 180;
     const baseT = Math.min(1.0, overshoot / Math.max(1, overshootScale));
-
-    // Combine with global weight.
-    const targetT = Math.min(1.0, baseT * gW * Wc);
-
-    // Now binary search actual T needed to pass the clamp.
+    const targetT = Math.min(1.0, baseT * gain);
+  
     let lo = 0.0;
     let hi = Math.max(0.05, targetT);
     let bestT = hi;
     let bestPoly = poly;
-
-    // Expand hi up to 1.0 if needed.
+  
+    // Expand hi if needed
     for (let expand = 0; expand < 6; expand++) {
-      const candidate = applyWeightedShrink(poly, c, weights, dirsIn0, hi, overshoot, params);
+      const candidate = applyWeightedShrink(poly, c, before.vecs, before.mags, hi, params, gain);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
         bestPoly = candidate;
         bestT = hi;
@@ -490,11 +489,11 @@ export function runWarpFieldStage({
       bestPoly = candidate;
       if (hi >= 1.0) break;
     }
-
-    // Refine smallest T that fits.
+  
+    // Binary search smallest T that fits
     for (let it = 0; it < 22; it++) {
       const mid = (lo + hi) * 0.5;
-      const candidate = applyWeightedShrink(poly, c, weights, dirsIn0, mid, overshoot, params);
+      const candidate = applyWeightedShrink(poly, c, before.vecs, before.mags, mid, params, gain);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
         bestPoly = candidate;
         bestT = mid;
@@ -503,7 +502,7 @@ export function runWarpFieldStage({
         lo = mid;
       }
     }
-
+  
     return { poly: bestPoly, T: bestT, movedBefore: before.moved, overshoot, W: Wc };
   }
 
