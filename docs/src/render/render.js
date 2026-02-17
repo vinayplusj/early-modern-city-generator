@@ -141,7 +141,7 @@ export function render(ctx, model) {
   
       // Outer hull (core + ring1 wards boundary)
       drawPolyline(ctx, outer, {
-        stroke: "rgba(0,255,255,0.9)",
+        stroke: "rgba(0,180,255,0.6)",
         width: 2,
         closed: true,
       });
