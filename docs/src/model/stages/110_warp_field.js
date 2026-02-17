@@ -4,7 +4,7 @@
 // Extracted from generate.js without functional changes.
 
 import { buildFortWarp, clampPolylineRadial } from "../generate_helpers/warp_stage.js";
-import { warpPolylineRadial } from "../warp.js";
+import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 
@@ -45,7 +45,8 @@ export function runWarpFieldStage({
   const warpWall = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
-    wallPoly: wallFinal,
+    // Curtain wall is wallBase (pre-bastion expansion).
+    wallPoly: wallBase,
     targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     // Invariant: wall must stay outside inner hull.
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
@@ -91,7 +92,22 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  const wallForDraw = wallWarped || wallFinal;
+  // Wall-for-draw is the CURTAIN wall (not the bastion-composite).
+  const wallForDraw = wallWarped || wallBase;
+
+  // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
+  // This is the "min clamp" for bastions (ensures points stay away from the wall base).
+  const curtainMinField =
+    (warpOutworks?.params && Array.isArray(wallForDraw) && wallForDraw.length >= 3)
+      ? buildWarpField({
+          centre: { x: cx, y: cy },
+          wallPoly: wallForDraw,
+          targetPoly: wallForDraw,
+          districts: [],
+          bastions: [],
+          params: { ...warpOutworks.params, debug: false },
+        })
+      : null;
 
   // Apply outworks warp to bastion polygons (two-target system).
   let bastionPolysWarpedSafe = bastionPolys;
@@ -106,19 +122,35 @@ export function runWarpFieldStage({
         warpOutworks.field,
         warpOutworks.params
       );
-
-      const clamped = clampPolylineRadial(
-        warped,
-        { x: cx, y: cy },
-        warpOutworks.minField,
-        warpOutworks.maxField,
-        warpOutworks.clampMinMargin,
-        warpOutworks.clampMaxMargin
-      );
+      
+    const clamped = clampPolylineRadial(
+      warped,
+      { x: cx, y: cy },
+      null,
+      warpOutworks.maxField,
+      0,
+      warpOutworks.clampMaxMargin
+    );
 
       return clamped;
     });
   }
+  // Always enforce the bastion band when we have an outer clamp.
+  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
+    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly) => {
+      if (!Array.isArray(poly) || poly.length < 3) return poly;
+  
+      return clampPolylineRadial(
+        poly,
+        { x: cx, y: cy },
+        curtainMinField,           // may be null; clamp function should treat null as "no min"
+        warpOutworks.maxField,
+        2,                         // min margin from curtain
+        warpOutworks.clampMaxMargin
+      );
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Enforce: convexHull(all bastion vertices) must be inside the OUTER hull.
   // If not, shrink bastions inward (around the city centre) until it fits.
@@ -166,76 +198,79 @@ export function runWarpFieldStage({
     return out;
   }
 
-// Returns true only if the bastion convex hull is fully inside the OUTER hull.
-function hullFitsOuter(polys) {
-  if (!warpOutworks?.maxField) return true;
-
-  const verts = collectVertices(polys);
-  if (verts.length < 3) return true;
-
-  const hull = convexHull(verts);
-  if (!Array.isArray(hull) || hull.length < 3) return true;
-
-  const samples = sampleClosedPoly(hull, 10);
-
-  // Clamp samples to outer hull. If any moved, then hull was outside.
-  const clamped = clampPolylineRadial(
-    samples,
-    centre,
-    null,
-    warpOutworks.maxField,
-    0,
-    warpOutworks.clampMaxMargin
-  );
-
-  const EPS2 = 1.0; // 1 px squared tolerance
-  for (let i = 0; i < samples.length; i++) {
-    const p = samples[i];
-    const q = clamped[i];
-    if (!p || !q) continue;
-    const dx = q.x - p.x;
-    const dy = q.y - p.y;
-    if ((dx * dx + dy * dy) > EPS2) return false;
-  }
-  return true;
-}
-
-// If needed, shrink bastions until their convex hull fits inside outer hull.
-if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
-  if (!hullFitsOuter(bastionPolysWarpedSafe)) {
-    // Binary search the largest scale s in (0, 1] that fits.
-    let lo = 0.0;
-    let hi = 1.0;
-
-    // Deterministic number of iterations.
-    for (let it = 0; it < 24; it++) {
-      const mid = (lo + hi) * 0.5;
-      const scaled = scalePolys(bastionPolysWarpedSafe, mid);
-      if (hullFitsOuter(scaled)) {
-        lo = mid; // fits, try larger
-      } else {
-        hi = mid; // does not fit, shrink more
-      }
+  // Returns true only if the bastion convex hull is fully inside the OUTER hull.
+  function hullFitsOuter(polys) {
+    if (!warpOutworks?.maxField) return true;
+  
+    const verts = collectVertices(polys);
+    if (verts.length < 3) return true;
+  
+    const hull = convexHull(verts);
+    if (!Array.isArray(hull) || hull.length < 3) return true;
+  
+    const samples = sampleClosedPoly(hull, 10);
+  
+    // Clamp samples to outer hull. If any moved, then hull was outside.
+    const clamped = clampPolylineRadial(
+      samples,
+      centre,
+      null,
+      warpOutworks.maxField,
+      0,
+      warpOutworks.clampMaxMargin
+    );
+  
+    const EPS2 = 1.0; // 1 px squared tolerance
+    for (let i = 0; i < samples.length; i++) {
+      const p = samples[i];
+      const q = clamped[i];
+      if (!p || !q) continue;
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      if ((dx * dx + dy * dy) > EPS2) return false;
     }
-
-    bastionPolysWarpedSafe = scalePolys(bastionPolysWarpedSafe, lo);
-    // Safety: re-clamp after scaling to enforce inside-outer invariant per angle.
-    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-      return clampPolylineRadial(
-        poly,
-        { x: cx, y: cy },
-        null,
-        warpOutworks.maxField,
-        0,
-        warpOutworks.clampMaxMargin
-      );
-    });
-
-    // Optional debug value you can inspect later.
-    warpOutworks.bastionHullScale = lo;
+    return true;
   }
-}
+
+  // If needed, shrink bastions until their convex hull fits inside outer hull.
+  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
+    if (!hullFitsOuter(bastionPolysWarpedSafe)) {
+      // Binary search the largest scale s in (0, 1] that fits.
+      let lo = 0.0;
+      let hi = 1.0;
+  
+      // Deterministic number of iterations.
+      for (let it = 0; it < 24; it++) {
+        const mid = (lo + hi) * 0.5;
+        const scaled = scalePolys(bastionPolysWarpedSafe, mid);
+        if (hullFitsOuter(scaled)) {
+          lo = mid; // fits, try larger
+        } else {
+          hi = mid; // does not fit, shrink more
+        }
+      }
+  
+      bastionPolysWarpedSafe = scalePolys(bastionPolysWarpedSafe, lo);
+      // Safety: re-clamp into the BAND:
+      // - outside the curtain (minField = curtainMinField)
+      // - inside the outer hull (maxField = warpOutworks.maxField)
+      // This is what makes bastions look natural (tips stay away from the wall base).
+      bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly) => {
+        if (!Array.isArray(poly) || poly.length < 3) return poly;
+        return clampPolylineRadial(
+          poly,
+          { x: cx, y: cy },
+          curtainMinField,
+          warpOutworks.maxField,
+          2,
+          warpOutworks.clampMaxMargin
+        );
+      });
+  
+      // Optional debug value you can inspect later.
+      warpOutworks.bastionHullScale = lo;
+    }
+  }
 
   // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
