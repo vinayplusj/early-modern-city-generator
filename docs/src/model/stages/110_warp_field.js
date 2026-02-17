@@ -250,12 +250,11 @@ if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPo
       }
     }
 
-    if (pts.length >= 3) {
-      const h = convexHull(pts);
-        if (Array.isArray(h) && h.length >= 3) {
-          // This must remain a convex hull; do not clamp the hull itself.
-          bastionHullWarpedSafe = h;
-        }
+  if (pts.length >= 3) {
+    const h = convexHull(pts);
+    if (Array.isArray(h) && h.length >= 3) {
+        // This must remain a convex hull; do not clamp the hull itself.
+        bastionHullWarpedSafe = h;
       }
     }
   }
