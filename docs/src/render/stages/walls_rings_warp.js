@@ -18,8 +18,10 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallBase, bastionPolys, ri
   if (bastionPolys && Array.isArray(bastionPolys)) {
     ctx.save();
 
-    const outworksStroke = warp?.outworks?.draw?.stroke ?? "#d9d9d9";
-    const outworksWidth = warp?.outworks?.draw?.width ?? 2;
+    // Bastions are part of the fort outline composite.
+    // Draw them with the same stroke as the curtain wall so the outline is continuous.
+    const outworksStroke = warp?.wall?.draw?.stroke ?? "#d9d9d9";
+    const outworksWidth = warp?.wall?.draw?.width ?? 3;
 
     ctx.strokeStyle = outworksStroke;
     ctx.lineWidth = outworksWidth;
