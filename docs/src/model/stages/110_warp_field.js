@@ -183,10 +183,6 @@ export function runWarpFieldStage({
     return { x: sx / n, y: sy / n };
   }
 
-  function dot(a, b) {
-    return a.x * b.x + a.y * b.y;
-  }
-
   function normalize(v) {
     const m = Math.hypot(v.x, v.y);
     if (m < 1e-9) return { x: 0, y: 0 };
@@ -329,24 +325,104 @@ export function runWarpFieldStage({
 
     return out;
   }
+  function avgRadiusFromCentroid(poly, c) {
+    let sum = 0;
+    let n = 0;
+    for (const p of poly) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      const dx = p.x - c.x;
+      const dy = p.y - c.y;
+      sum += Math.hypot(dx, dy);
+      n++;
+    }
+    return n ? (sum / n) : 0;
+  }
+  
+  // Finds the closest point on a polyline segment list (closed polygon).
+  function closestPointOnSegment(p, a, b) {
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const apx = p.x - a.x;
+    const apy = p.y - a.y;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-9) return { x: a.x, y: a.y, t: 0 };
+    let t = (apx * abx + apy * aby) / ab2;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return { x: a.x + abx * t, y: a.y + aby * t, t };
+  }
+  
+  // Approximate outward normal of the curtain wall at the closest point to apex.
+  // We define "outward" as pointing away from the city centre.
+  function apexClearanceAlongWallNormal(apex, wallPoly, centre) {
+    if (!Array.isArray(wallPoly) || wallPoly.length < 3) return 0;
+  
+    let best = null;
+    let bestD2 = Infinity;
+  
+    for (let i = 0; i < wallPoly.length; i++) {
+      const a = wallPoly[i];
+      const b = wallPoly[(i + 1) % wallPoly.length];
+      if (!a || !b) continue;
+  
+      const q = closestPointOnSegment(apex, a, b);
+      const dx = apex.x - q.x;
+      const dy = apex.y - q.y;
+      const d2 = dx * dx + dy * dy;
+  
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = { a, b, q };
+      }
+    }
+  
+    if (!best) return 0;
+  
+    // Segment tangent.
+    const tx = best.b.x - best.a.x;
+    const ty = best.b.y - best.a.y;
+    const tLen = Math.hypot(tx, ty);
+    if (tLen < 1e-9) return 0;
+  
+    const tnx = tx / tLen;
+    const tny = ty / tLen;
+  
+    // Two candidate normals.
+    let nx = -tny;
+    let ny =  tnx;
+  
+    // Make normal point outward (away from centre).
+    const vx = best.q.x - centre.x;
+    const vy = best.q.y - centre.y;
+    if ((nx * vx + ny * vy) < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+  
+    // Signed clearance of apex along outward normal.
+    const ax = apex.x - best.q.x;
+    const ay = apex.y - best.q.y;
+    return (ax * nx + ay * ny);
+  }
 
   // Solve for the smallest bastion-level T that makes the polygon fit maxField.
   // T combines:
   // - overshoot severity (apex correction magnitude)
   // - centroid distance from global centre (global weight)
   // Vertex weighting is applied inside applyWeightedShrink.
-  function shrinkPolyToFitWeighted(poly, centre, maxField, maxMargin, params) {
+  function shrinkPolyToFitWeighted(poly, centre, maxField, maxMargin, params, W) {
+    const Wc = Math.max(0.10, Math.min(1.50, Number.isFinite(W) ? W : 0));
     const c = centroidOfPoly(poly);
-    if (!c) return { poly, T: 0, movedBefore: 0, overshoot: 0 };
+    if (!c) return { poly, T: 0, movedBefore: 0, overshoot: 0, W: Wc };
 
     const before = clampDeltaStats(poly, centre, maxField, maxMargin);
     if (before.moved === 0) {
-      return { poly, T: 0, movedBefore: 0, overshoot: 0 };
+      return { poly, T: 0, movedBefore: 0, overshoot: 0, W: Wc };
     }
 
     const { apex, apexIdx } = findApex(poly, centre);
     if (!apex || apexIdx < 0) {
-      return { poly, T: 0, movedBefore: before.moved, overshoot: 0 };
+      return { poly, T: 0, movedBefore: before.moved, overshoot: 0, W: Wc };
     }
 
     const { nIn, overshoot } = apexWallNormal(poly, apexIdx, centre, maxField, maxMargin);
@@ -356,7 +432,7 @@ export function runWarpFieldStage({
     // If overshoot is tiny, do not overreact.
     const minOvershoot = params?.bastionShrinkMinOvershoot ?? 1.0;
     if (overshoot < minOvershoot) {
-      return { poly, T: 0, movedBefore: before.moved, overshoot };
+      return { poly, T: 0, movedBefore: before.moved, overshoot, W: Wc };
     }
 
     // Base target severity from overshoot.
@@ -365,7 +441,7 @@ export function runWarpFieldStage({
     const baseT = Math.min(1.0, overshoot / Math.max(1, overshootScale));
 
     // Combine with global weight.
-    const targetT = Math.min(1.0, baseT * gW);
+    const targetT = Math.min(1.0, baseT * gW * Wc);
 
     // Now binary search actual T needed to pass the clamp.
     let lo = 0.0;
@@ -400,7 +476,7 @@ export function runWarpFieldStage({
       }
     }
 
-    return { poly: bestPoly, T: bestT, movedBefore: before.moved, overshoot };
+    return { poly: bestPoly, T: bestT, movedBefore: before.moved, overshoot, W: Wc };
   }
 
   // Apply per-bastion shrink independently, then re-clamp to the band.
@@ -412,17 +488,46 @@ export function runWarpFieldStage({
 
       // Fast path.
       if (polyFitsMaxField(poly, centre, warpOutworks.maxField, warpOutworks.clampMaxMargin)) {
-        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0 });
+        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0, W: 0 });
         return poly;
       }
 
+      const c = centroidOfPoly(poly);
+      if (!c) {
+        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0, W: 0, note: "no_centroid" });
+        return poly;
+      }
+      
+      // (1) Vertex distance from centroid (size / spread)
+      const sizeR = avgRadiusFromCentroid(poly, c);          // pixels
+      const sizeN = Math.min(1.0, sizeR / 140);              // normalise
+      
+      // (2) Apex distance from curtain wall along outward normal
+      const { apex } = findApex(poly, centre);
+      let apexClear = 0;
+      if (apex && wallCurtainForDraw) {
+        apexClear = apexClearanceAlongWallNormal(apex, wallCurtainForDraw, centre); // pixels, signed
+      }
+      // Lower clearance => higher shrink pressure
+      const apexN = Math.min(1.0, Math.max(0.0, 1.0 - (apexClear / 50)));
+      
+      // (3) Centroid distance from global centre
+      const centreDist = dist(c, centre);
+      const baseR = (warpOutworks?.rMean && Number.isFinite(warpOutworks.rMean)) ? warpOutworks.rMean : 500;
+      const radialN = Math.min(1.0, centreDist / Math.max(1, baseR * 1.4));
+      
+      // Combine (weights are tunable)
+      const W = (0.40 * sizeN) + (0.35 * apexN) + (0.25 * radialN);
+      
       const res = shrinkPolyToFitWeighted(
         poly,
         centre,
         warpOutworks.maxField,
         warpOutworks.clampMaxMargin,
-        warpOutworks.params
+        warpOutworks.params,
+        W
       );
+
 
       const reclamped = clampPolylineRadial(
         res.poly,
@@ -435,7 +540,7 @@ export function runWarpFieldStage({
 
       // Safety fallback.
       if (!Array.isArray(reclamped) || reclamped.length < 3) {
-        shrinkStats.push({ idx, T: 1, movedBefore: res.movedBefore, overshoot: res.overshoot, note: "reclamp_invalid" });
+        shrinkStats.push({ idx, T: 1, movedBefore: res.movedBefore, overshoot: res.overshoot, W: res.W, note: "reclamp_invalid" });
         return poly;
       }
 
@@ -444,61 +549,12 @@ export function runWarpFieldStage({
         T: res.T,
         movedBefore: res.movedBefore,
         overshoot: res.overshoot,
+        W: res.W,
       });
 
       return reclamped;
     });
 
-    warpOutworks.bastionShrink = shrinkStats;
-  }
-
-  // Apply per-bastion shrink independently (only when maxField exists).
-  // Then re-clamp to the bastion band (outside curtain, inside outer hull).
-  // ---------------------------------------------------------------------------
-  
-  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
-    const shrinkStats = [];
-  
-    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-  
-      // Shrink only if it actually violates the outer hull clamp.
-      if (polyFitsMaxField(poly, centre, warpOutworks.maxField, warpOutworks.clampMaxMargin)) {
-        shrinkStats.push({ idx, t: 0, movedBefore: 0, overshoot: 0 });
-        return poly;
-      }
-  
-      const res = shrinkPolyToFitWeighted(
-        poly,
-        centre,
-        warpOutworks.maxField,
-        warpOutworks.clampMaxMargin,
-        warpOutworks.params
-      );
-  
-      // After shrink, enforce the band again for stability and style:
-      // - outside curtain (curtainMinField)
-      // - inside outer hull (warpOutworks.maxField)
-      const reclamped = clampPolylineRadial(
-        res.poly,
-        centre,
-        curtainMinField,
-        warpOutworks.maxField,
-        2,
-        warpOutworks.clampMaxMargin
-      );
-  
-      shrinkStats.push({
-        idx,
-        T: res.T,
-        movedBefore: res.movedBefore,
-        overshoot: res.overshoot,
-      });
-  
-      return reclamped;
-    });
-  
-    // Optional: inspect later in console.
     warpOutworks.bastionShrink = shrinkStats;
   }
 
