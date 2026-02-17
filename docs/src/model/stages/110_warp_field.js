@@ -118,6 +118,111 @@ export function runWarpFieldStage({
       return clamped;
     });
   }
+// ---------------------------------------------------------------------------
+// Enforce: convexHull(all bastion vertices) must be inside the OUTER hull.
+// If not, shrink bastions inward (around the city centre) until it fits.
+// ---------------------------------------------------------------------------
+const centre = { x: cx, y: cy };
+
+function scalePoint(p, s) {
+  return { x: centre.x + (p.x - centre.x) * s, y: centre.y + (p.y - centre.y) * s };
+}
+
+function scalePolys(polys, s) {
+  return (polys || []).map((poly) => {
+    if (!Array.isArray(poly) || poly.length < 3) return poly;
+    return poly.map((p) => (p && Number.isFinite(p.x) && Number.isFinite(p.y)) ? scalePoint(p, s) : p);
+  });
+}
+
+function collectVertices(polys) {
+  const pts = [];
+  for (const poly of polys || []) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    for (const p of poly) {
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
+    }
+  }
+  return pts;
+}
+
+// Sample points along hull edges so we test edges, not only vertices.
+function sampleClosedPoly(poly, samplesPerEdge) {
+  if (!Array.isArray(poly) || poly.length < 3) return [];
+  const out = [];
+  const n = Math.max(1, samplesPerEdge | 0);
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!a || !b) continue;
+
+    out.push(a);
+    for (let k = 1; k <= n; k++) {
+      const t = k / (n + 1);
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return out;
+}
+
+// Returns true only if the bastion convex hull is fully inside the OUTER hull.
+function hullFitsOuter(polys) {
+  if (!warpOutworks?.maxField) return true;
+
+  const verts = collectVertices(polys);
+  if (verts.length < 3) return true;
+
+  const hull = convexHull(verts);
+  if (!Array.isArray(hull) || hull.length < 3) return true;
+
+  const samples = sampleClosedPoly(hull, 6);
+
+  // Clamp samples to outer hull. If any moved, then hull was outside.
+  const clamped = clampPolylineRadial(
+    samples,
+    centre,
+    null,
+    warpOutworks.maxField,
+    0,
+    warpOutworks.clampMaxMargin
+  );
+
+  const EPS2 = 1e-10;
+  for (let i = 0; i < samples.length; i++) {
+    const p = samples[i];
+    const q = clamped[i];
+    if (!p || !q) continue;
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    if ((dx * dx + dy * dy) > EPS2) return false;
+  }
+  return true;
+}
+
+// If needed, shrink bastions until their convex hull fits inside outer hull.
+if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
+  if (!hullFitsOuter(bastionPolysWarpedSafe)) {
+    // Binary search the largest scale s in (0, 1] that fits.
+    let lo = 0.0;
+    let hi = 1.0;
+
+    // Deterministic number of iterations.
+    for (let it = 0; it < 24; it++) {
+      const mid = (lo + hi) * 0.5;
+      const scaled = scalePolys(bastionPolysWarpedSafe, mid);
+      if (hullFitsOuter(scaled)) {
+        lo = mid; // fits, try larger
+      } else {
+        hi = mid; // does not fit, shrink more
+      }
+    }
+
+    bastionPolysWarpedSafe = scalePolys(bastionPolysWarpedSafe, lo);
+
+    // Optional debug value you can inspect later.
+    warpOutworks.bastionHullScale = lo;
+  }
+}
 
   // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of all (warped, clamped) bastion vertices, then clamp that hull
