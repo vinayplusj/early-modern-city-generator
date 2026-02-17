@@ -468,7 +468,7 @@ export function runWarpFieldStage({
         return poly;
       }
   
-      const res = shrinkPolyToMaxFieldMixed(
+      const res = shrinkPolyToFitWeighted(
         poly,
         centre,
         warpOutworks.maxField,
