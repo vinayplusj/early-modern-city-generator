@@ -58,6 +58,7 @@ export function render(ctx, model) {
 
     wall,
     wallBase,
+    wallCurtain,
     bastionPolys,
     bastionHull,
     ring,
@@ -110,6 +111,7 @@ export function render(ctx, model) {
   drawWallsAndRingsAndWarp(ctx, {
     wall,
     wallBase,
+    wallCurtain,
     bastionPolys,
     ring,
     ring2,
