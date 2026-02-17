@@ -196,23 +196,32 @@ export function runWarpFieldStage({
   // Clamp and return movement stats (how many points were moved by clamp).
   function clampDeltaStats(poly, centre, maxField, maxMargin) {
     const clamped = clampPolylineRadial(poly, centre, null, maxField, 0, maxMargin);
-
+  
     let maxD2 = 0;
     let moved = 0;
-
+  
+    let worstIdx = -1;
+    let worstVec = { x: 0, y: 0 };
+  
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i];
       const q = clamped[i];
       if (!p || !q) continue;
-
+  
       const dx = q.x - p.x;
       const dy = q.y - p.y;
       const d2 = dx * dx + dy * dy;
+  
       if (d2 > EPS2) moved++;
-      if (d2 > maxD2) maxD2 = d2;
+  
+      if (d2 > maxD2) {
+        maxD2 = d2;
+        worstIdx = i;
+        worstVec = { x: dx, y: dy }; // inward correction
+      }
     }
-
-    return { clamped, maxD2, moved };
+  
+    return { clamped, maxD2, moved, worstIdx, worstVec };
   }
 
   function polyFitsMaxField(poly, centre, maxField, maxMargin) {
@@ -425,9 +434,13 @@ export function runWarpFieldStage({
       return { poly, T: 0, movedBefore: before.moved, overshoot: 0, W: Wc };
     }
 
-    const { nIn, overshoot } = apexWallNormal(poly, apexIdx, centre, maxField, maxMargin);
     const weights = vertexWeights(poly, c);
     const gW = centroidGlobalWeight(c, centre, params);
+    
+    // Drive the shrink solve off the worst violating vertex, not the apex.
+    // This guarantees overshoot > 0 whenever any vertex violates maxField.
+    const nIn = normalize(before.worstVec);
+    const overshoot = Math.sqrt(before.maxD2);
 
     // If overshoot is tiny, do not overreact.
     const minOvershoot = params?.bastionShrinkMinOvershoot ?? 1.0;
