@@ -54,6 +54,8 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     
     // 3) Apply your existing per-district offsets *on top* of that target hull radius
     rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
+    // After rTarget backfill loop, before delta computation:
+
 
     if (params.debug && i % 120 === 0) {
       const d = districtAtAngle(theta, districts);
@@ -94,6 +96,19 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
       let rawTargetR = sampleRadiusAtAngle(centre, thetas[i], polyForTarget);
       if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
       rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districtsUse, rawTargetR, params);
+    }
+  }
+  
+  // Optional: smooth spikes in clamp fields (run once, after rTarget is complete)
+  if (params && params._clampField === true) {
+    for (let j = 0; j < N; j++) {
+      const a = rTarget[(j - 1 + N) % N];
+      const b = rTarget[j];
+      const c = rTarget[(j + 1) % N];
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
+  
+      const avg = (a + c) * 0.5;
+      if (Math.abs(b - avg) > 30) rTarget[j] = avg;
     }
   }
 
