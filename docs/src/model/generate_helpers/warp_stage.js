@@ -165,7 +165,7 @@ export function buildFortWarp({
       targetPoly: clampMinPoly,
       districts: null,
       bastions: null,
-      params: { ...tuned, bandInner: 0, bandOuter: 0 },
+      params: { ...tuned, _clampField: true, bandInner: 0, bandOuter: 0 },
     });
   }
 
@@ -176,7 +176,7 @@ export function buildFortWarp({
       targetPoly: clampMaxPoly,
       districts: null,
       bastions: null,
-      params: { ...tuned, bandInner: 0, bandOuter: 0 },
+      params: { ...tuned, _clampField: true, bandInner: 0, bandOuter: 0 },
     });
   }
 
