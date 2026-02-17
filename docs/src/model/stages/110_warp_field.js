@@ -223,6 +223,20 @@ export function runWarpFieldStage({
   
     return { clamped, maxD2, moved, worstIdx, worstVec };
   }
+  
+  function inwardDirsFromClamp(poly, clamped) {
+    const dirs = new Array(poly.length);
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i];
+      const q = clamped[i];
+      if (!p || !q) {
+        dirs[i] = { x: 0, y: 0 };
+        continue;
+      }
+      dirs[i] = normalize({ x: q.x - p.x, y: q.y - p.y }); // inward correction direction
+    }
+    return dirs;
+  }
 
   function polyFitsMaxField(poly, centre, maxField, maxMargin) {
     const { moved } = clampDeltaStats(poly, centre, maxField, maxMargin);
@@ -301,39 +315,40 @@ export function runWarpFieldStage({
 
   // Apply shrink for a given bastion with per-vertex weighting.
   // T in [0,1] is the bastion-level shrink amount.
-  function applyWeightedShrink(poly, centre, centroid, weights, dirIn, T, overshoot, params) {
-    // Uniform scale around centroid (not global centre) to respect shape.
+  function applyWeightedShrink(poly, centroid, weights, dirsIn, T, overshoot, params) {
+    // (1) uniform scale about bastion centroid
     const uniformK = params?.bastionShrinkUniformK ?? 0.35;
     const s = Math.max(0.25, 1.0 - uniformK * T);
-
-    // Translation magnitude based on overshoot.
-    const maxPush = params?.bastionShrinkMaxPush ?? 300;
+  
+    // (2) translate inward, per-vertex direction from clamp
+    const maxPush = params?.bastionShrinkMaxPush ?? 600; // increase default
     const push = Math.min(overshoot, maxPush) * (params?.bastionShrinkNormalK ?? 1.0);
-
+  
     const out = new Array(poly.length);
-
+  
     for (let i = 0; i < poly.length; i++) {
       const p = poly[i];
       if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
         out[i] = p;
         continue;
       }
-
-      // (1) scale about the bastion centroid
+  
+      // scale
       let x = centroid.x + (p.x - centroid.x) * s;
       let y = centroid.y + (p.y - centroid.y) * s;
-
-      // (2) translate inward along wall normal (inward clamp direction)
-      // Use per-vertex weight so the farther vertices move more.
+  
+      // translate (asymmetric allowed)
       const w = weights[i];
-      x += dirIn.x * (T * push * w);
-      y += dirIn.y * (T * push * w);
-
+      const d = dirsIn[i] || { x: 0, y: 0 };
+      x += d.x * (T * push * w);
+      y += d.y * (T * push * w);
+  
       out[i] = { x, y };
     }
-
+  
     return out;
   }
+
   function avgRadiusFromCentroid(poly, c) {
     let sum = 0;
     let n = 0;
@@ -439,8 +454,8 @@ export function runWarpFieldStage({
     
     // Drive the shrink solve off the worst violating vertex, not the apex.
     // This guarantees overshoot > 0 whenever any vertex violates maxField.
-    const nIn = normalize(before.worstVec);
     const overshoot = Math.sqrt(before.maxD2);
+    const dirsIn0 = inwardDirsFromClamp(poly, before.clamped);
 
     // If overshoot is tiny, do not overreact.
     const minOvershoot = params?.bastionShrinkMinOvershoot ?? 1.0;
@@ -464,7 +479,7 @@ export function runWarpFieldStage({
 
     // Expand hi up to 1.0 if needed.
     for (let expand = 0; expand < 6; expand++) {
-      const candidate = applyWeightedShrink(poly, centre, c, weights, nIn, hi, overshoot, params);
+      const candidate = applyWeightedShrink(poly, c, weights, dirsIn0, hi, overshoot, params);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
         bestPoly = candidate;
         bestT = hi;
@@ -479,7 +494,7 @@ export function runWarpFieldStage({
     // Refine smallest T that fits.
     for (let it = 0; it < 22; it++) {
       const mid = (lo + hi) * 0.5;
-      const candidate = applyWeightedShrink(poly, centre, c, weights, nIn, mid, overshoot, params);
+      const candidate = applyWeightedShrink(poly, c, weights, dirsIn0, mid, overshoot, params);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
         bestPoly = candidate;
         bestT = mid;
