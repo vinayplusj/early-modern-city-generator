@@ -37,6 +37,13 @@ export function runWarpFieldStage({
   warpDebugEnabled,
 }) {
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
+  const innerHull = fortInnerHull;
+    if (!Array.isArray(innerHull) || innerHull.length < 3) {
+      console.warn("[warp] innerHull missing/degenerate; wall warp will be no-op", {
+        innerHullLen: innerHull?.length,
+      });
+    }
+
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
   
   // Keep behaviour: generator stores warp config on ctx.params.warpFort.
@@ -68,14 +75,6 @@ export function runWarpFieldStage({
   const wallBaseDense = (Array.isArray(wallBase) && wallBase.length >= 3)
     ? resampleClosedPolyline(wallBase, curtainVertexN)
     : wallBase;
-
-  const innerHull = model.fortHulls?.innerHull?.outerLoop;
-    if (!innerHull || innerHull.length < 3) {
-      console.warn("[warp] innerHull missing/degenerate; wall warp will be no-op", {
-        seed: model.seed,
-        innerHullLen: innerHull?.length,
-      });
-    }
 
   const warpWall = buildFortWarp({
     enabled: true,
