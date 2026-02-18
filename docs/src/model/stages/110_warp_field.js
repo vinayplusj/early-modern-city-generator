@@ -76,7 +76,7 @@ export function runWarpFieldStage({
     ? resampleClosedPolyline(wallBase, curtainVertexN)
     : wallBase;
 
-  const warpWall = buildFortWarp({
+  const  = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
     wallPoly: wallBaseDense,
@@ -110,8 +110,8 @@ export function runWarpFieldStage({
 
   // ---- Draw style hints (consumed by renderer) ----
   // Wall: light blue
-  if (warpWall) {
-    warpWall.draw = {
+  if () {
+    .draw = {
       stroke: "#ff0000", // light blue, red for debug
       width: 3,
     };
@@ -126,7 +126,18 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  
+  console.log("[warpWall] innerHull len:", fortInnerHull?.length ?? null);
+
+  if (warpWall?.field?.delta) {
+    let minD = Infinity, maxD = -Infinity;
+    for (const d of warpWall.field.delta) {
+      if (!Number.isFinite(d)) continue;
+      minD = Math.min(minD, d);
+      maxD = Math.max(maxD, d);
+    }
+    console.log("[warpWall] delta range:", { minD, maxD });
+  }
+
   // Curtain wall (pre-bastion) for clamp + debug.
   const wallCurtainForDraw = wallWarped || wallBase;
   
