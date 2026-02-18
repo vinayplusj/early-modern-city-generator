@@ -69,6 +69,14 @@ export function runWarpFieldStage({
     ? resampleClosedPolyline(wallBase, curtainVertexN)
     : wallBase;
 
+  const innerHull = model.fortHulls?.innerHull?.outerLoop;
+    if (!innerHull || innerHull.length < 3) {
+      console.warn("[warp] innerHull missing/degenerate; wall warp will be no-op", {
+        seed: model.seed,
+        innerHullLen: innerHull?.length,
+      });
+    }
+
   const warpWall = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
