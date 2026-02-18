@@ -86,7 +86,7 @@ export function runWarpFieldStage({
     clampMaxPoly: null,
     clampMinMargin: 2,
     clampMaxMargin: 2,
-    districts: null
+    districts: null,
     bastions: bastionsForWarp,
     params: curtainParams,
   });
@@ -111,7 +111,7 @@ export function runWarpFieldStage({
   // ---- Draw style hints (consumed by renderer) ----
   // Wall: light blue
   if (warpWall) {
-    .draw = {
+    warpWall.draw = {
       stroke: "#ff0000", // light blue, red for debugstroke: "#ff0000",
       width: 3,
     };
@@ -139,7 +139,7 @@ export function runWarpFieldStage({
   }
 
   // Curtain wall (pre-bastion) for clamp + debug.
-  const wallCurtainForDraw = wallWarped || wallBase;
+  const wallCurtainForDraw = wallWarped || wallBaseDense;
   
   // Composite fort outline for renderer output.
   const wallForDraw = wallFinal;
@@ -153,7 +153,7 @@ export function runWarpFieldStage({
           centre: { x: cx, y: cy },
           wallPoly: wallCurtainForDraw,
           targetPoly: wallCurtainForDraw,
-          districts: null
+          districts: null,
           bastions: [],
           params: { ...warpOutworks.params, debug: false },
         })
