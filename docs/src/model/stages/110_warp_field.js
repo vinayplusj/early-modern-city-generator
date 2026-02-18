@@ -149,7 +149,10 @@ export function runWarpFieldStage({
   const wallCurtainForDraw = wallWarped || wallBaseDense;
   
   // Composite fort outline for renderer output.
-  const wallForDraw = wallFinal;
+  // Use warped outworks wall if present, else fall back.
+  const wallForDraw = (warpOutworks && Array.isArray(warpOutworks.wallWarped))
+    ? warpOutworks.wallWarped
+    : wallFinal;
 
   const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
