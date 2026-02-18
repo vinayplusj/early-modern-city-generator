@@ -97,12 +97,18 @@ export function render(ctx, model) {
     blocks: null,
   });
 
-  drawWardsDebug(ctx, {
-    wards: model?.wards,
-    wardSeeds: model?.wardSeeds,
-    wardRoleIndices: model?.wardRoleIndices,
-    anchors: A,
-  });
+  // Wards debug rendering disabled (keep road rendering only)
+  const showWardsDebug = false;
+  
+  if (showWardsDebug) {
+    drawWardsDebug(ctx, {
+      wards: model?.wards,
+      wardSeeds: model?.wardSeeds,
+      wardRoleIndices: model?.wardRoleIndices,
+      anchors: A,
+      // If you later want to hide only ring1 wards, pass hideWardIds here.
+    });
+  }
 
   drawBoundaryAndNewTown(ctx, { outerBoundary, newTown });
 
@@ -160,7 +166,6 @@ export function render(ctx, model) {
   
       let fill = null;
       if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.30)";     // core = cyan tint
-      else if (ring1Ids.has(w.id)) fill = "rgba(0,255,255,0.30)"; // ring1 = magenta tint
       else continue;
   
       ctx.save();
