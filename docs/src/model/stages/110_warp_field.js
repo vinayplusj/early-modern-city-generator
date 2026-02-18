@@ -105,7 +105,7 @@ export function runWarpFieldStage({
   // Wall: light blue
   if (warpWall) {
     warpWall.draw = {
-      stroke: "#7fdcff", // light blue
+      stroke: "#ff0000", // light blue, red for debug
       width: 3,
     };
   }
