@@ -126,6 +126,13 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
+  if (warpWall?.wallWarped && Array.isArray(wallBaseDense)) {
+    const a = wallBaseDense[0];
+    const b = warpWall.wallWarped[0];
+    console.log("[warpWall] first-pt shift:", Math.hypot(b.x - a.x, b.y - a.y));
+    console.log("[warpWall] warped equals input (ref):", warpWall.wallWarped === wallBaseDense);
+  }
+
   console.log("[warpWall] innerHull len:", fortInnerHull?.length ?? null);
 
   if (warpWall?.field?.delta) {
