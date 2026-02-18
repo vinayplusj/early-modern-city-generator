@@ -153,12 +153,6 @@ export function runWarpFieldStage({
 
   // Curtain wall (pre-bastion) for clamp + debug.
   const wallCurtainForDraw = wallWarped || wallBaseDense;
-  
-  // Composite fort outline for renderer output.
-  // Use warped outworks wall if present, else fall back.
-  const wallForDraw = (warpOutworks && Array.isArray(warpOutworks.wallWarped))
-    ? warpOutworks.wallWarped
-    : wallFinal;
 
   const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
@@ -705,6 +699,16 @@ export function runWarpFieldStage({
       maxMargin: warpOutworks?.clampMaxMargin,
       debugEnabled: true,
     });
+  }
+  // ---------------------------------------------------------------------------
+  // Final composite wall for rendering:
+  // Build from FINAL warped bastion polygons (after clamp + shrink + reclamp).
+  // This is the only geometry that is guaranteed to match the orange bastions.
+  // ---------------------------------------------------------------------------
+  let wallForDraw = wallFinal;
+  
+  if (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) {
+    wallForDraw = bastionHullWarpedSafe;
   }
 
   return {
