@@ -56,16 +56,15 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
     // After rTarget backfill loop, before delta computation:
 
-
     if (params.debug && i % 120 === 0) {
-      const d = districtAtAngle(theta, districts);
+      const d = districtAtAngle(theta, districtsUse);
     }
   }
 
   if (params.debug) {
     nullCount = 0;
     for (let j = 0; j < N; j++) {
-      const d = districtAtAngle(thetas[j], districts);
+      const d = districtAtAngle(thetas[j], districtsUse);
       if (!d) nullCount++;
     }
   
