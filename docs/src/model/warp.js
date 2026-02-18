@@ -56,23 +56,24 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
     // After rTarget backfill loop, before delta computation:
 
-    if (params.debug && i % 120 === 0) {
-      const d = districtAtAngle(theta, districtsUse);
+    if (params.debug && districtsUse.length > 0 && i % 120 === 0) {
+      districtAtAngle(theta, districtsUse);
     }
   }
-
-  if (params.debug) {
+  
+  if (params.debug && districtsUse.length > 0) {
     nullCount = 0;
+  
     for (let j = 0; j < N; j++) {
       const d = districtAtAngle(thetas[j], districtsUse);
       if (!d) nullCount++;
     }
   
+    // Only warn when districts exist but do not cover the full ring.
     if (nullCount > 0) {
       console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
     }
   }
-
 
   // If rFort[0] is still null, find first non-null and backfill.
   if (rFort[0] == null) {
