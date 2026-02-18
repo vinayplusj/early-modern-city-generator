@@ -109,10 +109,16 @@ export function runWarpFieldStage({
   });
 
   // ---- Draw style hints (consumed by renderer) ----
-  // Wall: light blue
   if (warpWall) {
-    warpWall.draw = {
-      stroke: "#ff0000", // light blue, red for debugstroke: "#ff0000",
+    // Warped curtain wall (inner/warped reference)
+    warpWall.drawCurtain = {
+      stroke: "#00ff00", // debug green (pick what you want)
+      width: 3,
+    };
+  
+    // Final composite wall (bastioned outline)
+    warpWall.drawComposite = {
+      stroke: "#d9d9d9", // normal wall grey (pick what you want)
       width: 3,
     };
   }
