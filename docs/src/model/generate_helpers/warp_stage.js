@@ -50,6 +50,53 @@ function sampleOnRing(thetas, values, theta) {
   return lerp(v0, v1, u);
 }
 
+export function resampleClosedPolyline(poly, targetN) {
+  if (!Array.isArray(poly) || poly.length < 3) return poly;
+  const N = Math.max(3, Math.floor(targetN));
+  if (poly.length >= N) return poly;
+
+  // Build cumulative lengths
+  const pts = poly;
+  const segLen = [];
+  let total = 0;
+
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy);
+    segLen.push(L);
+    total += L;
+  }
+  if (total < 1e-6) return poly;
+
+  const step = total / N;
+
+  const out = [];
+  let segIdx = 0;
+  let distAcc = 0;
+
+  for (let k = 0; k < N; k++) {
+    const d = k * step;
+
+    while (segIdx < segLen.length && distAcc + segLen[segIdx] < d) {
+      distAcc += segLen[segIdx];
+      segIdx++;
+    }
+    if (segIdx >= segLen.length) segIdx = segLen.length - 1;
+
+    const a = pts[segIdx];
+    const b = pts[(segIdx + 1) % pts.length];
+    const L = Math.max(1e-9, segLen[segIdx]);
+    const t = (d - distAcc) / L;
+
+    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+
+  return out;
+}
+
 export function clampPolylineRadial(poly, centre, minField, maxField, minMargin, maxMargin) {
   if (!Array.isArray(poly) || poly.length < 2) return poly;
 
