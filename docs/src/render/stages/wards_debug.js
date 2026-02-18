@@ -56,61 +56,68 @@ function drawLabel(ctx, text, x, y) {
   ctx.restore();
 }
 
-export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors }) {
+export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors, hideWardIds }) {
+  const hide = (hideWardIds instanceof Set)
+    ? hideWardIds
+    : new Set(Array.isArray(hideWardIds) ? hideWardIds : []);
+
   const hasWards = Array.isArray(wards) && wards.length > 0;
-  const hasSeeds = Array.isArray(wardSeeds) && wardSeeds.length > 0;
+  if (!hasWards) return;
 
-  if (!hasWards && !hasSeeds) return;
+  // 1) Ward polygons (fill + outline), skipping hidden wards
+  ctx.save();
+  ctx.lineWidth = 1;
 
-  // 1) Ward polygons
-  if (hasWards) {
-    ctx.save();
-    ctx.lineWidth = 1;
+  for (const w of wards) {
+    if (!w || !w.poly || w.poly.length < 3) continue;
+    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
 
-    for (const w of wards) {
-      if (!w || !w.poly || w.poly.length < 3) continue;
-      const st = styleForRole(w.role);
-      ctx.globalAlpha = st.alphaFill;
-      ctx.fillStyle = st.fill;
-      drawPoly(ctx, w.poly, true);
-      ctx.fill();
-    }
-
-    for (const w of wards) {
-      if (!w || !w.poly || w.poly.length < 3) continue;
-      const st = styleForRole(w.role);
-      ctx.globalAlpha = st.alphaStroke;
-      ctx.strokeStyle = st.stroke;
-      drawPoly(ctx, w.poly, true);
-      ctx.stroke();
-    }
-
-    ctx.restore();
+    const st = styleForRole(w.role);
+    ctx.globalAlpha = st.alphaFill;
+    ctx.fillStyle = st.fill;
+    drawPoly(ctx, w.poly, true);
+    ctx.fill();
   }
 
-  // 2) Seed points
-  if (hasSeeds) {
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = "#ffffff";
+  for (const w of wards) {
+    if (!w || !w.poly || w.poly.length < 3) continue;
+    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
 
-    for (const s of wardSeeds) {
-      if (!s) continue;
-      drawCircle(ctx, s, 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
+    const st = styleForRole(w.role);
+    ctx.globalAlpha = st.alphaStroke;
+    ctx.strokeStyle = st.stroke;
+    drawPoly(ctx, w.poly, true);
+    ctx.stroke();
   }
+
+  ctx.restore();
+
+  // 2) Ward seeds (draw from wards so we can skip hidden wards)
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#ffffff";
+
+  for (const w of wards) {
+    if (!w || !w.seed) continue;
+    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
+
+    drawCircle(ctx, w.seed, 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // NOTE: Do NOT draw wardSeeds[] here, because it cannot be filtered by ward id.
+  // If you still need wardSeeds for some other mode, gate it behind a flag.
 
   // 3) Highlight plaza and citadel (anchors first, fallback to wardRoleIndices)
   const plazaP =
     (anchors && anchors.plaza) ||
-    (hasWards && wardRoleIndices ? pointAtId(wards, wardRoleIndices.plaza) : null);
+    (wardRoleIndices ? pointAtId(wards, wardRoleIndices.plaza) : null);
 
   const citadelP =
     (anchors && anchors.citadel) ||
-    (hasWards && wardRoleIndices ? pointAtId(wards, wardRoleIndices.citadel) : null);
+    (wardRoleIndices ? pointAtId(wards, wardRoleIndices.citadel) : null);
 
   if (plazaP || citadelP) {
     ctx.save();
