@@ -5,8 +5,8 @@ import { drawPoly } from "../helpers/draw.js";
 export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bastionPolys, ring, ring2, warp }) {
   // Curtain wall (warped) - draw first
   if (wallCurtain && wallCurtain.length >= 3) {
-    const curtainStroke = warp?.wall?.draw?.stroke ?? "#00ff00"; // green for debug
-    const curtainWidth = warp?.wall?.draw?.width ?? 3;
+    const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#00ff00";
+    const curtainWidth = warp?.wall?.drawCurtain?.width ?? 3;
 
     ctx.save();
     ctx.strokeStyle = curtainStroke;
@@ -18,14 +18,15 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bas
 
   // Bastioned wall (final composite)
   if (wall && wall.length >= 3) {
-    const wallStroke = warp?.wall?.draw?.stroke ?? "#d9d9d9";
-    const wallWidth = warp?.wall?.draw?.width ?? 3;
+    const wallStroke = warp?.wall?.drawComposite?.stroke ?? "#d9d9d9";
+    const wallWidth = warp?.wall?.drawComposite?.width ?? 3;
 
     ctx.strokeStyle = wallStroke;
     ctx.lineWidth = wallWidth;
     drawPoly(ctx, wall, true);
     ctx.stroke();
   }
+  console.log("warp wall draw keys:", warp?.wall?.drawCurtain, warp?.wall?.drawComposite);
 
   // Bastions (polygons) in outworks colour
   if (Array.isArray(bastionPolys)) {
