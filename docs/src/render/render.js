@@ -94,7 +94,7 @@ export function render(ctx, model) {
     footprint,
     outerBoundary,
     districts: model?.districts,
-    blocks,
+    blocks: null,
   });
 
   drawWardsDebug(ctx, {
