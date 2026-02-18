@@ -173,28 +173,40 @@ export function runWarpFieldStage({
   let bastionPolysWarpedSafe = bastionPolys;
 
   if (warpOutworks?.field && Array.isArray(bastionPolys)) {
+    const centrePt = { x: cx, y: cy };
+
+    const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params);
+
     bastionPolysWarpedSafe = bastionPolys.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
 
-      const warped = warpPolylineRadial(
-        poly,
-        { x: cx, y: cy },
+      // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
+      const warpedByCurtain = hasCurtainWarp
+        ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
+        : poly;
+
+      // 2) Then warp by the outworks field (outer hull shaping).
+      const warpedByOutworks = warpPolylineRadial(
+        warpedByCurtain,
+        centrePt,
         warpOutworks.field,
         warpOutworks.params
       );
-      
-    const clamped = clampPolylineRadial(
-      warped,
-      { x: cx, y: cy },
-      curtainMinField,
-      warpOutworks.maxField,
-      2,
-      warpOutworks.clampMaxMargin
-    );
+
+      // 3) Clamp into the allowed radial band.
+      const clamped = clampPolylineRadial(
+        warpedByOutworks,
+        centrePt,
+        curtainMinField,
+        warpOutworks.maxField,
+        2,
+        warpOutworks.clampMaxMargin
+      );
 
       return clamped;
     });
   }
+
   // Always enforce the bastion band when we have an outer clamp.
   
   if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
