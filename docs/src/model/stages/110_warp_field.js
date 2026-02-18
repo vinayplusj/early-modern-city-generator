@@ -3,7 +3,7 @@
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
 // Extracted from generate.js without functional changes.
 
-import { buildFortWarp, clampPolylineRadial } from "../generate_helpers/warp_stage.js";
+import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
@@ -38,54 +38,52 @@ export function runWarpFieldStage({
 }) {
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
-  const curtainSamples = 72; // 72 is a safe floor
-
+  
   // Keep behaviour: generator stores warp config on ctx.params.warpFort.
   ctx.params.warpFort = warpFortParams;
-  const bastionN = Number.isFinite(ctx?.params?.bastions) ? ctx.params.bastions : 0;
-
-  // Curtain wall warp tuning:
-  // - keep high resolution (720), but ensure at least 3 * bastions
-  // - allow larger inward moves so the wall can approach Inner Hull
-  // - allow slightly larger per-iteration changes if needed
+  
+  // Use actual warped bastion count (not ctx.params.bastions).
+  const bastionN = Array.isArray(bastionsForWarp) ? bastionsForWarp.length : 0;
+  
+  // Requirement: curtain warp field samples = max(existing, 72, 3 * bastions).
+  const curtainSamples = Math.max(
+    ctx.params.warpFort?.samples ?? 0,
+    72,
+    3 * bastionN
+  );
+  
+  // Vertex density for the curtain wall polyline (separate from field samples).
+  const curtainVertexN = Math.max(24, 3 * bastionN);
+  
+  // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
     ...ctx.params.warpFort,
-    samples: Math.max(ctx.params.warpFort?.samples ?? 0, 3 * bastionN),
-
-    // Main fix: allow the wall to move inward more than 20 px.
-    // Start with 80; if you still see gaps, try 100.
+    samples: curtainSamples,
     maxIn: Math.max(ctx.params.warpFort?.maxIn ?? 0, 80),
-
-    // Optional: helps reduce “rigidity” when the target is much closer.
-    // If it becomes too angular, drop back to 2.0.
     maxStep: Math.max(ctx.params.warpFort?.maxStep ?? 0, 2.5),
+    // Keep smoothing reasonable so it still converges to the inner hull.
+    smoothRadius: Math.min(ctx.params.warpFort?.smoothRadius ?? 10, 8),
   };
 
+  const wallBaseDense = (Array.isArray(wallBase) && wallBase.length >= 3)
+    ? resampleClosedPolyline(wallBase, curtainVertexN)
+    : wallBase;
 
   const warpWall = buildFortWarp({
     enabled: true,
     centre: { x: cx, y: cy },
-    wallPoly: wallBase,
+    wallPoly: wallBaseDense,
     targetPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     tuningPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
-    // Invariant: wall must stay outside inner hull.
     clampMinPoly: (Array.isArray(fortInnerHull) && fortInnerHull.length >= 3) ? fortInnerHull : null,
     clampMaxPoly: null,
     clampMinMargin: 2,
     clampMaxMargin: 2,
-
-    // IMPORTANT: do not apply newTownFortOffset / outerWardFortOffset to the curtain wall.
     districts: [],
-
     bastions: bastionsForWarp,
-    params: {
-      ...ctx.params.warpFort, 
-      samples: curtainSamples,
-      maxIn: Math.max(ctx.params.warpFort.maxIn ?? 0, 60),
-      maxStep: Math.max(ctx.params.warpFort.maxStep ?? 0, 2.25),
-      smoothRadius: Math.min(ctx.params.warpFort.smoothRadius ?? 10, 8),
-    },
+    params: curtainParams,
   });
+
 
   const warpOutworks = buildFortWarp({
     enabled: true,
