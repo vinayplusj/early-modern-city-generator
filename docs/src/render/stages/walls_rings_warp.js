@@ -45,29 +45,33 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bas
 
     ctx.restore();
   }
-
-  // Warp overlay (debug)
+  
+  // Warp overlay (debug) - opt-in only (do not render wallOriginal by default)
   const ww = warp?.wall;
-  if (ww?.params?.debug && ww.wallOriginal && ww.wallWarped) {
+  const showWarpOverlay = (ww?.params?.renderOverlay === true);
+  
+  if (showWarpOverlay && ww.wallOriginal && ww.wallWarped) {
     ctx.save();
     ctx.lineWidth = 2;
-
+  
     ctx.globalAlpha = 0.6;
     ctx.strokeStyle = "#ffffff";
     ctx.setLineDash([6, 4]);
     drawPoly(ctx, ww.wallOriginal, true);
     ctx.stroke();
-
+  
     ctx.globalAlpha = 0.9;
     ctx.setLineDash([]);
     drawPoly(ctx, ww.wallWarped, true);
     ctx.stroke();
-
+  
     ctx.restore();
   }
 
-  // Wall base (inner line)
-  if (wallBase && wallBase.length >= 3) {
+  // Wall base (inner line) - hide when warp curtain exists (prevents duplicate wall curves)
+  const hasWarpCurtain = !!(wallCurtain && wallCurtain.length >= 3);
+  
+  if (wallBase && wallBase.length >= 3 && !hasWarpCurtain) {
     ctx.strokeStyle = "#9a9a9a";
     ctx.lineWidth = 1.5;
     drawPoly(ctx, wallBase, true);
