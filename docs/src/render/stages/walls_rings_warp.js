@@ -5,7 +5,7 @@ import { drawPoly } from "../helpers/draw.js";
 export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bastionPolys, ring, ring2, warp }) {
   // Curtain wall (warped) - draw first
   if (wallCurtain && wallCurtain.length >= 3) {
-    const curtainStroke = warp?.wall?.draw?.stroke ?? "#7fdcff";
+    const curtainStroke = warp?.wall?.draw?.stroke ?? "#00ff00"; // green for debug
     const curtainWidth = warp?.wall?.draw?.width ?? 3;
 
     ctx.save();
