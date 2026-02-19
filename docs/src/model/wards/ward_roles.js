@@ -57,7 +57,7 @@
 
  */
 import { buildDistrictLoopsFromWards } from "../districts.js";
-import { centroid } from "../../geom/poly.js";
+import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 
 
@@ -488,6 +488,55 @@ export function assignWardRoles({ wards, centre, params }) {
    preferPoint: centre,
    label: "fort.outerHull(core+ring1)",
  });
+
+   // ---- Investigation: find non-member wards enclosed by outerLoop ----
+  // Goal: explain holeCount by identifying wards whose centroid is inside outerHull.outerLoop
+  // but whose id is NOT in (coreIds ∪ ring1Ids).
+  //
+  // Determinism:
+  // - membership is a Set of numeric IDs
+  // - output is sorted by ID
+  //
+  // Invariant we are inspecting:
+  // - If outerHull.holeCount > 0, there should exist at least one non-member "island"
+  //   whose centroid lies inside the outer loop (a pocket causing an interior boundary loop).
+  const outerLoop = outerHull?.outerLoop;
+  if (Array.isArray(outerLoop) && outerLoop.length >= 3) {
+    const memberIds = new Set(coreIds.concat(ring1Ids));
+    const enclosedNonMembers = [];
+
+    for (const w of wardsCopy) {
+      const id = w?.id;
+      if (!Number.isFinite(id)) continue;
+      if (memberIds.has(id)) continue;
+
+      const c = wardCentroid(w);
+      if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
+
+      if (pointInPolyOrOn(c, outerLoop, 1e-6)) {
+        enclosedNonMembers.push(id);
+      }
+    }
+
+    enclosedNonMembers.sort((a, b) => a - b);
+
+    if (enclosedNonMembers.length > 0) {
+      console.warn("[Hulls] outerHull enclosed non-members (centroid in outerLoop)", {
+        holeCount: outerHull?.holeCount ?? null,
+        members: memberIds.size,
+        enclosedCount: enclosedNonMembers.length,
+        enclosedIds: enclosedNonMembers,
+      });
+    } else if ((outerHull?.holeCount ?? 0) > 0) {
+      // If holeCount is reported but we cannot find enclosed centroids,
+      // the hole may be due to geometric artefacts (degenerate loops, centroid test mismatch, etc.).
+      console.warn("[Hulls] outerHull holeCount>0 but no enclosed non-member centroids found", {
+        holeCount: outerHull?.holeCount ?? null,
+        members: memberIds.size,
+      });
+    }
+  }
+  // ---- End investigation block ----
 
   const fortHulls = { coreIds, ring1Ids, innerHull, outerHull };
   // Optional: export to debug (recommended).
