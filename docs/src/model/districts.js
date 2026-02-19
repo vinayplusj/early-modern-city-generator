@@ -1,5 +1,5 @@
 // docs/src/model/districts.js
-import { centroid, pointInPolyOrOn } from "../geom/poly.js";
+import { centroid, pointInPolyOrOn, segIntersect } from "../geom/poly.js";
 import { isPoint } from "../geom/primitives.js";
 
 function angle(cx, cy, p) {
@@ -330,6 +330,105 @@ function polyAreaSigned(poly) {
   return a * 0.5;
 }
 
+function loopBBox(loop) {
+  if (!Array.isArray(loop) || loop.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of loop) {
+    if (!p) continue;
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+function loopPerimeter(loop) {
+  if (!Array.isArray(loop) || loop.length < 2) return 0;
+  let s = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    if (!a || !b) continue;
+    s += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return s;
+}
+
+function loopMinMaxEdge(loop) {
+  if (!Array.isArray(loop) || loop.length < 2) return { min: 0, max: 0 };
+  let min = Infinity;
+  let max = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    if (!a || !b) continue;
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    min = Math.min(min, d);
+    max = Math.max(max, d);
+  }
+  if (!Number.isFinite(min)) min = 0;
+  return { min, max };
+}
+
+function loopSelfIntersectionCount(loop) {
+  // O(n^2) edge intersection test, skipping adjacent edges and shared vertices.
+  if (!Array.isArray(loop) || loop.length < 4) return 0;
+
+  const n = loop.length;
+  let count = 0;
+
+  for (let i = 0; i < n; i++) {
+    const a1 = loop[i];
+    const a2 = loop[(i + 1) % n];
+    if (!a1 || !a2) continue;
+
+    for (let j = i + 1; j < n; j++) {
+      // Edges: (i,i+1) and (j,j+1)
+      // Skip same edge and adjacent edges.
+      if (j === i) continue;
+      if (j === (i + 1) % n) continue;
+      if ((i === (j + 1) % n)) continue;
+
+      const b1 = loop[j];
+      const b2 = loop[(j + 1) % n];
+      if (!b1 || !b2) continue;
+
+      // Skip if they share endpoints (common vertex).
+      if (a1 === b1 || a1 === b2 || a2 === b1 || a2 === b2) continue;
+
+      if (segIntersect(a1, a2, b1, b2)) count += 1;
+    }
+  }
+  return count;
+}
+
+function loopMetrics(loop) {
+  const bbox = loopBBox(loop);
+  const areaSigned = polyAreaSigned(loop);
+  const areaAbs = Math.abs(areaSigned);
+  const perimeter = loopPerimeter(loop);
+  const { min: minEdgeLen, max: maxEdgeLen } = loopMinMaxEdge(loop);
+
+  const dx = bbox ? (bbox.maxX - bbox.minX) : 0;
+  const dy = bbox ? (bbox.maxY - bbox.minY) : 0;
+  const diag = Math.hypot(dx, dy);
+
+  const selfIntersections = loopSelfIntersectionCount(loop);
+
+  return {
+    n: Array.isArray(loop) ? loop.length : 0,
+    areaSigned,
+    areaAbs,
+    perimeter,
+    minEdgeLen,
+    maxEdgeLen,
+    bbox,
+    diag,
+    selfIntersections,
+  };
+}
+
 function buildLoopsFromPolys(polys) {
   // Edge-cancellation union boundary via quantised point keys.
   // Returns all boundary loops (outer + holes, if any).
@@ -491,14 +590,23 @@ function buildLoopsFromPolys(polys) {
  * @param {number[]} memberWardIds - ward ids included in the feature
  * @returns {{ loops: Array, holeCount: number, outerLoop: Array|null }}
  */
-export function buildDistrictLoopsFromWards(wards, memberWardIds) {
+export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
   const wardArr = Array.isArray(wards) ? wards : [];
   const ids = Array.isArray(memberWardIds)
     ? memberWardIds.map(Number).filter(Number.isFinite)
     : [];
 
   if (wardArr.length === 0 || ids.length === 0) {
-    return { loops: [], holeCount: 0, outerLoop: null };
+    return {
+      loops: [],
+      holeCount: 0,
+      outerLoop: null,
+      outerLoopIndex: -1,
+      loopMeta: [],
+      warnings: [],
+      preferPointInside: null,
+    };
+
   }
 
   const idSet = new Set(ids);
@@ -521,24 +629,72 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds) {
 
   const loops = buildLoopsFromPolys(polys);
 
+  const loopMeta = loops.map(loopMetrics);
+  const warnings = [];
+  const preferPoint = (opts && opts.preferPoint) ? opts.preferPoint : null;
+  const label = (opts && typeof opts.label === "string") ? opts.label : "";
+
   if (loops.length === 0) {
     return { loops: [], holeCount: 0, outerLoop: null };
   }
 
-  // Outer loop = max absolute area
+  // Outer loop = max absolute area (keep behaviour unchanged for now)
   let outerLoop = null;
+  let outerLoopIndex = -1;
   let outerAbs = -Infinity;
-
-  for (const l of loops) {
+  
+  for (let i = 0; i < loops.length; i++) {
+    const l = loops[i];
     const aa = Math.abs(polyAreaSigned(l));
     if (aa > outerAbs) {
       outerAbs = aa;
       outerLoop = l;
+      outerLoopIndex = i;
+    }
+  }
+
+  // Quality warnings (no behaviour change)
+  for (let i = 0; i < loopMeta.length; i++) {
+    const m = loopMeta[i];
+    if (!m || !Number.isFinite(m.diag) || m.diag <= 0) continue;
+  
+    if (m.selfIntersections > 0) {
+      warnings.push(`loop[${i}] selfIntersections=${m.selfIntersections}${label ? " " + label : ""}`);
+    }
+  
+    const tinyEdge = m.diag * 1e-4;
+    if (m.minEdgeLen > 0 && m.minEdgeLen < tinyEdge) {
+      warnings.push(`loop[${i}] minEdgeLen=${m.minEdgeLen.toFixed(4)} < diag*1e-4 (${tinyEdge.toFixed(4)})${label ? " " + label : ""}`);
+    }
+  }
+  
+  let preferPointInside = null;
+  if (preferPoint) {
+    const insideFlags = loops.map((l) => pointInPolyOrOn(preferPoint, l, 1e-6));
+    const anyContains = insideFlags.some(Boolean);
+    const outerContains = (outerLoopIndex >= 0) ? insideFlags[outerLoopIndex] : false;
+    preferPointInside = outerContains;
+  
+    if (anyContains && !outerContains) {
+      const candidates = insideFlags
+        .map((v, i) => (v ? i : -1))
+        .filter((i) => i >= 0);
+      warnings.push(
+        `outerLoop does not contain preferPoint; candidate loops that do: [${candidates.join(", ")}]${label ? " " + label : ""}`
+      );
     }
   }
 
   if (!outerLoop) {
-    return { loops, holeCount: 0, outerLoop: null };
+    return {
+      loops,
+      holeCount: 0,
+      outerLoop: null,
+      outerLoopIndex: -1,
+      loopMeta,
+      warnings,
+      preferPointInside,
+    };
   }
 
   // Holes: loop centroid inside outer loop
@@ -549,5 +705,17 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds) {
     if (isPoint(c) && pointInPolyOrOn(c, outerLoop, 1e-6)) holeCount += 1;
   }
 
-  return { loops, holeCount, outerLoop };
+  if (holeCount > 0) {
+    warnings.push(`holeCount=${holeCount}${label ? " " + label : ""}`);
+  }
+
+  return {
+    loops,
+    holeCount,
+    outerLoop,
+    outerLoopIndex,
+    loopMeta,
+    warnings,
+    preferPointInside,
+  };
 }
