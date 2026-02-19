@@ -60,6 +60,35 @@ import { buildDistrictLoopsFromWards } from "../districts.js";
 import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 
+function wardHasValidPoly(w) {
+  const poly = (Array.isArray(w?.poly) && w.poly.length >= 3) ? w.poly
+    : (Array.isArray(w?.polygon) && w.polygon.length >= 3) ? w.polygon
+    : null;
+
+  return Array.isArray(poly) && poly.length >= 3;
+}
+
+function idsWithMissingPoly(wards, ids) {
+  const out = [];
+  for (const id of ids) {
+    if (!Number.isFinite(id)) continue;
+    const w = wards.find((x) => x?.id === id);
+    if (!wardHasValidPoly(w)) out.push(id);
+  }
+  out.sort((a, b) => a - b);
+  return out;
+}
+
+function filterIdsWithValidPoly(wards, ids) {
+  const out = [];
+  for (const id of ids) {
+    if (!Number.isFinite(id)) continue;
+    const w = wards.find((x) => x?.id === id);
+    if (wardHasValidPoly(w)) out.push(id);
+  }
+  out.sort((a, b) => a - b);
+  return out;
+}
 
 function wardAdjacency(wards) {
   // Build adjacency by shared polygon edges using quantised point keys.
@@ -456,7 +485,18 @@ export function assignWardRoles({ wards, centre, params }) {
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
 
-  // Convert core ids to indices (adjacency is index-based).
+  // Geometry-valid membership for hull construction only.
+ const coreIdsForHull = filterIdsWithValidPoly(wardsCopy, coreIds);
+ const coreSkippedMissingPoly = idsWithMissingPoly(wardsCopy, coreIds);
+ 
+ if (coreSkippedMissingPoly.length) {
+   console.warn("[Hulls] coreIds skipped (missing poly)", {
+     skippedCount: coreSkippedMissingPoly.length,
+     skippedIds: coreSkippedMissingPoly,
+   });
+ }
+
+ // Convert core ids to indices (adjacency is index-based).
   const coreIdxSet = new Set(
     coreIds
       .map((id) => idToIndex.get(id))
@@ -477,17 +517,31 @@ export function assignWardRoles({ wards, centre, params }) {
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
 
+ const ring1IdsForHull = filterIdsWithValidPoly(wardsCopy, ring1Ids);
+ const ring1SkippedMissingPoly = idsWithMissingPoly(wardsCopy, ring1Ids);
+ 
+ if (ring1SkippedMissingPoly.length) {
+   console.warn("[Hulls] ring1Ids skipped (missing poly)", {
+     skippedCount: ring1SkippedMissingPoly.length,
+     skippedIds: ring1SkippedMissingPoly,
+   });
+ }
+
  // Inner Hull = boundary loops of the core region.
- const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds, {
+ const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIdsForHull, {
    preferPoint: centre,
    label: "fort.innerHull(core)",
  });
  
  // Outer Hull = boundary loops of the (core + ring1) region.
- const outerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds.concat(ring1Ids), {
-   preferPoint: centre,
-   label: "fort.outerHull(core+ring1)",
- });
+ const outerHull = buildDistrictLoopsFromWards(
+   wardsCopy,
+   coreIdsForHull.concat(ring1IdsForHull),
+   {
+     preferPoint: centre,
+     label: "fort.outerHull(core+ring1)",
+   }
+ );
 
    // ---- Investigation: find non-member wards enclosed by outerLoop ----
   // Goal: explain holeCount by identifying wards whose centroid is inside outerHull.outerLoop
@@ -647,8 +701,16 @@ export function assignWardRoles({ wards, centre, params }) {
   }
   // ---- End investigation block ----
 
-  const fortHulls = { coreIds, ring1Ids, innerHull, outerHull };
-  // Optional: export to debug (recommended).
+ const fortHulls = {
+   coreIds,          // logical membership
+   ring1Ids,         // logical membership
+   coreIdsForHull,   // geometry-valid membership used for hulls
+   ring1IdsForHull,  // geometry-valid membership used for hulls
+   innerHull,
+   outerHull,
+ };
+
+ // Optional: export to debug (recommended).
  if (typeof window !== "undefined") {
    window.__wardDebug = window.__wardDebug || {};
    window.__wardDebug.last = window.__wardDebug.last || {};
