@@ -4,7 +4,7 @@
 // Extracted from generate.js without functional changes.
 
 import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
-import { warpPolylineRadial, buildWarpField, enforceInsidePolyAlongRay } from "../warp.js";
+import { warpPolylineRadial, buildWarpField, enforceInsidePolyAlongRay, enforceOutsidePolyAlongRay } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 
@@ -135,6 +135,13 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
+  // Hard invariant: curtain wall must remain outside the inner hull.
+  if (wallWarped && innerHull) {
+    // Use the same margin concept as the clamp, but apply as a post-condition.
+    const margin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
+    enforceOutsidePolyAlongRay(wallWarped, { x: cx, y: cy }, innerHull, margin, 1e-6);
+  }
+
   if (warpWall?.wallWarped && Array.isArray(wallBaseDense)) {
     const a = wallBaseDense[0];
     const b = warpWall.wallWarped[0];
@@ -206,7 +213,14 @@ export function runWarpFieldStage({
         warpOutworks.clampMaxMargin
       );
 
+      // Hard invariant: outworks must remain inside the outer hull polygon.
+      // Deterministic “shrink-to-fit” along centre rays.
+      if (outerHullLoop) {
+        enforceInsidePolyAlongRay(clamped, centrePt, outerHullLoop, 1e-6, 24);
+      }
+      
       return clamped;
+
     });
   }
 
