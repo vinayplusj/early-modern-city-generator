@@ -201,7 +201,7 @@ export function runWarpFieldStage({
         warpedByOutworks,
         centrePt,
         curtainMinField,
-        warpOutworks.maxField,
+        null, // do not enforce radial max for bastions
         2,
         warpOutworks.clampMaxMargin
       );
@@ -210,22 +210,6 @@ export function runWarpFieldStage({
     });
   }
 
-  // Always enforce the bastion band when we have an outer clamp.
-  
-  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
-    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-  
-      return clampPolylineRadial(
-        poly,
-        { x: cx, y: cy },
-        curtainMinField,           // may be null; clamp function should treat null as "no min"
-        warpOutworks.maxField,
-        2,                         // min margin from curtain
-        warpOutworks.clampMaxMargin
-      );
-    });
-  }
   // ---------------------------------------------------------------------------
   // Per-bastion / per-ravelin shrink-to-fit (independent).
   //
@@ -576,8 +560,10 @@ export function runWarpFieldStage({
     return { poly: bestPoly, T: bestT, movedBefore: before.moved, overshoot, W: Wc };
   }
 
-  // Apply per-bastion shrink independently, then re-clamp to the band.
-  if (warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
+    // Apply per-bastion shrink independently, then re-clamp to the band.
+  const enableRadialMaxShrink = (warpOutworks?.params?.enableRadialMaxShrink === true);
+  
+  if (enableRadialMaxShrink && warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
     const shrinkStats = [];
 
     bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
@@ -625,14 +611,13 @@ export function runWarpFieldStage({
         W
       );
 
-
       const reclamped = clampPolylineRadial(
         res.poly,
         centre,
         curtainMinField,
-        warpOutworks.maxField,
+        null, // do not enforce radial max for bastions
         2,
-        warpOutworks.clampMaxMargin
+        0
       );
 
       // Safety fallback.
