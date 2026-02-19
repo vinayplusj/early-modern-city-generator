@@ -78,7 +78,7 @@ const WARP_FORT = {
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
   version: "Logs for loops",
-  buildDate: "2026-02-17"8
+  buildDate: "2026-02-18"
   commit: "manual",
 };
 
