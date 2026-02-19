@@ -77,7 +77,7 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "Logs for loops",
+  version: "Hulls Logs for loops",
   buildDate: "2026-02-18",
   commit: "manual",
 };
@@ -417,8 +417,9 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   return assembleModel({
     footprint,
-    cx,
-    cy,
+    cx: (args?.centre?.x ?? cx),
+    cy: (args?.centre?.y ?? cy),
+
 
     wallBase,
     wallCurtainForDraw, 
