@@ -111,13 +111,22 @@ export function auditRadialClamp({
   }
 
   if (offendersAbove.length) {
-    console.warn("[FortWarp Audit]", name, "aboveMax sample", offendersAbove);
+    const sampleLabel = (name === "BASTIONS" && maxField)
+      ? "BASTIONS radialMaxMismatch"
+      : name;
+    
+    console.warn("[FortWarp Audit]", sampleLabel, "aboveMax sample", offendersAbove);
+
   }
 
+  const label = (name === "BASTIONS" && maxField)
+    ? "BASTIONS radialMaxMismatch"
+    : name;
+  
   if (belowMin || aboveMax) {
-    console.warn("[FortWarp Audit]", name, { belowMin, aboveMax, total });
+    console.warn("[FortWarp Audit]", label, { belowMin, aboveMax, total });
   } else {
-    console.info("[FortWarp Audit]", name, "OK", { total });
+    console.info("[FortWarp Audit]", label, "OK", { total });
   }
 }
 
