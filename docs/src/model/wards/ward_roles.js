@@ -477,11 +477,17 @@ export function assignWardRoles({ wards, centre, params }) {
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
 
-  // Inner Hull = boundary loops of the core region.
-  const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds);
-
-  // Outer Hull = boundary loops of the (core + ring1) region.
-  const outerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds.concat(ring1Ids));
+ // Inner Hull = boundary loops of the core region.
+ const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds, {
+   preferPoint: centre,
+   label: "fort.innerHull(core)",
+ });
+ 
+ // Outer Hull = boundary loops of the (core + ring1) region.
+ const outerHull = buildDistrictLoopsFromWards(wardsCopy, coreIds.concat(ring1Ids), {
+   preferPoint: centre,
+   label: "fort.outerHull(core+ring1)",
+ });
 
   const fortHulls = { coreIds, ring1Ids, innerHull, outerHull };
   // Optional: export to debug (recommended).
