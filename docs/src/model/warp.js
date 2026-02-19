@@ -171,7 +171,7 @@ export function warpPolylineRadial(poly, centre, field, params) {
   return warpedPoly;
 }
 
-export function enforceInsidePolyAlongRay(points, centre, poly, eps = 1e-6, iters = 24) {
+export function enforceInsidePolyAlongRay(points, centre, poly, eps = 1e-6, iters = 36) {
   // Deterministic: for each point outside poly, pull it inward along the ray from centre
   // until it is inside (or on) the polygon.
   if (!centre || !poly || !Array.isArray(points)) return points;
@@ -208,6 +208,53 @@ export function enforceInsidePolyAlongRay(points, centre, poly, eps = 1e-6, iter
     // Move point to the last-known inside location.
     p.x = centre.x + (p.x - centre.x) * lo;
     p.y = centre.y + (p.y - centre.y) * lo;
+  }
+
+  return points;
+}
+
+export function enforceOutsidePolyAlongRay(points, centre, poly, margin = 0, eps = 1e-6) {
+  // Deterministic: for each point that is inside (or on) poly, push it outward
+  // along the ray from centre until it is outside by at least margin (in radial terms).
+  //
+  // Invariant assumed: centre is inside poly. If not, we do not “fix” here.
+  if (!centre || !Array.isArray(points)) return points;
+  if (!Array.isArray(poly) || poly.length < 3) return points;
+  if (!pointInPolyOrOn(centre, poly, eps)) return points;
+
+  const m = Number.isFinite(margin) ? margin : 0;
+
+  for (const p of points) {
+    if (!p) continue;
+
+    // If already outside, do nothing.
+    if (!pointInPolyOrOn(p, poly, eps)) continue;
+
+    const dx = p.x - centre.x;
+    const dy = p.y - centre.y;
+    const r = Math.hypot(dx, dy);
+    if (r < 1e-9) continue;
+
+    const theta = Math.atan2(dy, dx);
+
+    // Radius of the hull boundary along this ray.
+    const rHull = sampleRadiusAtAngle(centre, theta, poly);
+    if (!Number.isFinite(rHull)) continue;
+
+    const rMin = rHull + m;
+
+    // Move outward only if needed.
+    if (r < rMin) {
+      const s = rMin / r;
+      p.x = centre.x + dx * s;
+      p.y = centre.y + dy * s;
+      continue;
+    }
+
+    // If point is inside due to numerical edge cases but r >= rMin, push a tiny bit.
+    const s = (r + Math.max(1e-6, m * 0.0)) / r;
+    p.x = centre.x + dx * s;
+    p.y = centre.y + dy * s;
   }
 
   return points;
