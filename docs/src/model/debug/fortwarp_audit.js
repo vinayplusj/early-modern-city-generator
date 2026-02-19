@@ -82,6 +82,49 @@ export function auditRadialClamp({
     }
   }
 
+  // --- Extra diagnostics: show a few offending points (audit only) ---
+  const offendersAbove = [];
+  if (Array.isArray(bastionPolys) && clampMaxPoly && centre) {
+    const maxShow = 8; // keep logs small and deterministic
+    let polyIdx = 0;
+  
+    for (const poly of bastionPolys) {
+      if (!Array.isArray(poly)) { polyIdx += 1; continue; }
+  
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i];
+        if (!p) continue;
+  
+        // These helpers must already exist in your audit:
+        // - radialBandDistanceToPoly(centre, p, clampMaxPoly) or similar.
+        // If your audit computes "aboveMax" by some other method, use the same method here to get excess > 0.
+        const dMax = bandMaxDistanceAtPoint(centre, p, clampMaxPoly); // <-- use your existing max-distance function
+        const dp = Math.hypot(p.x - centre.x, p.y - centre.y);
+        const excess = dp - dMax;
+  
+        if (excess > 1e-6) {
+          offendersAbove.push({
+            polyIdx,
+            ptIdx: i,
+            excess: +excess.toFixed(3),
+            r: +dp.toFixed(3),
+            rMax: +dMax.toFixed(3),
+            x: +p.x.toFixed(2),
+            y: +p.y.toFixed(2),
+          });
+          if (offendersAbove.length >= maxShow) break;
+        }
+      }
+  
+      if (offendersAbove.length >= maxShow) break;
+      polyIdx += 1;
+    }
+  }
+  
+  if (offendersAbove.length) {
+    console.warn("[FortWarp Audit] BASTIONS aboveMax sample", offendersAbove);
+  }
+
   if (belowMin || aboveMax) {
     console.warn("[FortWarp Audit]", name, { belowMin, aboveMax, total });
   } else {
