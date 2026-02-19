@@ -554,7 +554,52 @@ export function assignWardRoles({ wards, centre, params }) {
  outerHull._memberIdsForHull = outerIdsForHull0;
  innerHull._memberIdsForHull = coreIdsForHull;
 
-// ---- Outer hull closure: promote enclosed wards (geometry-valid) and rebuild once ----
+ function signedArea(poly) {
+   if (!Array.isArray(poly) || poly.length < 3) return 0;
+   let a = 0;
+   for (let i = 0; i < poly.length; i++) {
+     const p = poly[i];
+     const q = poly[(i + 1) % poly.length];
+     a += (p.x * q.y) - (q.x * p.y);
+   }
+   return 0.5 * a;
+ }
+ 
+ function selectOuterLoopDeterministic(hull, preferPoint) {
+   const loops = hull?.loops;
+   if (!Array.isArray(loops) || loops.length === 0) return null;
+ 
+   // Prefer loops that contain the centre, then choose largest by absolute area.
+   const scored = [];
+   for (let i = 0; i < loops.length; i++) {
+     const loop = loops[i];
+     if (!Array.isArray(loop) || loop.length < 3) continue;
+ 
+     const contains =
+       preferPoint &&
+       Number.isFinite(preferPoint.x) &&
+       Number.isFinite(preferPoint.y) &&
+       pointInPolyOrOn(preferPoint, loop, 1e-6);
+ 
+     scored.push({
+       i,
+       contains: contains ? 1 : 0,
+       areaAbs: Math.abs(signedArea(loop)),
+     });
+   }
+ 
+   if (scored.length === 0) return null;
+ 
+   scored.sort((a, b) => {
+     if (a.contains !== b.contains) return b.contains - a.contains; // centre-containing first
+     if (a.areaAbs !== b.areaAbs) return b.areaAbs - a.areaAbs;     // largest area next
+     return a.i - b.i;                                             // stable tie-break
+   });
+ 
+   return scored[0].i;
+ }
+
+ // ---- Outer hull closure: promote enclosed wards (geometry-valid) and rebuild once ----
 let outerHullFinal = outerHull;
 let outerIdsForHullFinal = outerIdsForHull0;
 
@@ -623,7 +668,39 @@ if ((outerHullFinal?.holeCount ?? 0) > 0) {
   }
 }
 
-// ---- Investigation: log enclosed non-members on the final outer loop ----
+ // Step 2: if holes still remain, force a single outer loop deterministically.
+ // This keeps downstream wall warping stable (one curtain trace).
+ if ((outerHullFinal?.holeCount ?? 0) > 0 && Array.isArray(outerHullFinal?.loops) && outerHullFinal.loops.length > 1) {
+   const chosenIdx = selectOuterLoopDeterministic(outerHullFinal, centre);
+ 
+   if (Number.isInteger(chosenIdx)) {
+     const chosen = outerHullFinal.loops[chosenIdx];
+ 
+     console.warn("[Hulls] outerHull forcing single outerLoop (ignoring interior loops)", {
+       holeCountBefore: outerHullFinal.holeCount,
+       loopsBefore: outerHullFinal.loops.length,
+       chosenLoopIndex: chosenIdx,
+       chosenLoopAreaAbs: +Math.abs(signedArea(chosen)).toFixed(3),
+     });
+ 
+     // Preserve original loops for debugging.
+     outerHullFinal._originalLoops = outerHullFinal.loops;
+ 
+     // Collapse to one loop and clear hole flags.
+     outerHullFinal.loops = [chosen];
+     outerHullFinal.outerLoopIndex = 0;
+     outerHullFinal.outerLoop = chosen;
+     outerHullFinal.holeCount = 0;
+     outerHullFinal._forcedSingleLoop = true;
+     outerHullFinal._forcedSingleLoopChosenIndex = chosenIdx;
+
+     if (Array.isArray(outerHullFinal.warnings)) {
+       outerHullFinal.warnings = outerHullFinal.warnings.filter((w) => !String(w).includes("holeCount="));
+     }
+   }
+ }
+
+ // ---- Investigation: log enclosed non-members on the final outer loop ----
 {
   const outerLoop = outerHullFinal?.outerLoop;
   const memberSet = new Set(outerIdsForHullFinal);
@@ -729,14 +806,21 @@ if ((outerHullFinal?.holeCount ?? 0) > 0) {
     });
   }
 
-  if (enclosedFinal.length > 0) {
-    console.warn("[Hulls] outerHull enclosed non-members (final)", {
-      holeCount: outerHullFinal?.holeCount ?? null,
-      members: outerIdsForHullFinal.length,
-      enclosedCount: enclosedFinal.length,
-      enclosedIds: enclosedFinal,
-    });
-  }
+ if ((outerHullFinal?.holeCount ?? 0) > 0 && enclosedFinal.length > 0) {
+   console.warn("[Hulls] outerHull enclosed non-members (final)", {
+     holeCount: outerHullFinal?.holeCount ?? null,
+     members: outerIdsForHullFinal.length,
+     enclosedCount: enclosedFinal.length,
+     enclosedIds: enclosedFinal,
+   });
+ } else if (enclosedFinal.length > 0) {
+   console.info("[Hulls] outerHull enclosed non-members (final, no-holes)", {
+     members: outerIdsForHullFinal.length,
+     enclosedCount: enclosedFinal.length,
+     enclosedIds: enclosedFinal,
+    forcedSingleLoop: !!outerHullFinal?._forcedSingleLoop,
+   });
+ }
 }
 // ---- End closure + investigation ----
 
