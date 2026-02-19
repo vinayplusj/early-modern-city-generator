@@ -5,7 +5,7 @@
 
 import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField, enforceInsidePolyAlongRay } from "../warp.js";
-import { auditRadialClamp } from "../debug/fortwarp_audit.js";
+import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 
 /**
@@ -709,6 +709,13 @@ export function runWarpFieldStage({
       maxMargin: warpOutworks?.clampMaxMargin,
       debugEnabled: true,
     });
+    auditPolyContainment({
+      name: "BASTIONS",
+      polys: bastionPolysWarpedSafe,
+      containerPoly: outerHullLoop, // the same loop used for enforcement
+      debugEnabled: true,
+});
+
   }
   // ---------------------------------------------------------------------------
   // Final composite wall for rendering:
