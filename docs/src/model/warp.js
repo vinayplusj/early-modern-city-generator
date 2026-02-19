@@ -1,5 +1,6 @@
 // docs/src/model/warp.js
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
+import { pointInPolyOrOn } from "../geom/poly.js";
 
 export function buildWarpField({ centre, wallPoly, targetPoly = null, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
@@ -197,6 +198,47 @@ export function warpPolylineRadial(poly, centre, field, params) {
   return warpedPoly;
 }
 
+export function enforceInsidePolyAlongRay(points, centre, poly, eps = 1e-6, iters = 24) {
+  // Deterministic: for each point outside poly, pull it inward along the ray from centre
+  // until it is inside (or on) the polygon.
+  if (!centre || !poly || !Array.isArray(points)) return points;
+  if (!Array.isArray(poly) || poly.length < 3) return points;
+
+  for (const p of points) {
+    if (!p) continue;
+
+    const inside = pointInPolyOrOn(p, poly, eps);
+    if (inside) continue;
+
+    // Binary search along segment centre -> p for the last inside point.
+    let lo = 0.0; // at centre, assumed inside for your fort hull use case
+    let hi = 1.0;
+
+    // If centre is not inside, do not try to “fix” deterministically here.
+    // That indicates a deeper hull problem.
+    if (!pointInPolyOrOn(centre, poly, eps)) continue;
+
+    for (let k = 0; k < iters; k++) {
+      const mid = (lo + hi) * 0.5;
+      const q = {
+        x: centre.x + (p.x - centre.x) * mid,
+        y: centre.y + (p.y - centre.y) * mid,
+      };
+
+      if (pointInPolyOrOn(q, poly, eps)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    // Move point to the last-known inside location.
+    p.x = centre.x + (p.x - centre.x) * lo;
+    p.y = centre.y + (p.y - centre.y) * lo;
+  }
+
+  return points;
+}
 
 /* ---------- helpers ---------- */
 
