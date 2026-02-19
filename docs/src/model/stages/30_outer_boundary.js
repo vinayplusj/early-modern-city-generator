@@ -14,12 +14,7 @@ export function runOuterBoundaryStage(footprint, newTown) {
   // Milestone deferral: New Town must not affect the city outer boundary.
   // Keep the parameter for now to avoid re-threading call sites.
   void newTown;
-  const extra = [];
-
-  const outerBoundary = convexHull([
-    ...footprint,
-    ...extra,
-  ]);
+  const outerBoundary = convexHull(footprint);
 
   return outerBoundary;
 }
