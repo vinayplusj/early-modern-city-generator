@@ -20,19 +20,6 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
   // This is a strong signal that centre is outside wallPoly or wallPoly is degenerate/self-intersecting.
   let rFortNullSamples = 0;
 
-  // ---- DEBUG: check whether wall vertices fall inside the warp band ----
-  if (params.debug) {
-    let inside = 0;
-    let outside = 0;
-  
-    for (const p of wallPoly) {
-      const rr = Math.hypot(p.x - centre.x, p.y - centre.y);
-      if (rr >= params.bandInner && rr <= params.bandOuter) inside++;
-      else outside++;
-    }
-  }
-
-
   for (let i = 0; i < N; i++) {
     const theta = (i / N) * Math.PI * 2;
     thetas[i] = theta;
@@ -57,9 +44,6 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
     // After rTarget backfill loop, before delta computation:
 
-    if (params.debug && districtsUse.length > 0 && i % 120 === 0) {
-      districtAtAngle(theta, districtsUse);
-    }
   }
   
   if (params.debug && districtsUse.length > 0) {
@@ -119,17 +103,6 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
     delta[i] = clamp(raw, -params.maxIn, params.maxOut);
   }
   
-  // ---- DEBUG: delta range ----
-  if (params.debug) {
-    let minD = Infinity;
-    let maxD = -Infinity;
-  
-    for (let i = 0; i < delta.length; i++) {
-      if (!Number.isFinite(delta[i])) continue;
-      minD = Math.min(minD, delta[i]);
-      maxD = Math.max(maxD, delta[i]);
-    }
-  }
 
   for (let i = 0; i < N; i++) {
     if (!Number.isFinite(delta[i])) delta[i] = 0;
@@ -263,8 +236,12 @@ function sampleRadiusAtAngle(centre, theta, poly) {
 
 function raySegHit(o, d, a, b) {
   const hit = raySegmentIntersection(o, d, a, b);
-  if (!hit || hit.type !== "hit") return null;
-  return hit.tRay;
+  if (!hit) return null;
+
+  if (Number.isFinite(hit.tRay)) return hit.tRay;
+  if (hit.type === "hit" && Number.isFinite(hit.tRay)) return hit.tRay;
+
+  return null;
 }
 
 function targetRadiusAtAngle(centre, theta, districts, rFort, params) {
