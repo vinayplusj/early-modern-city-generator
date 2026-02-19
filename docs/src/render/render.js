@@ -30,7 +30,7 @@ function drawPolyline(ctx, poly, opts = {}) {
   if (!ctx || !Array.isArray(poly) || poly.length < 2) return;
 
   const {
-    stroke = "rgba(255,255,255,0.9)",
+    stroke = "rgba(255,255,255,1.0)",
     width = 2,
     closed = true,
   } = opts;
@@ -127,7 +127,7 @@ export function render(ctx, model) {
 
   // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
   drawPolyline(ctx, bastionHull, {
-    stroke: "rgba(255,255,0,0.95)", // bright yellow for visibility
+    stroke: "rgba(255,255,0,1.0)", // bright yellow for visibility
     width: 3,
     closed: true,
   });
@@ -141,14 +141,14 @@ export function render(ctx, model) {
   
       // Inner hull (core wards boundary)
       drawPolyline(ctx, inner, {
-        stroke: "rgba(255,0,255,0.9)",
+        stroke: "rgba(255,0,255,1.0)",
         width: 2,
         closed: true,
       });
   
       // Outer hull (core + ring1 wards boundary)
       drawPolyline(ctx, outer, {
-        stroke: "rgba(0,180,255,0.6)",
+        stroke: "rgba(0,180,255,1.0)",
         width: 2,
         closed: true,
       });
@@ -166,7 +166,7 @@ export function render(ctx, model) {
       if (!Array.isArray(poly) || poly.length < 3) continue;
   
       let fill = null;
-      if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.30)";     // core = cyan tint
+      if (coreIds.has(w.id)) fill = "rgba(255,0,255,1.0)";     // core = cyan tint
       else continue;
   
       ctx.save();
