@@ -153,8 +153,12 @@ export function render(ctx, model) {
     const wards = window.model?.wards || [];
   
     for (const w of wards) {
-      const poly = w?.poly;
-      if (!Array.isArray(poly) || poly.length < 3) continue;
+      const poly =
+        (Array.isArray(w?.poly) && w.poly.length >= 3) ? w.poly :
+        (Array.isArray(w?.polygon) && w.polygon.length >= 3) ? w.polygon :
+        null;
+      
+      if (!poly) continue;
   
       let fill = null;
       if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.50)";     // core = cyan tint
@@ -187,13 +191,11 @@ export function render(ctx, model) {
     site,
   });
   // ---- Debug: draw wards overlay LAST so ids/edges are on top ----
-  drawWardsDebug(ctx, {
+    drawWardsDebug(ctx, {
     wards: model?.wards || [],
     wardSeeds: model?.wardSeeds || [],
     wardRoleIndices: model?.wardRoleIndices || null,
     anchors: A,
-    hideWardIds: false, // must be false so ids draw
-  });
-
+    hideWardIds: false,
   });
 }
