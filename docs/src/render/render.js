@@ -186,13 +186,14 @@ export function render(ctx, model) {
     anchors: A,
     site,
   });
-   // ---- Debug: draw wards overlay LAST so ids/edges are on top ----
+  // ---- Debug: draw wards overlay LAST so ids/edges are on top ----
   drawWardsDebug(ctx, {
     wards: model?.wards || [],
     wardSeeds: model?.wardSeeds || [],
     wardRoleIndices: model?.wardRoleIndices || null,
     anchors: A,
-    hideWardIds: false, // IMPORTANT: false (not truthy) so ids draw
+    hideWardIds: false, // must be false so ids draw
   });
 
+  });
 }
