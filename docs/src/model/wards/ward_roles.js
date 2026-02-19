@@ -519,6 +519,115 @@ export function assignWardRoles({ wards, centre, params }) {
     }
 
     enclosedNonMembers.sort((a, b) => a - b);
+    // ---- Extra investigation log 1: farthest members in (core + ring1) ----
+    const coreSet = new Set(coreIds);
+    const ring1Set = new Set(ring1Ids);
+
+    const membersDetailed = [];
+    for (const w of wardsCopy) {
+      const id = w?.id;
+      if (!Number.isFinite(id)) continue;
+      if (!memberIds.has(id)) continue;
+
+      const d = Number.isFinite(w?.distToCentre) ? w.distToCentre : null;
+      const role = (typeof w?.role === "string") ? w.role : null;
+
+      membersDetailed.push({
+        id,
+        role,
+        distToCentre: d,
+        isCore: coreSet.has(id),
+        isRing1: ring1Set.has(id),
+      });
+    }
+
+    // Sort descending by distToCentre (nulls last).
+    membersDetailed.sort((a, b) => {
+      const da = Number.isFinite(a.distToCentre) ? a.distToCentre : -Infinity;
+      const db = Number.isFinite(b.distToCentre) ? b.distToCentre : -Infinity;
+      return db - da;
+    });
+
+    const topFarthest = membersDetailed.slice(0, 10).map((m) => ({
+      id: m.id,
+      role: m.role,
+      dist: Number.isFinite(m.distToCentre) ? +m.distToCentre.toFixed(3) : null,
+      isCore: m.isCore,
+      isRing1: m.isRing1,
+    }));
+
+    const dists = membersDetailed
+      .map((m) => m.distToCentre)
+      .filter((v) => Number.isFinite(v))
+      .sort((a, b) => a - b);
+
+    function quantile(sorted, q) {
+      if (!sorted.length) return null;
+      const i = (sorted.length - 1) * q;
+      const i0 = Math.floor(i);
+      const i1 = Math.min(sorted.length - 1, i0 + 1);
+      const t = i - i0;
+      return sorted[i0] * (1 - t) + sorted[i1] * t;
+    }
+
+    const maxDist = dists.length ? dists[dists.length - 1] : null;
+    const p95Dist = quantile(dists, 0.95);
+
+    console.info("[Hulls] outerHull members farthest (core+ring1)", {
+      members: memberIds.size,
+      maxDist: Number.isFinite(maxDist) ? +maxDist.toFixed(3) : null,
+      p95Dist: Number.isFinite(p95Dist) ? +p95Dist.toFixed(3) : null,
+      topFarthest,
+    });
+
+    // ---- Extra investigation log 2: enclosed non-members adjacency to ring1 ----
+    // We count how many ring1 wards each enclosed ward touches in the ward adjacency graph.
+    // This helps identify whether the donut is formed by a tight belt of ring1 cells.
+    let adjacency = null;
+
+    // If your function already has an adjacency object in scope, reuse it.
+    // Otherwise compute it deterministically here.
+    if (typeof adj !== "undefined" && adj) adjacency = adj;
+    else if (typeof wardAdj !== "undefined" && wardAdj) adjacency = wardAdj;
+    else if (typeof wardAdjacency === "function") adjacency = wardAdjacency(wardsCopy);
+
+    const enclosedAdj = [];
+    if (adjacency && enclosedNonMembers.length) {
+      for (const id of enclosedNonMembers) {
+        const idx = idToIndex.get(id);
+        const neighArr =
+          Number.isInteger(idx) && Array.isArray(adjacency[idx]) ? adjacency[idx] : [];
+
+        let ring1Touch = 0;
+        for (const nbIdx of neighArr) {
+          const nbId = wardsCopy[nbIdx]?.id;
+          if (Number.isFinite(nbId) && ring1Set.has(nbId)) ring1Touch += 1;
+        }
+
+        // Lookup role/dist for convenience (stable).
+        const w = Number.isInteger(idx) ? wardsCopy[idx] : null;
+        const role = (w && typeof w.role === "string") ? w.role : null;
+        const d = (w && Number.isFinite(w.distToCentre)) ? w.distToCentre : null;
+
+        enclosedAdj.push({
+          id,
+          role,
+          dist: Number.isFinite(d) ? +d.toFixed(3) : null,
+          ring1Touch,
+        });
+      }
+
+      enclosedAdj.sort((a, b) => (b.ring1Touch - a.ring1Touch) || (a.id - b.id));
+
+      console.info("[Hulls] outerHull enclosed non-members adjacency (to ring1)", {
+        enclosedCount: enclosedAdj.length,
+        top: enclosedAdj.slice(0, 15),
+      });
+    } else if (enclosedNonMembers.length) {
+      console.warn("[Hulls] outerHull enclosed non-members adjacency unavailable (no adjacency map)", {
+        enclosedCount: enclosedNonMembers.length,
+      });
+    }
 
     if (enclosedNonMembers.length > 0) {
       console.warn("[Hulls] outerHull enclosed non-members (centroid in outerLoop)", {
@@ -540,7 +649,7 @@ export function assignWardRoles({ wards, centre, params }) {
 
   const fortHulls = { coreIds, ring1Ids, innerHull, outerHull };
   // Optional: export to debug (recommended).
-   if (typeof window !== "undefined" && window.__wardDebug?.last){
+ if (typeof window !== "undefined") {
    window.__wardDebug = window.__wardDebug || {};
    window.__wardDebug.last = window.__wardDebug.last || {};
    window.__wardDebug.last.fortHulls = fortHulls;
@@ -569,7 +678,7 @@ export function assignWardRoles({ wards, centre, params }) {
     if (idx >= 0) wardsCopy[idx].ringIndex = i;
   }
 
-  if (typeof window !== "undefined" && window.__wardDebug?.last){
+ if (typeof window !== "undefined") {
    window.__wardDebug = window.__wardDebug || {};
    window.__wardDebug.last = window.__wardDebug.last || {};
    const fortCore = buildDistrictLoopsFromWards(
