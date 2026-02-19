@@ -4,7 +4,7 @@
 // Extracted from generate.js without functional changes.
 
 import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
-import { warpPolylineRadial, buildWarpField } from "../warp.js";
+import { warpPolylineRadial, buildWarpField, enforceInsidePolyAlongRay } from "../warp.js";
 import { auditRadialClamp } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 
@@ -664,6 +664,10 @@ export function runWarpFieldStage({
       for (const p of poly) {
         if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
       }
+    // Hard invariant: outworks (bastions) must remain inside the outer hull.
+    // This is a deterministic post-clamp enforcement along centre rays.
+    enforceInsidePolyAlongRay(poly, { x: cx, y: cy }, outerHullLoop, 1e-6, 24);
+
     }
 
     if (pts.length >= 3) {
