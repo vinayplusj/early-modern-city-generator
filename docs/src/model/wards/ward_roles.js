@@ -496,12 +496,13 @@ export function assignWardRoles({ wards, centre, params }) {
    });
  }
 
- // Convert core ids to indices (adjacency is index-based).
-  const coreIdxSet = new Set(
-    coreIds
-      .map((id) => idToIndex.get(id))
-      .filter((idx) => Number.isInteger(idx))
-  );
+ // Use geometry-valid core for any adjacency-driven expansion.
+ // This prevents null-poly core wards from pulling ring1 membership.
+ const coreIdxSet = new Set(
+   coreIdsForHull
+     .map((id) => idToIndex.get(id))
+     .filter((idx) => Number.isInteger(idx))
+ );
 
   // Ring 1 = immediate neighbours of ANY core ward, excluding the core wards themselves.
   const ring1IdxSet = new Set();
@@ -527,6 +528,13 @@ export function assignWardRoles({ wards, centre, params }) {
    });
  }
 
+ // Geometry-valid member set used for hull construction and any closure logic.
+ const outerIdsForHull0 = coreIdsForHull.concat(ring1IdsForHull).sort((a, b) => a - b);
+ const outerIdSetForHull0 = new Set(outerIdsForHull0);
+ 
+ // Logical member set for reporting only (may include null-poly wards).
+ const outerIdSetLogical = new Set(coreIds.concat(ring1Ids));
+
  // Inner Hull = boundary loops of the core region.
  const innerHull = buildDistrictLoopsFromWards(wardsCopy, coreIdsForHull, {
    preferPoint: centre,
@@ -543,171 +551,206 @@ export function assignWardRoles({ wards, centre, params }) {
    }
  );
 
-   // ---- Investigation: find non-member wards enclosed by outerLoop ----
-  // Goal: explain holeCount by identifying wards whose centroid is inside outerHull.outerLoop
-  // but whose id is NOT in (coreIds ∪ ring1Ids).
-  //
-  // Determinism:
-  // - membership is a Set of numeric IDs
-  // - output is sorted by ID
-  //
-  // Invariant we are inspecting:
-  // - If outerHull.holeCount > 0, there should exist at least one non-member "island"
-  //   whose centroid lies inside the outer loop (a pocket causing an interior boundary loop).
-  const outerLoop = outerHull?.outerLoop;
-  if (Array.isArray(outerLoop) && outerLoop.length >= 3) {
-    const memberIds = new Set(coreIds.concat(ring1Ids));
-    const enclosedNonMembers = [];
+ outerHull._memberIdsForHull = outerIdsForHull0;
+ innerHull._memberIdsForHull = coreIdsForHull;
 
-    for (const w of wardsCopy) {
-      const id = w?.id;
-      if (!Number.isFinite(id)) continue;
-      if (memberIds.has(id)) continue;
+// ---- Outer hull closure: promote enclosed wards (geometry-valid) and rebuild once ----
+let outerHullFinal = outerHull;
+let outerIdsForHullFinal = outerIdsForHull0;
 
-      const c = wardCentroid(w);
-      if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
+function computeEnclosedNonMembers({ outerLoop, memberSet }) {
+  if (!Array.isArray(outerLoop) || outerLoop.length < 3) return [];
 
-      if (pointInPolyOrOn(c, outerLoop, 1e-6)) {
-        enclosedNonMembers.push(id);
+  const enclosed = [];
+  for (const w of wardsCopy) {
+    const id = w?.id;
+    if (!Number.isFinite(id)) continue;
+    if (memberSet.has(id)) continue;
+
+    // Use deterministic representative point (centroid -> poly centroid -> seed fallback).
+    const c = wardCentroid(w);
+    if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
+
+    if (pointInPolyOrOn(c, outerLoop, 1e-6)) enclosed.push(id);
+  }
+
+  enclosed.sort((a, b) => a - b);
+  return enclosed;
+}
+
+function promoteEnclosedIds({ enclosedIds, memberSet }) {
+  // Only promote wards with valid polygons (strict invariant).
+  const promoted = [];
+  for (const id of enclosedIds) {
+    if (memberSet.has(id)) continue;
+    const w = wardsCopy[idToIndex.get(id)];
+    if (!wardHasValidPoly(w)) continue;
+    memberSet.add(id);
+    promoted.push(id);
+  }
+  promoted.sort((a, b) => a - b);
+  return promoted;
+}
+
+// Step 1: if holes exist, attempt one deterministic closure pass.
+if ((outerHullFinal?.holeCount ?? 0) > 0) {
+  const outerLoop0 = outerHullFinal?.outerLoop;
+  const enclosed0 = computeEnclosedNonMembers({
+    outerLoop: outerLoop0,
+    memberSet: new Set(outerIdsForHullFinal),
+  });
+
+  // Promote enclosed wards and rebuild once, if promotion adds anything.
+  const memberSet1 = new Set(outerIdsForHullFinal);
+  const promoted = promoteEnclosedIds({ enclosedIds: enclosed0, memberSet: memberSet1 });
+
+  if (promoted.length > 0) {
+    outerIdsForHullFinal = Array.from(memberSet1).sort((a, b) => a - b);
+
+    console.warn("[Hulls] outerHull closure: promoting enclosed wards", {
+      holeCountBefore: outerHullFinal?.holeCount ?? null,
+      promotedCount: promoted.length,
+      promotedIds: promoted,
+    });
+
+    outerHullFinal = buildDistrictLoopsFromWards(wardsCopy, outerIdsForHullFinal, {
+      preferPoint: centre,
+      label: "fort.outerHull(core+ring1+closure)",
+    });
+
+    // Update debug member list on the rebuilt hull.
+    outerHullFinal._memberIdsForHull = outerIdsForHullFinal;
+  }
+}
+
+// ---- Investigation: log enclosed non-members on the final outer loop ----
+{
+  const outerLoop = outerHullFinal?.outerLoop;
+  const memberSet = new Set(outerIdsForHullFinal);
+
+  const enclosedFinal = computeEnclosedNonMembers({ outerLoop, memberSet });
+
+  // Use logical sets for isCore / isRing1 flags (reporting only).
+  const coreSet = new Set(coreIds);
+  const ring1Set = new Set(ring1Ids);
+
+  // Members farthest (reporting: based on final hull member IDs).
+  const membersDetailed = [];
+  for (const id of outerIdsForHullFinal) {
+    const idx = idToIndex.get(id);
+    const w = Number.isInteger(idx) ? wardsCopy[idx] : null;
+    const d = (w && Number.isFinite(w.distToCentre)) ? w.distToCentre : null;
+    const role = (w && typeof w.role === "string") ? w.role : null;
+
+    membersDetailed.push({
+      id,
+      role,
+      distToCentre: d,
+      isCore: coreSet.has(id),
+      isRing1: ring1Set.has(id),
+    });
+  }
+
+  membersDetailed.sort((a, b) => {
+    const da = Number.isFinite(a.distToCentre) ? a.distToCentre : -Infinity;
+    const db = Number.isFinite(b.distToCentre) ? b.distToCentre : -Infinity;
+    return db - da;
+  });
+
+  const topFarthest = membersDetailed.slice(0, 10).map((m) => ({
+    id: m.id,
+    role: m.role,
+    dist: Number.isFinite(m.distToCentre) ? +m.distToCentre.toFixed(3) : null,
+    isCore: m.isCore,
+    isRing1: m.isRing1,
+  }));
+
+  const dists = membersDetailed
+    .map((m) => m.distToCentre)
+    .filter((v) => Number.isFinite(v))
+    .sort((a, b) => a - b);
+
+  function quantile(sorted, q) {
+    if (!sorted.length) return null;
+    const i = (sorted.length - 1) * q;
+    const i0 = Math.floor(i);
+    const i1 = Math.min(sorted.length - 1, i0 + 1);
+    const t = i - i0;
+    return sorted[i0] * (1 - t) + sorted[i1] * t;
+  }
+
+  const maxDist = dists.length ? dists[dists.length - 1] : null;
+  const p95Dist = quantile(dists, 0.95);
+
+  console.info("[Hulls] outerHull members farthest (final)", {
+    members: outerIdsForHullFinal.length,
+    maxDist: Number.isFinite(maxDist) ? +maxDist.toFixed(3) : null,
+    p95Dist: Number.isFinite(p95Dist) ? +p95Dist.toFixed(3) : null,
+    topFarthest,
+  });
+
+  // Enclosed non-members adjacency to ring1 (same as your prior logic).
+  let adjacency = null;
+  if (typeof adj !== "undefined" && adj) adjacency = adj;
+  else if (typeof wardAdj !== "undefined" && wardAdj) adjacency = wardAdj;
+  else if (typeof wardAdjacency === "function") adjacency = wardAdjacency(wardsCopy);
+
+  const enclosedAdj = [];
+  if (adjacency && enclosedFinal.length) {
+    const ring1Set2 = new Set(ring1Ids);
+    for (const id of enclosedFinal) {
+      const idx = idToIndex.get(id);
+      const neighArr =
+        Number.isInteger(idx) && Array.isArray(adjacency[idx]) ? adjacency[idx] : [];
+
+      let ring1Touch = 0;
+      for (const nbIdx of neighArr) {
+        const nbId = wardsCopy[nbIdx]?.id;
+        if (Number.isFinite(nbId) && ring1Set2.has(nbId)) ring1Touch += 1;
       }
-    }
 
-    enclosedNonMembers.sort((a, b) => a - b);
-    // ---- Extra investigation log 1: farthest members in (core + ring1) ----
-    const coreSet = new Set(coreIds);
-    const ring1Set = new Set(ring1Ids);
+      const w = Number.isInteger(idx) ? wardsCopy[idx] : null;
+      const role = (w && typeof w.role === "string") ? w.role : null;
+      const d = (w && Number.isFinite(w.distToCentre)) ? w.distToCentre : null;
 
-    const membersDetailed = [];
-    for (const w of wardsCopy) {
-      const id = w?.id;
-      if (!Number.isFinite(id)) continue;
-      if (!memberIds.has(id)) continue;
-
-      const d = Number.isFinite(w?.distToCentre) ? w.distToCentre : null;
-      const role = (typeof w?.role === "string") ? w.role : null;
-
-      membersDetailed.push({
+      enclosedAdj.push({
         id,
         role,
-        distToCentre: d,
-        isCore: coreSet.has(id),
-        isRing1: ring1Set.has(id),
+        dist: Number.isFinite(d) ? +d.toFixed(3) : null,
+        ring1Touch,
       });
     }
 
-    // Sort descending by distToCentre (nulls last).
-    membersDetailed.sort((a, b) => {
-      const da = Number.isFinite(a.distToCentre) ? a.distToCentre : -Infinity;
-      const db = Number.isFinite(b.distToCentre) ? b.distToCentre : -Infinity;
-      return db - da;
+    enclosedAdj.sort((a, b) => (b.ring1Touch - a.ring1Touch) || (a.id - b.id));
+
+    console.info("[Hulls] outerHull enclosed non-members adjacency (final)", {
+      enclosedCount: enclosedAdj.length,
+      top: enclosedAdj.slice(0, 15),
     });
-
-    const topFarthest = membersDetailed.slice(0, 10).map((m) => ({
-      id: m.id,
-      role: m.role,
-      dist: Number.isFinite(m.distToCentre) ? +m.distToCentre.toFixed(3) : null,
-      isCore: m.isCore,
-      isRing1: m.isRing1,
-    }));
-
-    const dists = membersDetailed
-      .map((m) => m.distToCentre)
-      .filter((v) => Number.isFinite(v))
-      .sort((a, b) => a - b);
-
-    function quantile(sorted, q) {
-      if (!sorted.length) return null;
-      const i = (sorted.length - 1) * q;
-      const i0 = Math.floor(i);
-      const i1 = Math.min(sorted.length - 1, i0 + 1);
-      const t = i - i0;
-      return sorted[i0] * (1 - t) + sorted[i1] * t;
-    }
-
-    const maxDist = dists.length ? dists[dists.length - 1] : null;
-    const p95Dist = quantile(dists, 0.95);
-
-    console.info("[Hulls] outerHull members farthest (core+ring1)", {
-      members: memberIds.size,
-      maxDist: Number.isFinite(maxDist) ? +maxDist.toFixed(3) : null,
-      p95Dist: Number.isFinite(p95Dist) ? +p95Dist.toFixed(3) : null,
-      topFarthest,
-    });
-
-    // ---- Extra investigation log 2: enclosed non-members adjacency to ring1 ----
-    // We count how many ring1 wards each enclosed ward touches in the ward adjacency graph.
-    // This helps identify whether the donut is formed by a tight belt of ring1 cells.
-    let adjacency = null;
-
-    // If your function already has an adjacency object in scope, reuse it.
-    // Otherwise compute it deterministically here.
-    if (typeof adj !== "undefined" && adj) adjacency = adj;
-    else if (typeof wardAdj !== "undefined" && wardAdj) adjacency = wardAdj;
-    else if (typeof wardAdjacency === "function") adjacency = wardAdjacency(wardsCopy);
-
-    const enclosedAdj = [];
-    if (adjacency && enclosedNonMembers.length) {
-      for (const id of enclosedNonMembers) {
-        const idx = idToIndex.get(id);
-        const neighArr =
-          Number.isInteger(idx) && Array.isArray(adjacency[idx]) ? adjacency[idx] : [];
-
-        let ring1Touch = 0;
-        for (const nbIdx of neighArr) {
-          const nbId = wardsCopy[nbIdx]?.id;
-          if (Number.isFinite(nbId) && ring1Set.has(nbId)) ring1Touch += 1;
-        }
-
-        // Lookup role/dist for convenience (stable).
-        const w = Number.isInteger(idx) ? wardsCopy[idx] : null;
-        const role = (w && typeof w.role === "string") ? w.role : null;
-        const d = (w && Number.isFinite(w.distToCentre)) ? w.distToCentre : null;
-
-        enclosedAdj.push({
-          id,
-          role,
-          dist: Number.isFinite(d) ? +d.toFixed(3) : null,
-          ring1Touch,
-        });
-      }
-
-      enclosedAdj.sort((a, b) => (b.ring1Touch - a.ring1Touch) || (a.id - b.id));
-
-      console.info("[Hulls] outerHull enclosed non-members adjacency (to ring1)", {
-        enclosedCount: enclosedAdj.length,
-        top: enclosedAdj.slice(0, 15),
-      });
-    } else if (enclosedNonMembers.length) {
-      console.warn("[Hulls] outerHull enclosed non-members adjacency unavailable (no adjacency map)", {
-        enclosedCount: enclosedNonMembers.length,
-      });
-    }
-
-    if (enclosedNonMembers.length > 0) {
-      console.warn("[Hulls] outerHull enclosed non-members (centroid in outerLoop)", {
-        holeCount: outerHull?.holeCount ?? null,
-        members: memberIds.size,
-        enclosedCount: enclosedNonMembers.length,
-        enclosedIds: enclosedNonMembers,
-      });
-    } else if ((outerHull?.holeCount ?? 0) > 0) {
-      // If holeCount is reported but we cannot find enclosed centroids,
-      // the hole may be due to geometric artefacts (degenerate loops, centroid test mismatch, etc.).
-      console.warn("[Hulls] outerHull holeCount>0 but no enclosed non-member centroids found", {
-        holeCount: outerHull?.holeCount ?? null,
-        members: memberIds.size,
-      });
-    }
   }
-  // ---- End investigation block ----
+
+  if (enclosedFinal.length > 0) {
+    console.warn("[Hulls] outerHull enclosed non-members (final)", {
+      holeCount: outerHullFinal?.holeCount ?? null,
+      members: outerIdsForHullFinal.length,
+      enclosedCount: enclosedFinal.length,
+      enclosedIds: enclosedFinal,
+    });
+  }
+}
+// ---- End closure + investigation ----
 
  const fortHulls = {
-   coreIds,          // logical membership
-   ring1Ids,         // logical membership
-   coreIdsForHull,   // geometry-valid membership used for hulls
-   ring1IdsForHull,  // geometry-valid membership used for hulls
+   coreIds,           // logical membership
+   ring1Ids,          // logical membership
+   coreIdsForHull,    // geometry-valid membership used for hulls
+   ring1IdsForHull,   // geometry-valid membership used for hulls
+ 
+   // New: actual geometry-valid members used for the final outer hull (after closure)
+   outerIdsForHull: outerIdsForHullFinal,
+ 
    innerHull,
-   outerHull,
+   outerHull: outerHullFinal,
  };
 
  // Optional: export to debug (recommended).
