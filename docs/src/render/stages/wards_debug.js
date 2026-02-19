@@ -21,6 +21,111 @@ function styleForRole(role) {
   return ROLE_STYLES.default;
 }
 
+function computeBboxFromWards(wards) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const w of wards) {
+    const poly = w?.poly;
+    if (!Array.isArray(poly) || poly.length < 2) continue;
+    for (const p of poly) {
+      if (!p) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function buildWardEdgeMap(wards, hideSet) {
+  const bbox = computeBboxFromWards(wards);
+  if (!bbox) return { edges: [], boundaryEdges: [] };
+
+  const dx = bbox.maxX - bbox.minX;
+  const dy = bbox.maxY - bbox.minY;
+  const diag = Math.sqrt(dx * dx + dy * dy);
+
+  // Deterministic quantisation epsilon based on scene size.
+  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
+  const inv = 1 / eps;
+
+  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
+  const edgeKey = (aKey, bKey) => (aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`);
+
+  // edgeKey -> { a:{x,y}, b:{x,y}, owners:number }
+  const map = new Map();
+
+  for (const w of wards) {
+    const id = w?.id;
+    if (Number.isFinite(id) && hideSet && hideSet.has(id)) continue;
+
+    const poly = w?.poly;
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (!a || !b) continue;
+
+      const aKey = keyOf(a);
+      const bKey = keyOf(b);
+      if (aKey === bKey) continue;
+
+      const k = edgeKey(aKey, bKey);
+      const entry = map.get(k);
+
+      if (!entry) {
+        map.set(k, { a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, owners: 1 });
+      } else {
+        entry.owners += 1;
+      }
+    }
+  }
+
+  const edges = [];
+  const boundaryEdges = [];
+
+  for (const e of map.values()) {
+    if (e.owners <= 1) boundaryEdges.push(e);
+    else edges.push(e);
+  }
+
+  return { edges, boundaryEdges };
+}
+
+function drawWardEdgesOverlay(ctx, wards, hideSet) {
+  const { edges, boundaryEdges } = buildWardEdgeMap(wards, hideSet);
+
+  ctx.save();
+
+  // Interior shared edges (draw once, high contrast).
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  for (const e of edges) {
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.lineTo(e.b.x, e.b.y);
+  }
+  ctx.stroke();
+
+  // Boundary edges (slightly thicker, slightly brighter).
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = 2.25;
+
+  ctx.beginPath();
+  for (const e of boundaryEdges) {
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.lineTo(e.b.x, e.b.y);
+  }
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function pointAtId(wards, id) {
   if (!wards || id == null) return null;
   const w = wards.find((x) => x && x.id === id);
@@ -92,6 +197,10 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors
 
   ctx.restore();
 
+  // 1b) Ward edges overlay (draw every unique edge once)
+  // This makes shared borders visible even when role strokes blend into fills.
+  drawWardEdgesOverlay(ctx, wards, hide);
+
   // 2) Ward seeds (draw from wards so we can skip hidden wards)
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -141,4 +250,42 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors
 
     ctx.restore();
   }
+
+  // 4) Ward ids (optional)
+  if (!hideWardIds) {
+    drawWardIds(ctx, wards, hide);
+  }
+ }
+
+function drawWardIds(ctx, wards, hideSet) {
+  if (!Array.isArray(wards) || wards.length === 0) return;
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "12px monospace";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.strokeStyle = "rgba(0,0,0,0.7)";
+  ctx.lineWidth = 3;
+
+  for (const w of wards) {
+    const id = w?.id;
+    if (!Number.isFinite(id)) continue;
+    if (hideSet && hideSet.has(id)) continue;
+
+    const p =
+      (w?.centroid && Number.isFinite(w.centroid.x) && Number.isFinite(w.centroid.y))
+        ? w.centroid
+        : (w?.seed && Number.isFinite(w.seed.x) && Number.isFinite(w.seed.y))
+        ? w.seed
+        : null;
+
+    if (!p) continue;
+
+    const s = String(id);
+    ctx.strokeText(s, p.x, p.y);
+    ctx.fillText(s, p.x, p.y);
+  }
+
+  ctx.restore();
 }
