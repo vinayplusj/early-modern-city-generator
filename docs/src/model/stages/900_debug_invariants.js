@@ -52,6 +52,13 @@ export function runDebugInvariantsStage({
 
     console.info("[Routing] edge flags", { activeEdges, waterEdges, citadelEdges });
   }
+  console.info("[Hulls] gate", {
+    cx,
+    cy,
+    cxFinite: Number.isFinite(cx),
+    cyFinite: Number.isFinite(cy),
+    hasFortHulls: !!fortHulls,
+  });
 
   // ---------------- Fort hull diagnostics (log-only) ----------------
   if (Number.isFinite(cx) && Number.isFinite(cy) && fortHulls) {
