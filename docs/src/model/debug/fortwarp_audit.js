@@ -3,6 +3,8 @@
 // Debug helpers for auditing radial clamp results in FortWarp.
 // Behaviour must remain identical to the legacy inline helpers in generate.js.
 
+import { pointInPolyOrOn } from "../../geom/poly.js";
+
 function sampleOnRing(thetas, values, theta) {
   const n = thetas.length;
   if (!n) return null;
@@ -116,5 +118,58 @@ export function auditRadialClamp({
     console.warn("[FortWarp Audit]", name, { belowMin, aboveMax, total });
   } else {
     console.info("[FortWarp Audit]", name, "OK", { total });
+  }
+}
+
+export function auditPolyContainment({
+  name,
+  polys,
+  containerPoly,
+  eps = 1e-6,
+  debugEnabled,
+}) {
+  if (!debugEnabled) return;
+  if (!Array.isArray(polys) || !Array.isArray(containerPoly) || containerPoly.length < 3) return;
+
+  let outside = 0;
+  let total = 0;
+
+  const offenders = [];
+  const maxShow = 8;
+
+  let polyIdx = 0;
+  for (const poly of polys) {
+    if (!Array.isArray(poly)) { polyIdx += 1; continue; }
+
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i];
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+
+      const inside = pointInPolyOrOn(p, containerPoly, eps);
+      if (!inside) {
+        outside += 1;
+        if (offenders.length < maxShow) {
+          offenders.push({
+            polyIdx,
+            ptIdx: i,
+            x: +p.x.toFixed(2),
+            y: +p.y.toFixed(2),
+          });
+        }
+      }
+      total += 1;
+    }
+
+    polyIdx += 1;
+  }
+
+  if (offenders.length) {
+    console.warn("[FortWarp Audit]", name, "outside container sample", offenders);
+  }
+
+  if (outside) {
+    console.warn("[FortWarp Audit]", name, "POLY CONTAINMENT FAIL", { outside, total });
+  } else {
+    console.info("[FortWarp Audit]", name, "POLY CONTAINMENT OK", { total });
   }
 }
