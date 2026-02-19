@@ -77,8 +77,8 @@ const WARP_FORT = {
 // ---------------- Build / version stamp ----------------
 // Update this string when you make meaningful changes.
 export const GENERATOR_BUILD = {
-  version: "Hulls Logs for loops",
-  buildDate: "2026-02-18",
+  version: "623",
+  buildDate: "2026-02-19",
   commit: "manual",
 };
 
@@ -401,9 +401,14 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   const roadGraph = roadsOut.roadGraph;
   const blocks = roadsOut.blocks;
 
-  // ---------------- Anchor invariants (debug only) ----------------
+  // ---------------- Anchor + hull invariants (debug only) ----------------
   runDebugInvariantsStage({
     debugEnabled: WARP_FORT.debug,
+  
+    cx,
+    cy,
+    fortHulls,
+  
     vorGraph,
     primaryRoads,
     anchors,
