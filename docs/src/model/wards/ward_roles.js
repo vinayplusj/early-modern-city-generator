@@ -610,14 +610,7 @@ export function assignWardRoles({ wards, centre, params }) {
       isRing1: m.isRing1,
     }));
 
-    console.log("[Hulls] ring sets", {
-     coreCount: coreSet?.length ?? 0,
-     ring1Count: ring1Set?.length ?? 0,
-     // ring2Count: ring2Set?.length ?? 0,
-     // ring1Ids: ring1Set?.map(w => w.id)?.slice(0, 60),
-   });
-
-   const dists = membersDetailed
+    const dists = membersDetailed
       .map((m) => m.distToCentre)
       .filter((v) => Number.isFinite(v))
       .sort((a, b) => a - b);
@@ -705,26 +698,6 @@ export function assignWardRoles({ wards, centre, params }) {
         members: memberIds.size,
       });
     }
-   // Diagnostic: why are these enclosed wards not members?
-   // Show their ring classification + how strongly they touch ring1.
-   if (enclosed && enclosed.length) {
-     const detail = enclosed
-       .map((w) => ({
-         id: w.id,
-         dist: w.dist,
-         isCore: !!w.isCore,
-         isRing1: !!w.isRing1,
-         ring1Touch: w.ring1Touch ?? 0,
-         role: w.role ?? null
-       }))
-       .sort((a, b) => (b.ring1Touch - a.ring1Touch) || (b.dist - a.dist));
-   
-     console.log("[Hulls] enclosed non-members detail", {
-       count: detail.length,
-       top: detail.slice(0, 25)
-     });
-   }
-
   }
   // ---- End investigation block ----
 
@@ -934,4 +907,3 @@ if (typeof window !== "undefined") {
   window.__wardDebug.buildDistrictLoopsFromWards = buildDistrictLoopsFromWards;
 
 }
-
