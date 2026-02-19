@@ -122,6 +122,7 @@ export function render(ctx, model) {
     ring,
     ring2,
     warp,
+    fortHulls: model?.fortHulls ?? null,
   });
 
   // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
