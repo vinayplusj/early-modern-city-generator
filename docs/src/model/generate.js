@@ -417,8 +417,8 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
 
   return assembleModel({
     footprint,
-    cx: (args?.centre?.x ?? cx),
-    cy: (args?.centre?.y ?? cy),
+    cx: (centre?.x ?? cx),
+    cy: (centre?.y ?? cy),
 
 
     wallBase,
