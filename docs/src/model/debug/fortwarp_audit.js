@@ -54,6 +54,10 @@ export function auditRadialClamp({
 }) {
   if (!debugEnabled) return;
   if ((!minField && !maxField) || !Array.isArray(polys)) return;
+  if (polys.length === 0) {
+    console.info("[FortWarp Audit]", name, "SKIP (no polys)");
+    return;
+  }
 
   let belowMin = 0;
   let aboveMax = 0;
