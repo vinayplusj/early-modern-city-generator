@@ -11,8 +11,10 @@ import { convexHull } from "../../geom/hull.js";
  * @returns {Array<{x:number,y:number}>} outerBoundary
  */
 export function runOuterBoundaryStage(footprint, newTown) {
-  const extra =
-    (newTown && newTown.poly && newTown.poly.length >= 3) ? newTown.poly : [];
+  // Milestone deferral: New Town must not affect the city outer boundary.
+  // Keep the parameter for now to avoid re-threading call sites.
+  void newTown;
+  const extra = [];
 
   const outerBoundary = convexHull([
     ...footprint,
