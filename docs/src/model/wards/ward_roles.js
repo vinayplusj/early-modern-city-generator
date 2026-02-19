@@ -613,7 +613,7 @@ export function assignWardRoles({ wards, centre, params }) {
     console.log("[Hulls] ring sets", {
      coreCount: coreSet?.length ?? 0,
      ring1Count: ring1Set?.length ?? 0,
-     ring2Count: ring2Set?.length ?? 0,
+     // ring2Count: ring2Set?.length ?? 0,
      ring1Ids: ring1Set?.map(w => w.id)?.slice(0, 60),
    });
 
