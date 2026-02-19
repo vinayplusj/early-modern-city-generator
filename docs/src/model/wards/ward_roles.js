@@ -127,8 +127,13 @@ function wardAdjacency(wards) {
   const edgeOwners = new Map();
 
   for (let wi = 0; wi < wards.length; wi++) {
-    const poly = wards[wi]?.poly;
-    if (!Array.isArray(poly) || poly.length < 3) continue;
+    const poly =
+     (Array.isArray(wards[wi]?.poly) && wards[wi].poly.length >= 3) ? wards[wi].poly :
+     (Array.isArray(wards[wi]?.polygon) && wards[wi].polygon.length >= 3) ? wards[wi].polygon :
+     null;
+   
+   if (!poly) continue;
+
 
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i];
@@ -628,7 +633,10 @@ function promoteEnclosedIds({ enclosedIds, memberSet }) {
   const promoted = [];
   for (const id of enclosedIds) {
     if (memberSet.has(id)) continue;
-    const w = wardsCopy[idToIndex.get(id)];
+    const idx = idToIndex.get(id);
+    if (!Number.isInteger(idx)) continue;
+    const w = wardsCopy[idx];
+
     if (!wardHasValidPoly(w)) continue;
     memberSet.add(id);
     promoted.push(id);
@@ -637,15 +645,16 @@ function promoteEnclosedIds({ enclosedIds, memberSet }) {
   return promoted;
 }
 
-// Step 1: if holes exist, attempt one deterministic closure pass.
-if ((outerHullFinal?.holeCount ?? 0) > 0) {
+// Step 1 (OPTIONAL): closure by promoting enclosed wards.
+// Option 1: keep this OFF (default). We want outer hull membership = core + ring1 only.
+// Holes are handled by selecting a single deterministic outer loop (Step 2).
+if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_enclosed") {
   const outerLoop0 = outerHullFinal?.outerLoop;
   const enclosed0 = computeEnclosedNonMembers({
     outerLoop: outerLoop0,
     memberSet: new Set(outerIdsForHullFinal),
   });
 
-  // Promote enclosed wards and rebuild once, if promotion adds anything.
   const memberSet1 = new Set(outerIdsForHullFinal);
   const promoted = promoteEnclosedIds({ enclosedIds: enclosed0, memberSet: memberSet1 });
 
@@ -663,14 +672,13 @@ if ((outerHullFinal?.holeCount ?? 0) > 0) {
       label: "fort.outerHull(core+ring1+closure)",
     });
 
-    // Update debug member list on the rebuilt hull.
     outerHullFinal._memberIdsForHull = outerIdsForHullFinal;
   }
 }
 
  // Step 2: if holes still remain, force a single outer loop deterministically.
  // This keeps downstream wall warping stable (one curtain trace).
- if ((outerHullFinal?.holeCount ?? 0) > 0 && Array.isArray(outerHullFinal?.loops) && outerHullFinal.loops.length > 1) {
+ if (Array.isArray(outerHullFinal?.loops) && outerHullFinal.loops.length > 1) {
    const chosenIdx = selectOuterLoopDeterministic(outerHullFinal, centre);
  
    if (Number.isInteger(chosenIdx)) {
@@ -987,11 +995,16 @@ function setRole(wards, id, role) {
 }
 
 function normaliseParams(params) {
- return {
-   innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
-   maxPlugAdds: clampInt(params?.maxPlugAdds ?? 0, 0, 20),
-   outsideBands: params?.outsideBands,
- };
+  return {
+    innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
+    maxPlugAdds: clampInt(params?.maxPlugAdds ?? 0, 0, 20),
+
+    // Option 1 default: do NOT promote enclosed wards into outer hull membership.
+    // Set to "promote_enclosed" only when you explicitly want legacy behaviour.
+    outerHullClosureMode: String(params?.outerHullClosureMode || "none"),
+
+    outsideBands: params?.outsideBands,
+  };
 }
 
 function dist(a, b) {
