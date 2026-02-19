@@ -46,6 +46,9 @@ export function runWarpFieldStage({
 
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
   
+  const outerHullLoop =
+    (Array.isArray(fortOuterHull) && fortOuterHull.length >= 3) ? fortOuterHull : null;
+
   // Keep behaviour: generator stores warp config on ctx.params.warpFort.
   ctx.params.warpFort = warpFortParams;
   
@@ -638,6 +641,12 @@ export function runWarpFieldStage({
         return poly;
       }
 
+      // Hard invariant: outworks must remain inside the outer hull polygon.
+      // Deterministic “shrink-to-fit” along centre rays.
+      if (outerHullLoop) {
+        enforceInsidePolyAlongRay(reclamped, centre, outerHullLoop, 1e-6, 24);
+      }
+
       shrinkStats.push({
         idx,
         T: res.T,
@@ -664,9 +673,6 @@ export function runWarpFieldStage({
       for (const p of poly) {
         if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
       }
-    // Hard invariant: outworks (bastions) must remain inside the outer hull.
-    // This is a deterministic post-clamp enforcement along centre rays.
-    enforceInsidePolyAlongRay(poly, { x: cx, y: cy }, outerHullLoop, 1e-6, 24);
 
     }
 
