@@ -2,7 +2,16 @@
 
 import { drawPoly } from "../helpers/draw.js";
 
-export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bastionPolys, ring, ring2, warp }) {
+export function drawWallsAndRingsAndWarp(ctx, {
+  wall,
+  wallCurtain,
+  wallBase,
+  bastionPolys,
+  ring,
+  ring2,
+  warp,
+  fortHulls,
+}) {
   // Curtain wall (warped) - draw first
   if (wallCurtain && wallCurtain.length >= 3) {
     const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#00ff00";
@@ -51,6 +60,47 @@ export function drawWallsAndRingsAndWarp(ctx, { wall, wallCurtain, wallBase, bas
   const ww = warp?.wall;
   const showWarpOverlay = (ww?.params?.renderOverlay === true);
   
+  // Hull loops overlay (debug) - opt-in only
+  const showHullLoops = (ww?.params?.renderHullLoops === true);
+  
+  if (showHullLoops && fortHulls) {
+    const innerLoops = fortHulls?.innerHull?.loops;
+    const outerLoops = fortHulls?.outerHull?.loops;
+  
+    const innerIdx = fortHulls?.innerHull?.outerLoopIndex ?? -1;
+    const outerIdx = fortHulls?.outerHull?.outerLoopIndex ?? -1;
+  
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.55;
+  
+    // Inner hull loops: faint, selected loop stronger
+    if (Array.isArray(innerLoops)) {
+      for (let i = 0; i < innerLoops.length; i++) {
+        const loop = innerLoops[i];
+        if (!Array.isArray(loop) || loop.length < 3) continue;
+  
+        ctx.strokeStyle = (i === innerIdx) ? "rgba(255,0,255,0.95)" : "rgba(255,0,255,0.35)";
+        drawPoly(ctx, loop, true);
+        ctx.stroke();
+      }
+    }
+  
+    // Outer hull loops: faint, selected loop stronger
+    if (Array.isArray(outerLoops)) {
+      for (let i = 0; i < outerLoops.length; i++) {
+        const loop = outerLoops[i];
+        if (!Array.isArray(loop) || loop.length < 3) continue;
+  
+        ctx.strokeStyle = (i === outerIdx) ? "rgba(0,180,255,0.90)" : "rgba(0,180,255,0.30)";
+        drawPoly(ctx, loop, true);
+        ctx.stroke();
+      }
+    }
+  
+    ctx.restore();
+  }
+
   if (showWarpOverlay && ww.wallOriginal && ww.wallWarped) {
     ctx.save();
     ctx.lineWidth = 2;
