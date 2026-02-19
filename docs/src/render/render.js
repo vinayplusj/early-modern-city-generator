@@ -90,25 +90,16 @@ export function render(ctx, model) {
   drawBackground(ctx);
   drawWater(ctx, { water });
 
+  if (typeof window !== "undefined") {
+    window.model = model;
+  }
+
   drawFootprintAndDebugOverlays(ctx, {
     footprint,
     outerBoundary,
     districts: model?.districts,
     blocks: null,
   });
-
-  // Wards debug rendering disabled (keep road rendering only)
-  const showWardsDebug = false;
-  
-  if (showWardsDebug) {
-    drawWardsDebug(ctx, {
-      wards: model?.wards,
-      wardSeeds: model?.wardSeeds,
-      wardRoleIndices: model?.wardRoleIndices,
-      anchors: A,
-      // If you later want to hide only ring1 wards, pass hideWardIds here.
-    });
-  }
 
   drawBoundaryAndNewTown(ctx, { outerBoundary, newTown });
 
@@ -157,7 +148,7 @@ export function render(ctx, model) {
   if (typeof window !== "undefined") {
     const fh = window.__wardDebug?.last?.fortHulls;
     const coreIds = new Set(fh?.coreIds || []);
-    const ring1Ids = new Set(fh?.ring1Ids || []);
+    // const ring1Ids = new Set(fh?.ring1Ids || []);
   
     const wards = window.model?.wards || [];
   
@@ -166,7 +157,7 @@ export function render(ctx, model) {
       if (!Array.isArray(poly) || poly.length < 3) continue;
   
       let fill = null;
-      if (coreIds.has(w.id)) fill = "rgba(255,0,255,1.0)";     // core = cyan tint
+      if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.50)";     // core = cyan tint
       else continue;
   
       ctx.save();
@@ -185,6 +176,8 @@ export function render(ctx, model) {
   drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
 
   drawCitadel(ctx, { citadel, anchors: A });
+  // ---- Wards debug overlay (ids + unique-edge overlay) ----
+  // This must be called, otherwise wards_debug.js will never render.
 
   drawLandmarksAndCentre(ctx, {
     wallBase,
@@ -193,5 +186,13 @@ export function render(ctx, model) {
     anchors: A,
     site,
   });
- 
+   // ---- Debug: draw wards overlay LAST so ids/edges are on top ----
+  drawWardsDebug(ctx, {
+    wards: model?.wards || [],
+    wardSeeds: model?.wardSeeds || [],
+    wardRoleIndices: model?.wardRoleIndices || null,
+    anchors: A,
+    hideWardIds: false, // IMPORTANT: false (not truthy) so ids draw
+  });
+
 }
