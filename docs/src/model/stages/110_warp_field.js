@@ -1255,10 +1255,7 @@ export function runWarpFieldStage({
   // This is the only geometry that is guaranteed to match the orange bastions.
   // ---------------------------------------------------------------------------
   let wallForDraw = wallFinal;
-  
-  if (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) {
-    wallForDraw = bastionHullWarpedSafe;
-  }
+
 
   return {
     warpWall,
