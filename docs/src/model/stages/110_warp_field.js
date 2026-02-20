@@ -4,7 +4,7 @@
 // Extracted from generate.js without functional changes.
 
 import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
-import { warpPolylineRadial, buildWarpField, enforceInsidePolyAlongRay, enforceOutsidePolyAlongRay } from "../warp.js";
+import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 
@@ -121,6 +121,51 @@ function clampPolylineInsidePolyAlongRays(poly, centre, outerPoly, margin) {
     const p = poly[i];
     out[i] = (p && Number.isFinite(p.x) && Number.isFinite(p.y))
       ? clampPointInsideAlongRay(p, centre, outerPoly, margin)
+      : p;
+  }
+  return out;
+}
+// Clamp a point so it stays within a radial band:
+// - outside innerPoly by innerMargin
+// - inside the "mid" radius between innerPoly and outerPoly by midMargin
+//
+// t in [0,1]: 0 => at inner hull, 1 => at outer hull, 0.5 => halfway.
+function clampPointToMidBandAlongRay(p, centre, innerPoly, outerPoly, t, innerMargin, midMargin) {
+  const n = safeNorm(p.x - centre.x, p.y - centre.y);
+  if (!n) return p;
+
+  const dir = { x: n.x, y: n.y };
+
+  const rIn = rayPolyMaxT(centre, dir, innerPoly);
+  const rOut = rayPolyMaxT(centre, dir, outerPoly);
+  if (!Number.isFinite(rIn) || !Number.isFinite(rOut)) return p;
+  if (rOut <= rIn + 1e-6) return p;
+  
+  // Minimum radius: keep outside inner hull.
+  const rMin = rIn + (innerMargin || 0);
+
+  // Midway radius between inner and outer hulls.
+  const tt = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+  const rMid = rIn + tt * (rOut - rIn);
+
+  // Maximum radius: stay inside the midway curve (minus margin), but never below rMin.
+  const rMax = Math.max(rMin, rMid - (midMargin || 0));
+
+  if (n.m < rMin) return { x: centre.x + n.x * rMin, y: centre.y + n.y * rMin };
+  if (n.m > rMax) return { x: centre.x + n.x * rMax, y: centre.y + n.y * rMax };
+  return p;
+}
+
+function clampPolylineToMidBandAlongRays(poly, centre, innerPoly, outerPoly, t, innerMargin, midMargin) {
+  if (!Array.isArray(poly) || poly.length < 2) return poly;
+  if (!Array.isArray(innerPoly) || innerPoly.length < 3) return poly;
+  if (!Array.isArray(outerPoly) || outerPoly.length < 3) return poly;
+
+  const out = new Array(poly.length);
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    out[i] = (p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      ? clampPointToMidBandAlongRay(p, centre, innerPoly, outerPoly, t, innerMargin, midMargin)
       : p;
   }
   return out;
@@ -246,8 +291,32 @@ export function runWarpFieldStage({
   let wallWarpedSafe = wallWarped;
   
   if (Array.isArray(wallWarpedSafe) && Array.isArray(innerHull) && innerHull.length >= 3) {
-    const margin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
-    wallWarpedSafe = clampPolylineOutsidePolyAlongRays(wallWarpedSafe, { x: cx, y: cy }, innerHull, margin);
+    const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
+  
+    // First, enforce the hard invariant: outside inner hull.
+    wallWarpedSafe = clampPolylineOutsidePolyAlongRays(
+      wallWarpedSafe,
+      { x: cx, y: cy },
+      innerHull,
+      innerMargin
+    );
+  
+    // Then, enforce "not too far from inner hull" by clamping to the midway curve
+    // between inner hull and outer hull.
+    if (outerHullLoop) {
+      const tMid = Number.isFinite(ctx?.params?.warpFort?.curtainMidT) ? ctx.params.warpFort.curtainMidT : 0.5;
+      const midMargin = Number.isFinite(ctx?.params?.warpFort?.curtainMidMargin) ? ctx.params.warpFort.curtainMidMargin : 6;
+  
+      wallWarpedSafe = clampPolylineToMidBandAlongRays(
+        wallWarpedSafe,
+        { x: cx, y: cy },
+        innerHull,
+        outerHullLoop,
+        tMid,
+        innerMargin,
+        midMargin
+      );
+    }
   }
 
   if (warpWall?.wallWarped && Array.isArray(wallBaseDense)) {
