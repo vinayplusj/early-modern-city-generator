@@ -190,14 +190,14 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       }
     }
 
+    // After dropClosingPoint and optional clipping, require at least a triangle.
+    if (!Array.isArray(poly) || poly.length < 3) {
+      poly = null;
+    }
+
     const centroid = poly ? polygonCentroid(poly) : null;
     const area = poly ? Math.abs(polygonSignedArea(poly)) : null;
 
-      // After dropClosingPoint and optional clipping, require at least a triangle.
-      if (!Array.isArray(poly) || poly.length < 3) {
-        poly = null;
-      }
-     }
     wards.push({
       id,
       seed,
