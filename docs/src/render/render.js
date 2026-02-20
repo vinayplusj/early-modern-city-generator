@@ -175,13 +175,13 @@ export function render(ctx, model) {
 
       if (isCore) {
         // Core wards (inside inner hull)
-        ctx.fillStyle = "rgba(255,0,255,0.40)";
+        ctx.fillStyle = "rgba(255,0,255,0.10)";
         ctx.strokeStyle = "rgba(255,0,255,0.80)";
         ctx.lineWidth = 2.0;
       } else {
         // Ring1 wards (between inner and outer hull)
         ctx.fillStyle = "rgba(0,255,255,0.10)";
-        ctx.strokeStyle = "rgba(0,255,255,0.90)";
+        ctx.strokeStyle = "rgba(0,255,255,0.80)";
         ctx.lineWidth = 2.5;
       }
 
@@ -199,42 +199,6 @@ export function render(ctx, model) {
 
   drawRoadGraph(ctx, { roadGraph });
 
-    // ---- Debug: invariants status overlay (render-only) ----
-  {
-    const inv = model?.debug?.invariants || null;
-    if (inv && typeof inv.ok === "boolean") {
-      ctx.save();
-      ctx.font = "12px sans-serif";
-      ctx.textBaseline = "top";
-
-      const pad = 8;
-      const x = 12;
-      const y = 12;
-      const lineH = 16;
-
-      const title = inv.ok ? "Invariants: OK" : "Invariants: FAIL";
-      const lines = [title];
-
-      if (!inv.ok && Array.isArray(inv.errors)) {
-        for (let i = 0; i < Math.min(inv.errors.length, 6); i++) {
-          lines.push(String(inv.errors[i]));
-        }
-      }
-
-      const w = 360;
-      const h = pad * 2 + lines.length * lineH;
-
-      ctx.fillStyle = "rgba(0,0,0,0.65)";
-      ctx.fillRect(x, y, w, h);
-
-      ctx.fillStyle = inv.ok ? "rgba(120,255,120,1.0)" : "rgba(255,120,120,1.0)";
-      for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], x + pad, y + pad + i * lineH);
-      }
-
-      ctx.restore();
-    }
-  }
   drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
 
   drawCitadel(ctx, { citadel, anchors: A });
