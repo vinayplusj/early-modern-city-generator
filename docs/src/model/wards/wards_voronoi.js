@@ -175,7 +175,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
     /** @type {Point[]|null} */
     let poly = null;
 
-    if (cell && cell.length >= 6) {
+    if (cell && cell.length >= 4) {
       poly = [];
       // cellPolygon returns an array of [x, y] points and it repeats the first point at the end.
       // We remove the last point if it is a duplicate of the first.
@@ -193,6 +193,11 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
     const centroid = poly ? polygonCentroid(poly) : null;
     const area = poly ? Math.abs(polygonSignedArea(poly)) : null;
 
+      // After dropClosingPoint and optional clipping, require at least a triangle.
+      if (!Array.isArray(poly) || poly.length < 3) {
+        poly = null;
+      }
+     }
     wards.push({
       id,
       seed,
