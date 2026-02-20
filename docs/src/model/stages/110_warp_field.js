@@ -190,11 +190,6 @@ export function runWarpFieldStage({
 }) {
   const fortInnerHull = fortHulls?.innerHull?.outerLoop ?? null;
   const innerHull = fortInnerHull;
-    if (!Array.isArray(innerHull) || innerHull.length < 3) {
-      console.warn("[warp] innerHull missing/degenerate; wall warp will be no-op", {
-        innerHullLen: innerHull?.length,
-      });
-    }
 
   const fortOuterHull = fortHulls?.outerHull?.outerLoop ?? null;
   
@@ -320,8 +315,6 @@ export function runWarpFieldStage({
     }
   }
 
-  console.log("[warpWall] innerHull len:", fortInnerHull?.length ?? null);
-
   if (warpWall?.field?.delta) {
     let minD = Infinity, maxD = -Infinity;
     for (const d of warpWall.field.delta) {
@@ -329,7 +322,6 @@ export function runWarpFieldStage({
       minD = Math.min(minD, d);
       maxD = Math.max(maxD, d);
     }
-    console.log("[warpWall] delta range:", { minD, maxD });
   }
 
   // Curtain wall (pre-bastion) for clamp + debug.
@@ -361,16 +353,8 @@ export function runWarpFieldStage({
     const base0 = wallBaseDense[0];
   
     const raw0 = warpWall?.wallWarpedRaw?.[0];
-    if (raw0) {
-      console.log("[warpWall] base->raw first-pt shift:", Math.hypot(raw0.x - base0.x, raw0.y - base0.y));
-    }
   
     const final0 = warpWall?.wallWarped?.[0];
-    if (final0) {
-      console.log("[warpWall] base->final first-pt shift:", Math.hypot(final0.x - base0.x, final0.y - base0.y));
-    }
-  
-    console.log("[warpWall] final equals base (ref):", warpWall?.wallWarped === wallBaseDense);
   }
   
   // -------------------------------------------------------------------------
@@ -421,13 +405,8 @@ export function runWarpFieldStage({
   if (warpDebugEnabled && warpWall?.field && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
     const p = wallBaseDense[0];
     const q = warpPolylineRadial([p], { x: cx, y: cy }, warpWall.field, warpWall.params)[0];
-    console.log("[warpWall] base->final test shift:", Math.hypot(q.x - p.x, q.y - p.y));
   }
     
-  if (warpDebugEnabled) {
-    console.log("[warpWall] finalCurtainField enabled:", Boolean(finalCurtainField));
-    console.log("[warpWall] wallCurtainForDraw len:", wallCurtainForDraw?.length ?? null);
-  }
   const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
   // This is the "min clamp" for bastions (ensures points stay away from the wall base).
@@ -1409,12 +1388,6 @@ export function runWarpFieldStage({
       const rMin = tBoundary + m;
       if (n.m < rMin - 1e-6) belowMin++;
     }
-  
-    console.log("[FortWarp Audit] WALL (deterministic)", {
-      belowMin,
-      total: wallCurtainForDraw.length,
-      margin: m,
-    });
   })();
 
     auditRadialClamp({
