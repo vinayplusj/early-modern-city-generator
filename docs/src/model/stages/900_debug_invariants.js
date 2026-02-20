@@ -12,6 +12,7 @@ import { isInsidePolyOrSkip } from "../geom/is_inside_poly_or_skip.js";
  */
 export function runDebugInvariantsStage({
   debugEnabled,
+  debugOut,
 
   cx,
   cy,
@@ -29,7 +30,7 @@ export function runDebugInvariantsStage({
 }) {
 
   if (!debugEnabled) return;
-
+  const errors = [];
   const bad = [];
 
   console.info("[Routing] vorGraph", {
@@ -52,14 +53,6 @@ export function runDebugInvariantsStage({
 
     console.info("[Routing] edge flags", { activeEdges, waterEdges, citadelEdges });
   }
-  // ---------------- Fort hull diagnostics (log-only) ----------------
-  console.info("[Hulls] gate", {
-    cx,
-    cy,
-    cxFinite: Number.isFinite(cx),
-    cyFinite: Number.isFinite(cy),
-    hasFortHulls: !!fortHulls,
-  });
   
   if (Number.isFinite(cx) && Number.isFinite(cy) && fortHulls) {
     const centre = { x: cx, y: cy };
@@ -104,6 +97,12 @@ export function runDebugInvariantsStage({
         : null;
   
     console.info("[Hulls] centre containment", { centreInInner, centreInOuter });
+    if (centreInOuter === false) {
+      errors.push("Hull invalid: centre is outside outer hull");
+    }
+    if (centreInInner === false) {
+      errors.push("Hull suspicious: centre is outside inner hull");
+    }    
   
     // Inner-in-outer sampling (log-only)
     if (
@@ -172,17 +171,6 @@ export function runDebugInvariantsStage({
       console.warn("[Hulls] outer warnings", outer.warnings);
     }
   
-    // Centre containment checks (log-only)
-    const centreInInner = Array.isArray(innerOuterLoop) && innerOuterLoop.length >= 3
-      ? pointInPolyOrOn(centre, innerOuterLoop, 1e-6)
-      : null;
-  
-    const centreInOuter = Array.isArray(outerOuterLoop) && outerOuterLoop.length >= 3
-      ? pointInPolyOrOn(centre, outerOuterLoop, 1e-6)
-      : null;
-  
-    console.info("[Hulls] centre containment", { centreInInner, centreInOuter });
-  
     // Inner-in-outer sampling (log-only)
     if (Array.isArray(innerOuterLoop) && innerOuterLoop.length >= 3 &&
         Array.isArray(outerOuterLoop) && outerOuterLoop.length >= 3) {
@@ -205,6 +193,9 @@ export function runDebugInvariantsStage({
         });
       } else {
         console.info("[Hulls] inner outerLoop containment sampled OK", { samples });
+      }
+      if (fails > 0) {
+        errors.push(`Hull invalid: inner hull not contained in outer hull (sampled fails=${fails}/${samples})`);
       }
     }
   }
@@ -248,5 +239,13 @@ export function runDebugInvariantsStage({
       hasDock,
       water: waterModel?.kind,
     });
+  }
+    if (bad.length) {
+    errors.push(`Anchors invalid: ${bad.join(", ")}`);
+  }
+  const ok = (errors.length === 0);
+
+  if (debugOut && typeof debugOut === "object") {
+    debugOut.invariants = { ok, errors };
   }
 }
