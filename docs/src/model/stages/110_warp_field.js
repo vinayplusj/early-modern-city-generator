@@ -19,6 +19,112 @@ import { convexHull } from "../../geom/hull.js";
  *    bastionHullWarpedSafe
  *  }
  */
+// ---------------- Deterministic hard clamps (no field sampling) ----------------
+
+// Ray–segment intersection in 2D.
+// Ray: o + t*d, t >= 0
+// Segment: a + u*(b-a), u in [0,1]
+// Returns t (ray distance scalar) or null.
+function raySegmentT(o, d, a, b, eps = 1e-9) {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+
+  // Solve o + t d = a + u v
+  const det = d.x * (-vy) - d.y * (-vx); // det([d, -v])
+  if (Math.abs(det) < eps) return null; // parallel or nearly
+
+  const ax = a.x - o.x;
+  const ay = a.y - o.y;
+
+  const t = (ax * (-vy) - ay * (-vx)) / det;
+  const u = (d.x * ay - d.y * ax) / det;
+
+  if (t < 0) return null;
+  if (u < -eps || u > 1 + eps) return null;
+
+  return t;
+}
+
+// Farthest intersection distance along a ray from centre in direction dir.
+// This is the correct boundary radius for "inside polygon" constraints when centre is inside.
+function rayPolyMaxT(centre, dir, poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return null;
+
+  let tMax = null;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!a || !b) continue;
+
+    const t = raySegmentT(centre, dir, a, b);
+    if (t == null) continue;
+
+    if (tMax == null || t > tMax) tMax = t;
+  }
+
+  return tMax;
+}
+
+function safeNorm(vx, vy) {
+  const m = Math.hypot(vx, vy);
+  if (m < 1e-12) return null;
+  return { x: vx / m, y: vy / m, m };
+}
+
+// Clamp a single point so it is OUTSIDE innerPoly along its ray from centre.
+// If point is inside (radius smaller than boundary), it is pushed outward to boundary + margin.
+function clampPointOutsideAlongRay(p, centre, innerPoly, margin) {
+  const n = safeNorm(p.x - centre.x, p.y - centre.y);
+  if (!n) return p;
+
+  const tBoundary = rayPolyMaxT(centre, { x: n.x, y: n.y }, innerPoly);
+  if (!Number.isFinite(tBoundary)) return p;
+
+  const rMin = tBoundary + margin;
+  if (n.m >= rMin) return p;
+
+  return { x: centre.x + n.x * rMin, y: centre.y + n.y * rMin };
+}
+
+// Clamp a single point so it is INSIDE outerPoly along its ray from centre.
+// If point is outside (radius larger than boundary), it is pulled inward to boundary - margin.
+function clampPointInsideAlongRay(p, centre, outerPoly, margin) {
+  const n = safeNorm(p.x - centre.x, p.y - centre.y);
+  if (!n) return p;
+
+  const tBoundary = rayPolyMaxT(centre, { x: n.x, y: n.y }, outerPoly);
+  if (!Number.isFinite(tBoundary)) return p;
+
+  const rMax = Math.max(0, tBoundary - margin);
+  if (n.m <= rMax) return p;
+
+  return { x: centre.x + n.x * rMax, y: centre.y + n.y * rMax };
+}
+
+function clampPolylineOutsidePolyAlongRays(poly, centre, innerPoly, margin) {
+  if (!Array.isArray(poly) || poly.length < 2) return poly;
+  const out = new Array(poly.length);
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    out[i] = (p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      ? clampPointOutsideAlongRay(p, centre, innerPoly, margin)
+      : p;
+  }
+  return out;
+}
+
+function clampPolylineInsidePolyAlongRays(poly, centre, outerPoly, margin) {
+  if (!Array.isArray(poly) || poly.length < 2) return poly;
+  const out = new Array(poly.length);
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    out[i] = (p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      ? clampPointInsideAlongRay(p, centre, outerPoly, margin)
+      : p;
+  }
+  return out;
+}
 export function runWarpFieldStage({
   ctx,
   cx,
@@ -135,11 +241,13 @@ export function runWarpFieldStage({
   }
 
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  // Hard invariant: curtain wall must remain outside the inner hull.
-  if (wallWarped && innerHull) {
-    // Use the same margin concept as the clamp, but apply as a post-condition.
+  // Hard invariant (deterministic): curtain vertices must be OUTSIDE inner hull.
+  // This is a post-condition clamp that does not depend on field sampling.
+  let wallWarpedSafe = wallWarped;
+  
+  if (Array.isArray(wallWarpedSafe) && Array.isArray(innerHull) && innerHull.length >= 3) {
     const margin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
-    enforceOutsidePolyAlongRay(wallWarped, { x: cx, y: cy }, innerHull, margin, 1e-6);
+    wallWarpedSafe = clampPolylineOutsidePolyAlongRays(wallWarpedSafe, { x: cx, y: cy }, innerHull, margin);
   }
 
   if (warpWall?.wallWarped && Array.isArray(wallBaseDense)) {
@@ -162,7 +270,7 @@ export function runWarpFieldStage({
   }
 
   // Curtain wall (pre-bastion) for clamp + debug.
-  const wallCurtainForDraw = wallWarped || wallBaseDense;
+  const wallCurtainForDraw = wallWarpedSafe || wallBaseDense;
 
   const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
@@ -215,11 +323,14 @@ export function runWarpFieldStage({
 
       // Hard invariant: outworks must remain inside the outer hull polygon.
       // Deterministic “shrink-to-fit” along centre rays.
+      let clampedSafe = clamped;
+
       if (outerHullLoop) {
-        enforceInsidePolyAlongRay(clamped, centrePt, outerHullLoop, 1e-6, 24);
+        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 2;
+        clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
       }
       
-      return clamped;
+      return clampedSafe;
 
     });
   }
@@ -642,10 +753,13 @@ export function runWarpFieldStage({
 
       // Hard invariant: outworks must remain inside the outer hull polygon.
       // Deterministic “shrink-to-fit” along centre rays.
-      if (outerHullLoop) {
-        enforceInsidePolyAlongRay(reclamped, centre, outerHullLoop, 1e-6, 24);
-      }
+      let reclampedSafe = reclamped;
 
+      if (outerHullLoop) {
+        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 2;
+        reclampedSafe = clampPolylineInsidePolyAlongRays(reclampedSafe, centre, outerHullLoop, m);
+      }
+      
       shrinkStats.push({
         idx,
         T: res.T,
@@ -653,8 +767,8 @@ export function runWarpFieldStage({
         overshoot: res.overshoot,
         W: res.W,
       });
-
-      return reclamped;
+      
+      return reclampedSafe;
     });
 
     warpOutworks.bastionShrink = shrinkStats;
