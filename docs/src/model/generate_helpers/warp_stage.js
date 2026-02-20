@@ -49,7 +49,19 @@ function sampleOnRing(thetas, values, theta) {
   if (!Number.isFinite(v1)) return v0;
   return lerp(v0, v1, u);
 }
+function isValidWarpField(field) {
+  if (!field) return false;
+  if (!Number.isFinite(field.N) || field.N < 16) return false;
+  if (!Array.isArray(field.thetas) || field.thetas.length !== field.N) return false;
+  if (!Array.isArray(field.rTarget) || field.rTarget.length !== field.N) return false;
 
+  // Require at least some finite samples.
+  let finite = 0;
+  for (const v of field.rTarget) {
+    if (Number.isFinite(v)) finite++;
+  }
+  return finite >= Math.max(8, Math.floor(field.N * 0.25));
+}
 export function resampleClosedPolyline(poly, targetN) {
   if (!Array.isArray(poly) || poly.length < 3) return poly;
   const N = Math.max(3, Math.floor(targetN));
@@ -206,14 +218,28 @@ export function buildFortWarp({
   let maxField = null;
 
   if (Array.isArray(clampMinPoly) && clampMinPoly.length >= 3) {
+    // Clamp fields should be pure radius targets, with no district modulation and no bastion masks.
+    // Also, avoid any smoothing behaviour in warp.js by using smoothRadius: 0 here.
     minField = buildWarpField({
       centre,
       wallPoly,
       targetPoly: clampMinPoly,
-      districts: null,
-      bastions: null,
-      params: { ...tuned, _clampField: true, bandInner: 0, bandOuter: 0 },
+      districts: [],
+      bastions: [],
+      params: {
+        ...tuned,
+        bandInner: 0,
+        bandOuter: 0,
+        smoothRadius: 0,
+        // Keep slope clamp conservative to prevent jagged clamp rings.
+        maxStep: Number.isFinite(tuned.maxStep) ? tuned.maxStep : 2.5,
+        // No directional gain needed for clamp fields.
+        inwardGain: 1.0,
+        outwardGain: 1.0,
+      },
     });
+
+    if (!isValidWarpField(minField)) minField = null;
   }
 
   if (Array.isArray(clampMaxPoly) && clampMaxPoly.length >= 3) {
@@ -221,20 +247,33 @@ export function buildFortWarp({
       centre,
       wallPoly,
       targetPoly: clampMaxPoly,
-      districts: null,
-      bastions: null,
-      params: { ...tuned, _clampField: true, bandInner: 0, bandOuter: 0 },
+      districts: [],
+      bastions: [],
+      params: {
+        ...tuned,
+        bandInner: 0,
+        bandOuter: 0,
+        smoothRadius: 0,
+        maxStep: Number.isFinite(tuned.maxStep) ? tuned.maxStep : 2.5,
+        inwardGain: 1.0,
+        outwardGain: 1.0,
+      },
     });
-  }
 
+    if (!isValidWarpField(maxField)) maxField = null;
+  }
+  // If both fields exist but margins invert the band at some angles, clamping can jitter.
+  // Keep margins non-negative.
+  const minM = Math.max(0, Number.isFinite(clampMinMargin) ? clampMinMargin : 0);
+  const maxM = Math.max(0, Number.isFinite(clampMaxMargin) ? clampMaxMargin : 0);
   if (minField || maxField) {
     wallWarped = clampPolylineRadial(
       wallWarped,
       centre,
       minField,
       maxField,
-      clampMinMargin,
-      clampMaxMargin
+      minM,
+      maxM
     );
   }
 
