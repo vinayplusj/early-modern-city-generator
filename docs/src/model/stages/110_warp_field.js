@@ -1,3 +1,4 @@
+
 // docs/src/model/stages/110_warp_field.js
 //
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
@@ -145,7 +146,7 @@ function clampPointToMidBandAlongRay(p, centre, innerPoly, outerPoly, t, innerMa
   const rMin = rIn + (innerMargin || 0);
 
   // Midway radius between inner and outer hulls.
-  const tt = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+  const tt = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.3));
   const rMid = rIn + tt * (rOut - rIn);
 
   // Maximum radius: stay inside the midway curve (minus margin), but never below rMin.
@@ -304,7 +305,7 @@ export function runWarpFieldStage({
     // Then, enforce "not too far from inner hull" by clamping to the midway curve
     // between inner hull and outer hull.
     if (outerHullLoop) {
-      const tMid = Number.isFinite(ctx?.params?.warpFort?.curtainMidT) ? ctx.params.warpFort.curtainMidT : 0.5;
+      const tMid = Number.isFinite(ctx?.params?.warpFort?.curtainMidT) ? ctx.params.warpFort.curtainMidT : 0.3;
       const midMargin = Number.isFinite(ctx?.params?.warpFort?.curtainMidMargin) ? ctx.params.warpFort.curtainMidMargin : 6;
   
       wallWarpedSafe = clampPolylineToMidBandAlongRays(
@@ -793,7 +794,7 @@ if (warpDebugEnabled) {
   
     // Binary search smallest T that fits
     for (let it = 0; it < 22; it++) {
-      const mid = (lo + hi) * 0.5;
+      const mid = (lo * 0.7 + hi * 0.3);
       const candidate = applyWeightedShrink(poly, c, before.vecs, before.mags, mid, params, gain);
       if (polyFitsMaxField(candidate, centre, maxField, maxMargin)) {
         bestPoly = candidate;
