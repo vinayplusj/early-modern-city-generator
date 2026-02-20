@@ -52,7 +52,7 @@ export function runWardsStage({
   } = assignWardRoles({
     wards,
     centre: { x: cx, y: cy },
-    params: { innerCount: 8 },
+    params: { innerCount: 6 },
   });
 
   // Persist on ctx exactly as before.
