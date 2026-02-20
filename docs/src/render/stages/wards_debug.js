@@ -184,7 +184,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.poly || w.poly.length < 3) continue;
-    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
+    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
 
     const st = styleForRole(w.role);
     ctx.globalAlpha = st.alphaFill;
@@ -195,7 +195,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.poly || w.poly.length < 3) continue;
-    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
+    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
 
     const st = styleForRole(w.role);
     ctx.globalAlpha = st.alphaStroke;
@@ -208,7 +208,7 @@ export function drawWardsDebug(ctx, {
 
   // 1b) Ward edges overlay (draw every unique edge once)
   // This makes shared borders visible even when role strokes blend into fills.
-  drawWardEdgesOverlay(ctx, wards, hide);
+  drawWardEdgesOverlay(ctx, wards, hideSet);
 
   // 2) Ward seeds (draw from wards so we can skip hidden wards)
   ctx.save();
@@ -217,7 +217,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.seed) continue;
-    if (Number.isFinite(w.id) && hide.has(w.id)) continue;
+    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
 
     drawCircle(ctx, w.seed, 2);
     ctx.fill();
@@ -261,10 +261,14 @@ export function drawWardsDebug(ctx, {
   }
 
   // 4) Ward ids (optional)
-  if (!hideIdsFlag) {
+  // If hideWardIds is boolean true, hide all ids.
+  // If hideWardIds is false/undefined, show ids.
+  // If hideWardIds is an Array/Set, treat it as "hide these wards entirely", not "hide ids".
+  const hideIds = (hideWardIds === true);
+  if (!hideIds) {
     drawWardIds(ctx, wards, hideSet);
   }
- }
+}
 
 function drawWardIds(ctx, wards, hideSet) {
   if (!Array.isArray(wards) || wards.length === 0) return;
