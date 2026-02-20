@@ -161,21 +161,22 @@ function drawLabel(ctx, text, x, y) {
   ctx.restore();
 }
 
-export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors, hideWardIds }) {
-  const hide = (hideWardIds instanceof Set)
+export function drawWardsDebug(ctx, {
+  wards,
+  wardSeeds,
+  wardRoleIndices,
+  anchors,
+  hideWardIds,
+  drawWardFills = false,
+}) {
+  const hideIdsFlag = (hideWardIds === true);
+
+  const hideSet = (hideWardIds instanceof Set)
     ? hideWardIds
     : new Set(Array.isArray(hideWardIds) ? hideWardIds : []);
 
   const hasWards = Array.isArray(wards) && wards.length > 0;
   if (!hasWards) return;
-
-  console.log("[wards_debug] running", {
-    wardsLen: wards.length,
-    hideWardIds,
-    hideSetSize: hide.size,
-    polyCount: wards.filter((w) => Array.isArray(w?.poly) && w.poly.length >= 3).length,
-    polygonCount: wards.filter((w) => Array.isArray(w?.polygon) && w.polygon.length >= 3).length,
-  });
 
   // 1) Ward polygons (fill + outline), skipping hidden wards
   ctx.save();
@@ -260,8 +261,8 @@ export function drawWardsDebug(ctx, { wards, wardSeeds, wardRoleIndices, anchors
   }
 
   // 4) Ward ids (optional)
-  if (!hideWardIds) {
-    drawWardIds(ctx, wards, hide);
+  if (!hideIdsFlag) {
+    drawWardIds(ctx, wards, hideSet);
   }
  }
 
