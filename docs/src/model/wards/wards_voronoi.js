@@ -169,35 +169,35 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
   for (let id = 0; id < wardSeeds.length; id++) {
     const seed = wardSeeds[id];
 
-    // d3-delaunay returns a flat array [x0,y0,x1,y1,...] or null
+    // d3-delaunay returns an array of [x, y] points or null
     const cell = voronoi.cellPolygon(id);
 
     /** @type {Point[]|null} */
     let poly = null;
 
-    if (cell && cell.length >= 4) {
+    if (cell && cell.length >= 3) {
       poly = [];
-      // cellPolygon returns an array of [x, y] points and it repeats the first point at the end.
-      // We remove the last point if it is a duplicate of the first.
+      // cellPolygon repeats the first point at the end in many cases.
       for (let i = 0; i < cell.length; i++) {
         const pt = cell[i];
         poly.push({ x: pt[0], y: pt[1] });
       }
+
       poly = dropClosingPoint(poly);
 
       if (p.clipToFootprint) {
         poly = tryClipToFootprint(poly, footprintPoly);
+      }
+
+      // After closing-point removal and optional clipping, require at least a triangle.
+      if (!Array.isArray(poly) || poly.length < 3) {
+        poly = null;
       }
     }
 
     const centroid = poly ? polygonCentroid(poly) : null;
     const area = poly ? Math.abs(polygonSignedArea(poly)) : null;
 
-      // After dropClosingPoint and optional clipping, require at least a triangle.
-      if (!Array.isArray(poly) || poly.length < 3) {
-        poly = null;
-      }
-     }
     wards.push({
       id,
       seed,
@@ -206,6 +206,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       area,
       distToCentre: dist(seed, centre),
     });
+  }
 
   return { wardSeeds, wards };
 }
