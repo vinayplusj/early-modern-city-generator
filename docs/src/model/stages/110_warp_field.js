@@ -320,13 +320,6 @@ export function runWarpFieldStage({
     }
   }
 
-  if (warpWall?.wallWarped && Array.isArray(wallBaseDense)) {
-    const a = wallBaseDense[0];
-    const b = warpWall.wallWarped[0];
-    console.log("[warpWall] first-pt shift:", Math.hypot(b.x - a.x, b.y - a.y));
-    console.log("[warpWall] warped equals input (ref):", warpWall.wallWarped === wallBaseDense);
-  }
-
   console.log("[warpWall] innerHull len:", fortInnerHull?.length ?? null);
 
   if (warpWall?.field?.delta) {
@@ -342,7 +335,44 @@ export function runWarpFieldStage({
   // Curtain wall (pre-bastion) for clamp + debug.
   // This is the FINAL curtain polyline that downstream attachments should follow.
   const wallCurtainForDraw = wallWarpedSafe || wallWarped || wallBaseDense;
+  // -------------------------------------------------------------------------
+  // Make warpWall.wallWarped equal the final curtain used for draw + downstream.
+  // Preserve the original (pre-final) as wallWarpedRaw for debugging.
+  // -------------------------------------------------------------------------
+  if (warpWall) {
+    // Preserve original output from buildFortWarp (already warped + any internal clamps).
+  if (!warpWall.wallWarpedRaw) {
+    warpWall.wallWarpedRaw = warpWall.wallWarped || null;
+  }  
+    // Overwrite: this is the final curtain after deterministic hard clamps.
+    // Downstream features (ditches, attachments) should use this.
+    warpWall.wallWarped = wallCurtainForDraw;
+  
+    if (warpDebugEnabled) {
+      console.log("[warpWall] overwrite wallWarped -> wallCurtainForDraw", {
+        rawLen: warpWall.wallWarpedRaw?.length ?? null,
+        finalLen: warpWall.wallWarped?.length ?? null,
+        sameRef: warpWall.wallWarpedRaw === warpWall.wallWarped,
+      });
+    }
+  }
 
+  if (warpDebugEnabled && warpWall && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
+    const base0 = wallBaseDense[0];
+  
+    const raw0 = warpWall?.wallWarpedRaw?.[0];
+    if (raw0) {
+      console.log("[warpWall] base->raw first-pt shift:", Math.hypot(raw0.x - base0.x, raw0.y - base0.y));
+    }
+  
+    const final0 = warpWall?.wallWarped?.[0];
+    if (final0) {
+      console.log("[warpWall] base->final first-pt shift:", Math.hypot(final0.x - base0.x, final0.y - base0.y));
+    }
+  
+    console.log("[warpWall] final equals base (ref):", warpWall?.wallWarped === wallBaseDense);
+  }
+  
   // -------------------------------------------------------------------------
   // Replace the curtain warp field with a "final" field that maps
   // the original curtain input (wallBaseDense) directly to the final curtain
@@ -381,14 +411,12 @@ export function runWarpFieldStage({
     // Keep the originals for debug and regression checks.
     warpWall.fieldOriginal = warpWall.field;
     warpWall.paramsOriginal = warpWall.params;
-    warpWall.wallWarpedOriginal = warpWall.wallWarped;
 
     // Replace the field AND the warped curtain polyline.
     // Downstream attachments (ditches, glacis, etc.) that read warpWall.wallWarped
     // will now follow the final, post-clamp curtain.
     warpWall.field = finalCurtainField;
     warpWall.params = finalCurtainParams;
-    warpWall.wallWarped = wallCurtainForDraw;
   }
   if (warpDebugEnabled && warpWall?.field && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
     const p = wallBaseDense[0];
