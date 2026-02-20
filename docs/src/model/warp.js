@@ -6,7 +6,15 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
-  
+  // Robust defaults (prevents NaNs when callers omit some tuning fields).
+  const maxIn = Number.isFinite(params.maxIn) ? params.maxIn : 80;
+  const maxOut = Number.isFinite(params.maxOut) ? params.maxOut : 80;
+  const maxStep = Number.isFinite(params.maxStep) ? params.maxStep : 2.5;
+  const smoothRadius = Number.isFinite(params.smoothRadius) ? Math.max(0, Math.floor(params.smoothRadius)) : 0;
+
+  // Optional directional gains (lets curtain pull inward harder without increasing outward bulge).
+  const inwardGain = Number.isFinite(params.inwardGain) ? params.inwardGain : 1.0;   // applies when delta < 0
+  const outwardGain = Number.isFinite(params.outwardGain) ? params.outwardGain : 1.0; // applies when delta > 0  
   const N = params.samples;
   const thetas = new Array(N);
   const rFort = new Array(N);
@@ -83,26 +91,17 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
       rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districtsUse, rawTargetR, params);
     }
   }
-  
-  // Optional: smooth spikes in clamp fields (run once, after rTarget is complete)
-  if (params && params._clampField === true) {
-    for (let j = 0; j < N; j++) {
-      const a = rTarget[(j - 1 + N) % N];
-      const b = rTarget[j];
-      const c = rTarget[(j + 1) % N];
-      if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
-  
-      const avg = (a + c) * 0.5;
-      if (Math.abs(b - avg) > 30) rTarget[j] = avg;
-    }
-  }
 
   const delta = new Array(N);
   for (let i = 0; i < N; i++) {
-    const raw = rTarget[i] - rFort[i];
-    delta[i] = clamp(raw, -params.maxIn, params.maxOut);
+    let raw = rTarget[i] - rFort[i];
+
+    // Directional gain: stronger inward pull is usually what you want for the curtain.
+    if (raw < 0) raw *= inwardGain;
+    else if (raw > 0) raw *= outwardGain;
+
+    delta[i] = clamp(raw, -maxIn, maxOut);
   }
-  
 
   for (let i = 0; i < N; i++) {
     if (!Number.isFinite(delta[i])) delta[i] = 0;
@@ -124,8 +123,8 @@ export function buildWarpField({ centre, wallPoly, targetPoly = null, districts,
       delta[i] = d;
     }
 
-  const deltaSmooth = smoothCircular(delta, params.smoothRadius);
-  const deltaSafe = clampCircularSlope(deltaSmooth, params.maxStep);
+  const deltaSmooth = (smoothRadius > 0) ? smoothCircular(delta, smoothRadius) : delta;
+  const deltaSafe = clampCircularSlope(deltaSmooth, maxStep);
 
   return {
     N,
