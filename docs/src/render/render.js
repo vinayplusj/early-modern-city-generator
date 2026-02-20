@@ -90,10 +90,6 @@ export function render(ctx, model) {
   drawBackground(ctx);
   drawWater(ctx, { water });
 
-  if (typeof window !== "undefined") {
-    window.model = model;
-  }
-
   drawFootprintAndDebugOverlays(ctx, {
     footprint,
     outerBoundary,
@@ -123,30 +119,31 @@ export function render(ctx, model) {
     closed: true,
   });
   
-    // ---- Debug: ward-derived fort hulls ----
-    if (typeof window !== "undefined") {
-      const fh = window.__wardDebug?.last?.fortHulls;
-  
-      const inner = fh?.innerHull?.outerLoop;
-      const outer = fh?.outerHull?.outerLoop;
-  
-      // Inner hull (core wards boundary)
-      drawPolyline(ctx, inner, {
-        stroke: "rgba(255,0,255,1.0)",
-        width: 2,
-        closed: true,
-      });
-  
-      // Outer hull (core + ring1 wards boundary)
-      drawPolyline(ctx, outer, {
-        stroke: "rgba(0,180,255,1.0)",
-        width: 2,
-        closed: true,
-      });
-    }
+  // ---- Debug: ward-derived fort hulls (from model.fortHulls) ----
+  {
+    const fh = model?.fortHulls ?? null;
 
-  if (typeof window !== "undefined") {
-    const fh = window.__wardDebug?.last?.fortHulls;
+    const inner = fh?.innerHull?.outerLoop || null;
+    const outer = fh?.outerHull?.outerLoop || null;
+
+    // Inner hull (core wards boundary)
+    drawPolyline(ctx, inner, {
+      stroke: "rgba(255,0,255,1.0)",
+      width: 2,
+      closed: true,
+    });
+
+    // Outer hull (core + ring1 wards boundary)
+    drawPolyline(ctx, outer, {
+      stroke: "rgba(0,180,255,1.0)",
+      width: 2,
+      closed: true,
+    });
+  }
+
+  // ---- Debug: highlight core wards and ring1 wards (no window coupling) ----
+  {
+    const fh = model?.fortHulls ?? null;
 
     // Core = plaza + inner + citadel
     const coreIds = new Set(fh?.coreIds || []);
@@ -158,7 +155,7 @@ export function render(ctx, model) {
       : (fh?.ring1Ids || []);
     const ring1Ids = new Set(ring1Raw);
 
-    const wards = window.model?.wards || [];
+    const wards = model?.wards || [];
 
     for (const w of wards) {
       const poly =
@@ -202,6 +199,42 @@ export function render(ctx, model) {
 
   drawRoadGraph(ctx, { roadGraph });
 
+    // ---- Debug: invariants status overlay (render-only) ----
+  {
+    const inv = model?.debug?.invariants || null;
+    if (inv && typeof inv.ok === "boolean") {
+      ctx.save();
+      ctx.font = "12px sans-serif";
+      ctx.textBaseline = "top";
+
+      const pad = 8;
+      const x = 12;
+      const y = 12;
+      const lineH = 16;
+
+      const title = inv.ok ? "Invariants: OK" : "Invariants: FAIL";
+      const lines = [title];
+
+      if (!inv.ok && Array.isArray(inv.errors)) {
+        for (let i = 0; i < Math.min(inv.errors.length, 6); i++) {
+          lines.push(String(inv.errors[i]));
+        }
+      }
+
+      const w = 360;
+      const h = pad * 2 + lines.length * lineH;
+
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.fillRect(x, y, w, h);
+
+      ctx.fillStyle = inv.ok ? "rgba(120,255,120,1.0)" : "rgba(255,120,120,1.0)";
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], x + pad, y + pad + i * lineH);
+      }
+
+      ctx.restore();
+    }
+  }
   drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
 
   drawCitadel(ctx, { citadel, anchors: A });
