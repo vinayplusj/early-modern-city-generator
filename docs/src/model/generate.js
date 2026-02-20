@@ -113,7 +113,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   runPipeline(ctx);
 
   const rng = mulberry32(seed);
-
+  const debug = {};
   const cx = width * 0.5;
   const cy = height * 0.55;
   const baseR = Math.min(width, height) * 0.33;
@@ -404,6 +404,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
   // ---------------- Anchor + hull invariants (debug only) ----------------
   runDebugInvariantsStage({
     debugEnabled: WARP_FORT.debug,
+    debugOut: debug,
   
     cx,
     cy,
@@ -424,7 +425,7 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     footprint,
     cx: (centre?.x ?? cx),
     cy: (centre?.y ?? cy),
-
+    debug,
 
     wallBase,
     wallCurtainForDraw, 
