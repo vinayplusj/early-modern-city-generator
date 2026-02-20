@@ -175,10 +175,10 @@ export function runWarpFieldStage({
   const curtainParams = {
     ...ctx.params.warpFort,
     samples: curtainSamples,
-    maxIn: Math.max(ctx.params.warpFort?.maxIn ?? 0, 80),
-    maxStep: Math.max(ctx.params.warpFort?.maxStep ?? 0, 2.5),
+    maxIn: Math.max(ctx.params.warpFort?.maxIn ?? 0, 200),
+    maxStep: Math.max(ctx.params.warpFort?.maxStep ?? 0, 5.0),
     // Keep smoothing reasonable so it still converges to the inner hull.
-    smoothRadius: Math.min(ctx.params.warpFort?.smoothRadius ?? 10, 8),
+    smoothRadius: Math.min(ctx.params.warpFort?.smoothRadius ?? 10, 6),
   };
 
   const wallBaseDense = (Array.isArray(wallBase) && wallBase.length >= 3)
