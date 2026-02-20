@@ -114,8 +114,8 @@ export function render(ctx, model) {
 
   // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
   drawPolyline(ctx, bastionHull, {
-    stroke: "rgba(255,255,0,1.0)", // bright yellow for visibility
-    width: 3,
+    stroke: "rgba(255,255,0,0.50)", // bright yellow for visibility
+    width: 2,
     closed: true,
   });
   
@@ -135,7 +135,7 @@ export function render(ctx, model) {
 
     // Outer hull (core + ring1 wards boundary)
     drawPolyline(ctx, outer, {
-      stroke: "rgba(0,180,255,1.0)",
+      stroke: "rgba(0,255,255,1.0)",
       width: 2,
       closed: true,
     });
@@ -175,13 +175,13 @@ export function render(ctx, model) {
 
       if (isCore) {
         // Core wards (inside inner hull)
-        ctx.fillStyle = "rgba(255,0,255,0.45)";
-        ctx.strokeStyle = "rgba(255,0,255,0.85)";
+        ctx.fillStyle = "rgba(255,0,255,0.40)";
+        ctx.strokeStyle = "rgba(255,0,255,0.80)";
         ctx.lineWidth = 2.0;
       } else {
         // Ring1 wards (between inner and outer hull)
-        ctx.fillStyle = "rgba(0,180,255,0.28)";
-        ctx.strokeStyle = "rgba(0,180,255,0.95)";
+        ctx.fillStyle = "rgba(0,255,255,0.10)";
+        ctx.strokeStyle = "rgba(0,255,255,0.90)";
         ctx.lineWidth = 2.5;
       }
 
