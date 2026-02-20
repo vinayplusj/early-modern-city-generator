@@ -206,7 +206,6 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       area,
       distToCentre: dist(seed, centre),
     });
-  }
 
   return { wardSeeds, wards };
 }
