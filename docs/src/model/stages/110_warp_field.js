@@ -955,17 +955,37 @@ export function runWarpFieldStage({
 
   // Debug audits (preserve same log behaviour).
   if (warpDebugEnabled) {
-    auditRadialClamp({
-      name: "WALL",
-      polys: [wallCurtainForDraw],
-      minField: warpWall?.minField,
-      maxField: warpWall?.maxField,
-      cx,
-      cy,
-      minMargin: warpWall?.clampMinMargin,
-      maxMargin: warpWall?.clampMaxMargin,
-      debugEnabled: true,
+  // Deterministic WALL audit: verify outside inner hull along centre rays.
+  // This matches the clamp we actually enforce (clampPolylineOutsidePolyAlongRays).
+  (function auditWallDeterministic() {
+    if (!warpDebugEnabled) return;
+    if (!Array.isArray(wallCurtainForDraw) || wallCurtainForDraw.length < 3) return;
+    if (!Array.isArray(innerHull) || innerHull.length < 3) return;
+  
+    const centrePt = { x: cx, y: cy };
+    const m = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
+  
+    let belowMin = 0;
+    for (const p of wallCurtainForDraw) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+  
+      const n = safeNorm(p.x - centrePt.x, p.y - centrePt.y);
+      if (!n) continue;
+  
+      const tBoundary = rayPolyMaxT(centrePt, { x: n.x, y: n.y }, innerHull);
+      if (!Number.isFinite(tBoundary)) continue;
+  
+      // Should be >= boundary + margin
+      const rMin = tBoundary + m;
+      if (n.m < rMin - 1e-6) belowMin++;
+    }
+  
+    console.log("[FortWarp Audit] WALL (deterministic)", {
+      belowMin,
+      total: wallCurtainForDraw.length,
+      margin: m,
     });
+  })();
 
     auditRadialClamp({
       name: "BASTIONS",
