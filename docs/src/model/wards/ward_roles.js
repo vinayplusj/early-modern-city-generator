@@ -19,11 +19,11 @@
 //   At this stage, "inner" means "near centre". Later, after fortTargetPoly is
 //   built, can refine outside role assignment using containment tests.
 //
-// Suggested usage in generate.js
+// Suggested usage
 //   const { wards: wardsWithRoles, indices } = assignWardRoles({
 //     wards,
 //     centre: fortCentre,
-//     params: { innerCount: 8 }
+//     params: { innerCount: 4 }
 //   });
 //   model.wards = wardsWithRoles;
 //   model.wardRoleIndices = indices;
