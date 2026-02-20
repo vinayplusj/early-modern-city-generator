@@ -60,7 +60,7 @@ export function render(ctx, model) {
     wallBase,
     wallCurtain,
     bastionPolys,
-    bastionHull,
+    bastionHull, // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
     ring,
     ring2,
 
@@ -110,13 +110,6 @@ export function render(ctx, model) {
     ring2,
     warp,
     fortHulls: model?.fortHulls ?? null,
-  });
-
-  // ---- Debug: convex envelope of all bastions (post-warp, post-clamp) ----
-  drawPolyline(ctx, bastionHull, {
-    stroke: "rgba(255,255,0,0.50)", // bright yellow for visibility
-    width: 2,
-    closed: true,
   });
   
   // ---- Debug: ward-derived fort hulls (from model.fortHulls) ----
