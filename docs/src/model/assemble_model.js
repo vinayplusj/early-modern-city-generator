@@ -7,7 +7,7 @@ export function assembleModel({
   footprint,
   cx,
   cy,
-
+  debug,
   // Walls + moatworks
   wallBase,
   wallCurtainForDraw,
@@ -67,7 +67,7 @@ export function assembleModel({
     footprint,
     cx,
     cy,
-
+    debug,
     // Walls + moatworks
     wallBase,
     wallCurtain: wallCurtainForDraw || wallBase,
