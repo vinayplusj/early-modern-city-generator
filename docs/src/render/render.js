@@ -147,30 +147,55 @@ export function render(ctx, model) {
 
   if (typeof window !== "undefined") {
     const fh = window.__wardDebug?.last?.fortHulls;
+
+    // Core = plaza + inner + citadel
     const coreIds = new Set(fh?.coreIds || []);
-    // const ring1Ids = new Set(fh?.ring1Ids || []);
-  
+
+    // Ring1 = wards that sit between innerHull and outerHull.
+    // Prefer the geometry-valid set when present, so we do not silently skip bad polys.
+    const ring1Raw = (Array.isArray(fh?.ring1IdsForHull) && fh.ring1IdsForHull.length > 0)
+      ? fh.ring1IdsForHull
+      : (fh?.ring1Ids || []);
+    const ring1Ids = new Set(ring1Raw);
+
     const wards = window.model?.wards || [];
-  
+
     for (const w of wards) {
       const poly =
         (Array.isArray(w?.poly) && w.poly.length >= 3) ? w.poly :
         (Array.isArray(w?.polygon) && w.polygon.length >= 3) ? w.polygon :
         null;
-      
+
       if (!poly) continue;
-  
-      let fill = null;
-      if (coreIds.has(w.id)) fill = "rgba(255,0,255,0.50)";     // core = cyan tint
-      else continue;
-  
+
+      const isCore = coreIds.has(w.id);
+      const isRing1 = ring1Ids.has(w.id);
+
+      // Only highlight core + ring1. Everything else is left untouched.
+      if (!isCore && !isRing1) continue;
+
       ctx.save();
-      ctx.fillStyle = fill;
+
+      if (isCore) {
+        // Core wards (inside inner hull)
+        ctx.fillStyle = "rgba(255,0,255,0.45)";
+        ctx.strokeStyle = "rgba(255,0,255,0.85)";
+        ctx.lineWidth = 2.0;
+      } else {
+        // Ring1 wards (between inner and outer hull)
+        ctx.fillStyle = "rgba(0,180,255,0.28)";
+        ctx.strokeStyle = "rgba(0,180,255,0.95)";
+        ctx.lineWidth = 2.5;
+      }
+
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
       ctx.closePath();
+
       ctx.fill();
+      ctx.stroke();
+
       ctx.restore();
     }
   }
