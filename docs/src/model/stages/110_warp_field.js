@@ -340,61 +340,66 @@ export function runWarpFieldStage({
   }
 
   // Curtain wall (pre-bastion) for clamp + debug.
-const wallCurtainForDraw = wallWarpedSafe || wallWarped || wallBaseDense;
+  // This is the FINAL curtain polyline that downstream attachments should follow.
+  const wallCurtainForDraw = wallWarpedSafe || wallWarped || wallBaseDense;
 
-// -------------------------------------------------------------------------
-// Replace the curtain warp field with a "final" field that maps
-// the original curtain input (wallBaseDense) directly to the final curtain
-// (wallCurtainForDraw). This keeps all attachments (ditches, etc.) in sync.
-// No smoothing pass.
-// -------------------------------------------------------------------------
-
-const finalCurtainParams = (warpWall?.params)
-  ? {
-      ...warpWall.params,
-      debug: false,
-      _clampField: true,
-      ignoreBand: true,
-      smoothRadius: 0,
-      maxStep: 1e9,
-      maxIn: 1e9,
-      maxOut: 1e9,
-    }
-  : null;
-
-const finalCurtainField =
-  (Array.isArray(wallBaseDense) && wallBaseDense.length >= 3 &&
-   Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3 &&
-   finalCurtainParams)
-    ? buildWarpField({
-        centre: { x: cx, y: cy },
-        wallPoly: wallBaseDense,
-        targetPoly: wallCurtainForDraw,
-        districts: null,
-        bastions: [],
-        params: finalCurtainParams,
-      })
-    : null;
-
-if (warpWall && finalCurtainField) {
-  // Keep the original for debugging if you want.
-  warpWall.fieldOriginal = warpWall.field;
-  warpWall.paramsOriginal = warpWall.params;
-
-  // Replace with the final mapping used by all downstream features.
-  warpWall.field = finalCurtainField;
-  warpWall.params = finalCurtainParams;
-}
-if (warpDebugEnabled && warpWall?.field && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
-  const p = wallBaseDense[0];
-  const q = warpPolylineRadial([p], { x: cx, y: cy }, warpWall.field, warpWall.params)[0];
-  console.log("[warpWall] base->final test shift:", Math.hypot(q.x - p.x, q.y - p.y));
-}
+  // -------------------------------------------------------------------------
+  // Replace the curtain warp field with a "final" field that maps
+  // the original curtain input (wallBaseDense) directly to the final curtain
+  // (wallCurtainForDraw). This keeps all attachments (ditches, etc.) in sync.
+  // No smoothing pass.
+  // -------------------------------------------------------------------------
   
-if (warpDebugEnabled) {
-  console.log("[warpWall] finalCurtainField enabled:", Boolean(finalCurtainField));
-  console.log("[warpWall] wallCurtainForDraw len:", wallCurtainForDraw?.length ?? null);
-}
+  const finalCurtainParams = (warpWall?.params)
+    ? {
+        ...warpWall.params,
+        debug: false,
+        _clampField: true,
+        ignoreBand: true,
+        smoothRadius: 0,
+        maxStep: 1e9,
+        maxIn: 1e9,
+        maxOut: 1e9,
+      }
+    : null;
+  
+  const finalCurtainField =
+    (Array.isArray(wallBaseDense) && wallBaseDense.length >= 3 &&
+     Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3 &&
+     finalCurtainParams)
+      ? buildWarpField({
+          centre: { x: cx, y: cy },
+          wallPoly: wallBaseDense,
+          targetPoly: wallCurtainForDraw,
+          districts: null,
+          bastions: [],
+          params: finalCurtainParams,
+        })
+      : null;
+  
+  if (warpWall && finalCurtainField) {
+    // Keep the originals for debug and regression checks.
+    warpWall.fieldOriginal = warpWall.field;
+    warpWall.paramsOriginal = warpWall.params;
+    warpWall.wallWarpedOriginal = warpWall.wallWarped;
+
+    // Replace the field AND the warped curtain polyline.
+    // Downstream attachments (ditches, glacis, etc.) that read warpWall.wallWarped
+    // will now follow the final, post-clamp curtain.
+    warpWall.field = finalCurtainField;
+    warpWall.params = finalCurtainParams;
+    warpWall.wallWarped = wallCurtainForDraw;
+  }
+  if (warpDebugEnabled && warpWall?.field && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
+    const p = wallBaseDense[0];
+    const q = warpPolylineRadial([p], { x: cx, y: cy }, warpWall.field, warpWall.params)[0];
+    console.log("[warpWall] base->final test shift:", Math.hypot(q.x - p.x, q.y - p.y));
+  }
+    
+  if (warpDebugEnabled) {
+    console.log("[warpWall] finalCurtainField enabled:", Boolean(finalCurtainField));
+    console.log("[warpWall] wallCurtainForDraw len:", wallCurtainForDraw?.length ?? null);
+  }
   const centre = { x: cx, y: cy };
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
   // This is the "min clamp" for bastions (ensures points stay away from the wall base).
