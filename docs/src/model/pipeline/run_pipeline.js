@@ -132,8 +132,8 @@ export function runPipeline(ctx) {
     blocks: S.blocks ?? env.blocks,
   
     // Still env-only (not yet migrated)
-    ring: env.ring,
-    ring2: env.ring2,
+    ring: S.rings?.ring ?? env.ring,
+    ring2: S.rings?.ring2 ?? env.ring2,
     citadel: env.citadel,
     avenue,
     newTown: (S.newTown?.newTown ?? env.newTown),
