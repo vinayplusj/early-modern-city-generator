@@ -77,9 +77,11 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     site: { water: waterKind, hasDock },
     params: { bastions: bastionCount, gates: gateCount },
   });
-
+  
+  // Provide warp parameters to stages via ctx.params (read by Stage 20 / Stage 110).
   ctx.params.warpFortParams = WARP_FORT;
   ctx.params.warpDebugEnabled = WARP_FORT.debug;
-
+  
+  // Phase 1: run the full generator pipeline and return the assembled model.
   return runPipeline(ctx);
 }
