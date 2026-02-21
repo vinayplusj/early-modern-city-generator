@@ -189,6 +189,7 @@ export const PIPELINE_STAGES = [
     name: "anchors",
     run(env) {
       env.anchors = runAnchorsStage(env.ctx);
+      env.ctx.state.anchors = env.anchors;
     },
   },
 
@@ -196,23 +197,55 @@ export const PIPELINE_STAGES = [
     id: 70,
     name: "routingMesh",
     run(env) {
+      const ctx = env.ctx;
+    
+      const wards = ctx.state.wards;
+      const anchors = ctx.state.anchors;
+      const outerBoundary = ctx.state.outerBoundary;
+      const waterModel = ctx.state.waterModel; // set by Stage 40
+    
+      if (!wards) {
+        throw new Error("[EMCG] Stage 70 requires ctx.state.wards (Stage 50 output).");
+      }
+      if (!anchors) {
+        throw new Error("[EMCG] Stage 70 requires ctx.state.anchors (Stage 60 output).");
+      }
+      if (!outerBoundary) {
+        throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
+      }
+      if (!waterModel) {
+        throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
+      }
+    
       const meshOut = runRoutingMeshStage({
-        ctx: env.ctx,
-        wardsWithRoles: env.wardsWithRoles,
-        anchors: env.anchors,
+        ctx,
+        wardsWithRoles: wards.wardsWithRoles,
+        anchors,
         waterKind: env.waterKind,
-        waterModel: env.waterModel,
-        outerBoundary: env.outerBoundary,
+        waterModel,
+        outerBoundary,
         cx: env.cx,
         cy: env.cy,
         baseR: env.baseR,
       });
-
+    
+      // Bridge outputs (downstream stages still use env.* for now)
       env.vorGraph = meshOut.vorGraph;
       env.waterModel = meshOut.waterModel;
-
-      env.ctx.mesh = env.ctx.mesh || {};
-      env.ctx.mesh.vorGraph = env.vorGraph;
+    
+      // Preserve existing ctx writes (existing behaviour)
+      ctx.mesh = ctx.mesh || {};
+      ctx.mesh.vorGraph = env.vorGraph;
+    
+      // Canonical Phase 2 output
+      ctx.state.routingMesh = {
+        vorGraph: meshOut.vorGraph,
+        waterModel: meshOut.waterModel,
+      };
+    
+      // Also keep canonical waterModel fresh (Stage 140 expects env.waterModel now, but
+      // later we will migrate it to ctx.state.routingMesh.waterModel).
+      ctx.state.waterModel = meshOut.waterModel;
     },
   },
 
@@ -256,24 +289,31 @@ export const PIPELINE_STAGES = [
     id: 110,
     name: "warpField",
     run(env) {
+      const ctx = env.ctx;
+      const wards = ctx.state.wards;
+      const districts = ctx.state.districts;
+      
+      if (!wards) throw new Error("[EMCG] Stage 110 requires ctx.state.wards (Stage 50 output).");
+      if (!districts) throw new Error("[EMCG] Stage 110 requires ctx.state.districts (Stage 90 output).");
       const warpOut = runWarpFieldStage({
-        ctx: env.ctx,
+        ctx,
         cx: env.cx,
         cy: env.cy,
-
+      
         wallFinal: env.wallFinal,
         wallBase: env.wallBase,
-
-        fortHulls: env.fortHulls,
-        districts: env.districts,
-
+      
+        fortHulls: wards.fortHulls,
+        districts,
+      
         bastionsForWarp: env.bastionsForWarp,
         bastionPolys: env.bastionPolys,
-
-        warpFortParams: env.ctx.params.warpFortParams,
-        warpDebugEnabled: Boolean(env.ctx.params.warpDebugEnabled),
+      
+        warpFortParams: ctx.params.warpFortParams,
+        warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
       });
 
+      ctx.state.warp = warpOut;
       env.warpOut = warpOut;
 
       env.wallCurtainForDraw = warpOut?.wallCurtainForDraw || null;
@@ -284,6 +324,7 @@ export const PIPELINE_STAGES = [
 
       env.bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
       env.bastionHull = warpOut.bastionHullWarpedSafe;
+      
     },
   },
 
@@ -349,17 +390,24 @@ export const PIPELINE_STAGES = [
     id: 140,
     name: "primaryRoads",
     run(env) {
+      const ctx = env.ctx;
+      const routingMesh = ctx.state.routingMesh;
+      const anchors = ctx.state.anchors;
+      
+      if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
+      if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
       const primaryOut = runPrimaryRoadsStage({
-        ctx: env.ctx,
-        vorGraph: env.vorGraph,
-        waterModel: env.waterModel,
-        anchors: env.anchors,
+        ctx,
+        vorGraph: routingMesh.vorGraph,
+        waterModel: routingMesh.waterModel,
+        anchors,
         waterKind: env.waterKind,
         primaryGateWarped: env.primaryGateWarped,
         gatesWarped: env.gatesWarped,
       });
 
       env.primaryRoads = primaryOut.primaryRoads;
+      ctx.state.primaryRoads = env.primaryRoads;
 
     },
   },
@@ -416,30 +464,43 @@ export const PIPELINE_STAGES = [
     id: 170,
     name: "roadGraphAndBlocks",
     run(env) {
-      const squareCentre = env.anchors.plaza;
-      const citCentre = env.anchors.citadel;
-
+      const ctx = env.ctx;
+    
+      const routingMesh = ctx.state.routingMesh;
+      const anchors = ctx.state.anchors;
+      const primaryRoads = ctx.state.primaryRoads;
+      const districts = ctx.state.districts;
+      const wards = ctx.state.wards;
+    
+      if (!routingMesh) throw new Error("[EMCG] Stage 170 requires ctx.state.routingMesh (Stage 70 output).");
+      if (!anchors) throw new Error("[EMCG] Stage 170 requires ctx.state.anchors (Stage 60 output).");
+      if (!primaryRoads) throw new Error("[EMCG] Stage 170 requires ctx.state.primaryRoads (Stage 140 output).");
+      if (!districts) throw new Error("[EMCG] Stage 170 requires ctx.state.districts (Stage 90 output).");
+      if (!wards) throw new Error("[EMCG] Stage 170 requires ctx.state.wards (Stage 50 output).");
+    
       const roadsOut = runRoadGraphAndBlocksStage({
-        ctx: env.ctx,
-        vorGraph: env.vorGraph,
-        waterModel: env.waterModel,
-        anchors: env.anchors,
+        ctx,
+        vorGraph: routingMesh.vorGraph,
+        waterModel: routingMesh.waterModel,
+        anchors,
         waterKind: env.waterKind,
         rng: env.rng,
-        primaryRoads: env.primaryRoads,
+        primaryRoads,
         gatesWarped: env.gatesWarped,
         ring: env.ring,
         ring2: env.ring2,
-        squareCentre,
-        citCentre,
+        squareCentre: anchors.plaza,
+        citCentre: anchors.citadel,
         newTown: env.newTown,
-        districts: env.districts,
-        wardsWithRoles: env.wardsWithRoles,
+        districts,
+        wardsWithRoles: wards.wardsWithRoles,
       });
 
       env.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
       env.roadGraph = roadsOut.roadGraph;
       env.blocks = roadsOut.blocks;
+      ctx.state.roadGraph = roadsOut.roadGraph;
+      ctx.state.blocks = roadsOut.blocks;
     },
   },
 
