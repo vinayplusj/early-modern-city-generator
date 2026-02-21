@@ -27,6 +27,9 @@ export function runPipeline(ctx) {
       "Set ctx.params.warpFortParams before calling runPipeline()."
     );
   }
+
+  ctx.state = ctx.state || {};
+  ctx.state = {}; // reset per run for Phase 2 contracts
   const rng = mulberry32(seed);
   const debug = {};
 
