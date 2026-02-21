@@ -183,7 +183,7 @@ export function render(ctx, model) {
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
       ctx.closePath();
 
-      ctx.fill();
+ //     ctx.fill();
       ctx.stroke();
 
       ctx.restore();
