@@ -83,6 +83,7 @@ export function runPipeline(ctx) {
   const wards = S.wards;
   const routingMesh = S.routingMesh;
   const anchors = S.anchors;
+  const fortGeom = S.fortGeometryWarped;
   return assembleModel({
     // Canonical geometry frame
     footprint: fort?.footprint ?? env.footprint,
@@ -102,15 +103,15 @@ export function runPipeline(ctx) {
     warpWall: env.warpWall,
     warpOutworks: env.warpOutworks,
   
-    ditchOuter: env.ditchOuter,
-    ditchInner: env.ditchInner,
-    glacisOuter: env.glacisOuter,
-    ditchWidth: env.ditchWidth,
-    glacisWidth: env.glacisWidth,
+    ditchOuter: fortGeom?.ditchOuter ?? env.ditchOuter,
+    ditchInner: fortGeom?.ditchInner ?? env.ditchInner,
+    glacisOuter: fortGeom?.glacisOuter ?? env.glacisOuter,
+    ditchWidth: fortGeom?.ditchWidth ?? env.ditchWidth,
+    glacisWidth: fortGeom?.glacisWidth ?? env.glacisWidth,
   
     gatesOriginal: fort?.gates ?? env.gatesOriginal,
-    gatesWarped: env.gatesWarped,
-    primaryGateWarped: env.primaryGateWarped,
+    gatesWarped: fortGeom?.gatesWarped ?? env.gatesWarped,
+    primaryGateWarped: fortGeom?.primaryGateWarped ?? env.primaryGateWarped,
     ravelins: env.ravelins,
   
     // Wards / districts (canonical)
