@@ -23,6 +23,15 @@ const DEFAULT_WARDS_PARAMS = Object.freeze({
  * @param {object} args
  * @returns {object} { wardSeeds, wardsWithRoles, wardRoleIndices, fortHulls }
  */
+function computeDynamicInnerCount(seed) {
+  const seedInt = Math.trunc(Number.isFinite(seed) ? seed : 0);
+
+  // Normalise JS remainder into [0, 2] even for negative seeds.
+  const rem = ((seedInt % 3) + 3) % 3;
+
+  // Final range: 3, 4, 5
+  return 3 + rem;
+}
 export function runWardsStage({
   ctx,
   baseR,
@@ -44,6 +53,7 @@ export function runWardsStage({
     footprintPoly: outerBoundary,
     params: WARDS_PARAMS,
   });
+  const innerCount = computeDynamicInnerCount(ctx.seed);
 
   const {
     wards: wardsWithRoles,
@@ -52,7 +62,7 @@ export function runWardsStage({
   } = assignWardRoles({
     wards,
     centre: { x: cx, y: cy },
-    params: { innerCount: 4 },
+    params: { innerCount },
   });
 
   // Persist on ctx exactly as before.
