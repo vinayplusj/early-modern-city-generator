@@ -311,11 +311,6 @@ export const PIPELINE_STAGES = [
 
       env.primaryRoads = primaryOut.primaryRoads;
 
-      // Legacy aliases (preserve exact old semantics).
-      env.roads = env.primaryRoads;
-      env.avenue = (Array.isArray(env.primaryRoads) && env.primaryRoads.length >= 2)
-        ? env.primaryRoads[1]
-        : [env.anchors.plaza, env.anchors.citadel];
     },
   },
 
