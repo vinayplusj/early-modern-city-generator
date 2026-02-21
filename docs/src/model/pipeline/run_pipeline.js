@@ -77,59 +77,73 @@ export function runPipeline(ctx) {
   globalThis.__EMCG_AUDIT__ = globalThis.__EMCG_AUDIT__ || {};
   globalThis.__EMCG_AUDIT__.stageTimings = ctx.audit.stageTimings;
   
-  return assembleModel({
-    footprint: env.footprint,
-    cx: (env.centre?.x ?? env.cx),
-    cy: (env.centre?.y ?? env.cy),
-    debug: env.debug,
+  const S = ctx.state;
 
-    wallBase: env.wallBase,
+  const fort = S.fortifications;
+  const wards = S.wards;
+  const routingMesh = S.routingMesh;
+  const anchors = S.anchors;
+  return assembleModel({
+    // Canonical geometry frame
+    footprint: fort?.footprint ?? env.footprint,
+    cx: (fort?.centre?.x ?? env.centre?.x ?? env.cx),
+    cy: (fort?.centre?.y ?? env.centre?.y ?? env.cy),
+    centre: fort?.centre ?? env.centre,
+    baseR: env.baseR,
+    debug: env.debug,
+  
+    // Fort + moatworks (some still env-only until Stage 120 is migrated)
+    wallBase: fort?.wallBase ?? env.wallBase,
     wallCurtainForDraw: env.wallCurtainForDraw,
     wallForDraw: env.wallForDraw,
     bastionPolysWarpedSafe: env.bastionPolysWarpedSafe,
     bastionHull: env.bastionHull,
     warp: { wall: env.warpWall, outworks: env.warpOutworks },
-    gatesWarped: env.gatesWarped,
-    ravelins: env.ravelins,
+    warpWall: env.warpWall,
+    warpOutworks: env.warpOutworks,
+  
     ditchOuter: env.ditchOuter,
     ditchInner: env.ditchInner,
     glacisOuter: env.glacisOuter,
     ditchWidth: env.ditchWidth,
     glacisWidth: env.glacisWidth,
-
-    districts: env.districts,
-    blocks: env.blocks,
-    warpWall: env.warpWall,
-    warpOutworks: env.warpOutworks,
-    fortHulls: env.fortHulls,
-
-    wardsWithRoles: env.wardsWithRoles,
-    wardSeeds: env.wardSeeds,
-    wardRoleIndices: env.wardRoleIndices,
-
-    vorGraph: env.vorGraph,
-
-    centre: env.centre,
-    baseR: env.baseR,
-    citadel: env.citadel,
-    avenue,
+  
+    gatesOriginal: fort?.gates ?? env.gatesOriginal,
+    gatesWarped: env.gatesWarped,
     primaryGateWarped: env.primaryGateWarped,
-
-    site: { water: env.waterKind, hasDock: env.hasDock },
-    waterModel: env.waterModel,
-
+    ravelins: env.ravelins,
+  
+    // Wards / districts (canonical)
+    wardSeeds: wards?.wardSeeds ?? env.wardSeeds,
+    wardsWithRoles: wards?.wardsWithRoles ?? env.wardsWithRoles,
+    wardRoleIndices: wards?.wardRoleIndices ?? env.wardRoleIndices,
+    fortHulls: wards?.fortHulls ?? env.fortHulls,
+    districts: S.districts ?? env.districts,
+  
+    // Routing mesh (canonical)
+    vorGraph: routingMesh?.vorGraph ?? env.vorGraph,
+    waterModel: routingMesh?.waterModel ?? S.waterModel ?? env.waterModel,
+  
+    // Roads / blocks / graph (canonical where available)
     roads,
-    primaryRoads: env.primaryRoads,
+    primaryRoads: S.primaryRoads ?? env.primaryRoads,
+    secondaryRoadsLegacy: env.secondaryRoadsLegacy,
+    roadGraph: S.roadGraph ?? env.roadGraph,
+    blocks: S.blocks ?? env.blocks,
+  
+    // Still env-only (not yet migrated)
     ring: env.ring,
     ring2: env.ring2,
-    secondaryRoadsLegacy: env.secondaryRoadsLegacy,
-    roadGraph: env.roadGraph,
-
-    newTown: env.newTown,
-    outerBoundary: env.outerBoundary,
-
-    gatesOriginal: env.gatesOriginal,
+    citadel: env.citadel,
+    avenue,
+    newTown: (S.newTown?.newTown ?? env.newTown),
+    outerBoundary: S.outerBoundary ?? env.outerBoundary,
     landmarks: env.landmarks,
-    anchors: env.anchors,
+  
+    // Anchors (canonical)
+    anchors: anchors ?? env.anchors,
+  
+    // Site
+    site: { water: env.waterKind, hasDock: env.hasDock },
   });
 }
