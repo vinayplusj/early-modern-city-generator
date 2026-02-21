@@ -230,7 +230,17 @@ export const PIPELINE_STAGES = [
     id: 90,
     name: "districts",
     run(env) {
-      env.districts = runDistrictsStage(env.wardsWithRoles, env.cx, env.cy);
+      const ctx = env.ctx;
+      const wards = ctx.state.wards;
+    
+      if (!wards) {
+        throw new Error("[EMCG] Stage 90 requires ctx.state.wards (Stage 50 output).");
+      }
+    
+      env.districts = runDistrictsStage(wards.wardsWithRoles, env.cx, env.cy);
+    
+      // Optional canonical output for later migration of Stage 110/170.
+      ctx.state.districts = env.districts;
     },
   },
 
