@@ -139,7 +139,7 @@ export function runPipeline(ctx) {
     avenue,
     newTown: (S.newTown?.newTown ?? env.newTown),
     outerBoundary: S.outerBoundary ?? env.outerBoundary,
-    landmarks: env.landmarks,
+    landmarks: S.landmarks ?? env.landmarks,
   
     // Anchors (canonical)
     anchors: anchors ?? env.anchors,
