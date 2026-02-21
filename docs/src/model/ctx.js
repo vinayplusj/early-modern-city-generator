@@ -35,11 +35,34 @@ export function createCtx({ seed, w, h, site, params }) {
       wallBase: null,
       wall: null,
     },
-
+    
     wards: {
       seeds: null,
       cells: null,
       roleIndices: null,
+    },
+    
+    // Canonical planar routing mesh (ward-derived Voronoi graph + face topology).
+    // Stages should write here, even if some legacy code still passes vorGraph directly.
+    mesh: {
+      // Core graph (backward-compatible mirror of buildVoronoiPlanarGraph output)
+      graph: null,        // { eps, nodes, edges, adj, cells, edgeCells }
+    
+      // Convenience mirrors (optional but useful for stage-local reads/debug)
+      nodes: null,        // graph.nodes
+      edges: null,        // graph.edges
+      adj: null,          // graph.adj
+      cells: null,        // graph.cells
+      edgeCells: null,    // graph.edgeCells
+    
+      // Water snapped to mesh edges/nodes (Stage 70 output / later enrichments)
+      water: null,        // mesh-aware water model (or null)
+    
+      // Future derived topology/products (Milestones 5+)
+      routes: null,       // primary/secondary road path products
+      regions: null,      // region partition on mesh cells
+      blocks: null,       // extracted blocks from road graph
+      parcels: null,      // parcel subdivision output
     },
   };
 }
