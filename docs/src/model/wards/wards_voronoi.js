@@ -19,7 +19,7 @@
 // - bboxPadding: padding for Voronoi bounding box
 // - clipToFootprint: if true, try to clip cells to footprintPoly when a clipper exists
 
-import { Delaunay } from "https://esm.sh/d3-delaunay@6"; // must vendor this file in docs/vendor/.
+import { Delaunay } from "../../../vendor/d3-delaunay-6.0.4.esm.js";
 import { clipPolyConvex } from "../../geom/clip_convex.js";
 
 
