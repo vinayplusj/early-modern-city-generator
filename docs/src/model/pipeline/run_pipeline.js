@@ -1,11 +1,106 @@
 // docs/src/model/pipeline/run_pipeline.js
 //
 // Pipeline runner for the city generator.
-// Phase 1: no-op runner. It exists only to create a stable refactor seam.
-// Later phases will call stage modules in a strict order.
+// Phase 1: pipeline owns the stage order, but stages keep their current signatures.
+// This preserves behaviour while moving orchestration out of generate.js.
+
+import { mulberry32 } from "../../rng/mulberry32.js";
+import { assembleModel } from "../assemble_model.js";
+import { PIPELINE_STAGES } from "./stage_registry.js";
 
 export function runPipeline(ctx) {
-  // Intentionally do nothing in Phase 1.
-  // All work still happens inside generate.js.
-  return ctx;
+  const seed = ctx.seed;
+  const width = ctx.canvas.w;
+  const height = ctx.canvas.h;
+
+  const waterKind = (ctx.site && typeof ctx.site.water === "string") ? ctx.site.water : "none";
+  const hasDock = Boolean(ctx.site && ctx.site.hasDock) && waterKind !== "none";
+
+  const bastionCount = ctx.params.bastions;
+  const gateCount = ctx.params.gates;
+
+  const rng = mulberry32(seed);
+  const debug = {};
+
+  // Preserve existing geometry frame.
+  const cx = width * 0.5;
+  const cy = height * 0.55;
+  const baseR = Math.min(width, height) * 0.33;
+
+  // Shared mutable carrier for Phase 1 (later phases replace this with ctx.state outputs).
+  const env = {
+    ctx,
+    seed,
+    width,
+    height,
+    waterKind,
+    hasDock,
+    bastionCount,
+    gateCount,
+    rng,
+    debug,
+    cx,
+    cy,
+    baseR,
+  };
+
+  for (const stage of PIPELINE_STAGES) {
+    stage.run(env);
+  }
+
+  return assembleModel({
+    footprint: env.footprint,
+    cx: (env.centre?.x ?? env.cx),
+    cy: (env.centre?.y ?? env.cy),
+    debug: env.debug,
+
+    wallBase: env.wallBase,
+    wallCurtainForDraw: env.wallCurtainForDraw,
+    wallForDraw: env.wallForDraw,
+    bastionPolysWarpedSafe: env.bastionPolysWarpedSafe,
+    bastionHull: env.bastionHull,
+    warp: { wall: env.warpWall, outworks: env.warpOutworks },
+    gatesWarped: env.gatesWarped,
+    ravelins: env.ravelins,
+    ditchOuter: env.ditchOuter,
+    ditchInner: env.ditchInner,
+    glacisOuter: env.glacisOuter,
+    ditchWidth: env.ditchWidth,
+    glacisWidth: env.glacisWidth,
+
+    districts: env.districts,
+    blocks: env.blocks,
+    warpWall: env.warpWall,
+    warpOutworks: env.warpOutworks,
+    fortHulls: env.fortHulls,
+
+    wardsWithRoles: env.wardsWithRoles,
+    wardSeeds: env.wardSeeds,
+    wardRoleIndices: env.wardRoleIndices,
+
+    vorGraph: env.vorGraph,
+
+    centre: env.centre,
+    baseR: env.baseR,
+    citadel: env.citadel,
+    avenue: env.avenue,
+    primaryGateWarped: env.primaryGateWarped,
+
+    site: { water: env.waterKind, hasDock: env.hasDock },
+    waterModel: env.waterModel,
+
+    roads: env.roads,
+    primaryRoads: env.primaryRoads,
+    ring: env.ring,
+    ring2: env.ring2,
+    secondaryRoadsLegacy: env.secondaryRoadsLegacy,
+    roadGraph: env.roadGraph,
+
+    newTown: env.newTown,
+    outerBoundary: env.outerBoundary,
+
+    gatesOriginal: env.gatesOriginal,
+    landmarks: env.landmarks,
+    anchors: env.anchors,
+  });
 }
