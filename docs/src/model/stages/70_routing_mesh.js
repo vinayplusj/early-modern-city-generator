@@ -10,7 +10,37 @@ import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 
 
 const VOR_EPS = 1e-3;
+function writeMeshToCtx(ctx, vorGraph, waterModel) {
+  if (!ctx) return;
 
+  // Be defensive: if ctx.mesh does not exist yet, create the expected shape.
+  // (Once ctx.js is updated, this is mostly a safety net.)
+  if (!ctx.mesh) {
+    ctx.mesh = {
+      graph: null,
+      nodes: null,
+      edges: null,
+      adj: null,
+      cells: null,
+      edgeCells: null,
+      water: null,
+      routes: null,
+      regions: null,
+      blocks: null,
+      parcels: null,
+    };
+  }
+
+  ctx.mesh.graph = vorGraph || null;
+  ctx.mesh.nodes = vorGraph?.nodes ?? null;
+  ctx.mesh.edges = vorGraph?.edges ?? null;
+  ctx.mesh.adj = vorGraph?.adj ?? null;
+  ctx.mesh.cells = vorGraph?.cells ?? null;
+  ctx.mesh.edgeCells = vorGraph?.edgeCells ?? null;
+
+  // Water model snapped to mesh (or null if no water)
+  ctx.mesh.water = waterModel ?? null;
+}
 /**
  * @param {object} args
  * @returns {object} { vorGraph, waterModel }
@@ -64,6 +94,8 @@ export function runRoutingMeshStage({
       params: ctx.params,
     });
   }
-
+  // Persist canonical routing mesh on ctx (backward-compatible with return value).
+  // This is the final graph (post-water rebuild if water exists).
+  writeMeshToCtx(ctx, vorGraph, waterModel);
   return { vorGraph, waterModel };
 }
