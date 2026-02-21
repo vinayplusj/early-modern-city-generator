@@ -268,7 +268,7 @@ export const PIPELINE_STAGES = [
     );
 
     // Canonical Phase 2 output
-    ctx.state.rings = ringsOut;
+    ctx.state.ringsPreWarp = ringsOut;
 
     // Bridge outputs
     env.ring = ringsOut.ring;
@@ -376,7 +376,8 @@ export const PIPELINE_STAGES = [
 
       env.ring = fortGeom.ring;
       env.ring2 = fortGeom.ring2;
-
+      env.ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
+      
       env.gatesWarped = fortGeom.gatesWarped;
       env.primaryGateWarped = fortGeom.primaryGateWarped;
 
