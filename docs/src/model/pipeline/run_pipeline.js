@@ -52,8 +52,19 @@ export function runPipeline(ctx) {
     baseR,
   };
 
+  ctx.audit = ctx.audit || {};
+  ctx.audit.stageTimings = ctx.audit.stageTimings || [];
+  ctx.audit.stageTimings.length = 0;
   for (const stage of PIPELINE_STAGES) {
+    const t0 = performance.now();
     stage.run(env);
+    const t1 = performance.now();
+  
+    ctx.audit.stageTimings.push({
+      id: stage.id,
+      name: stage.name,
+      ms: Math.round((t1 - t0) * 1000) / 1000, // 0.001 ms precision
+    });
   }
 
   const roads = env.primaryRoads;
