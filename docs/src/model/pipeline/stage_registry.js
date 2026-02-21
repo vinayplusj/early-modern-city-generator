@@ -249,15 +249,32 @@ export const PIPELINE_STAGES = [
     },
   },
 
-  {
-    id: 80,
-    name: "innerRings",
-    run(env) {
-      const ringsOut = runInnerRingsStage(env.wallBase, env.cx, env.cy, env.wallR);
-      env.ring = ringsOut.ring;
-      env.ring2 = ringsOut.ring2;
-    },
+{
+  id: 80,
+  name: "innerRings",
+  run(env) {
+    const ctx = env.ctx;
+    const fort = ctx.state.fortifications;
+
+    if (!fort) {
+      throw new Error("[EMCG] Stage 80 requires ctx.state.fortifications (Stage 10 output).");
+    }
+
+    const ringsOut = runInnerRingsStage(
+      fort.wallBase,
+      env.cx,
+      env.cy,
+      fort.wallR
+    );
+
+    // Canonical Phase 2 output
+    ctx.state.rings = ringsOut;
+
+    // Bridge outputs
+    env.ring = ringsOut.ring;
+    env.ring2 = ringsOut.ring2;
   },
+},
 
   {
     id: 90,
