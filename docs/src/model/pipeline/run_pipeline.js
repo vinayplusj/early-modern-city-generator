@@ -20,8 +20,8 @@ export function runPipeline(ctx) {
   const gateCount = ctx.params.gates;
   // Phase 1 guard: warp params must exist before Stage 110.
   // In Phase 2, warp params will live in ctx.params defaults (or a config module).
-  const warpParams = ctx.params.warpFortParams;
-  if (!warpParams || !Number.isFinite(warpParams.samples) || warpParams.samples <= 0) {
+  const warpFortParams = ctx.params.warpFortParams;
+  if (!warpFortParams || !Number.isFinite(warpFortParams.samples) || warpFortParams.samples <= 0) {
     throw new Error(
       "[EMCG] Missing or invalid ctx.params.warpFortParams.samples. " +
       "Set ctx.params.warpFortParams before calling runPipeline()."
