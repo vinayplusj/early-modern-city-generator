@@ -61,27 +61,32 @@ export const PIPELINE_STAGES = [
     id: 20,
     name: "newTown",
     run(env) {
-      const { ctx, cx, cy, wallR, baseR } = env;
+      const { ctx, cx, cy, baseR } = env;
+
+      const fort = ctx.state.fortifications;
+      if (!fort) {
+        throw new Error("[EMCG] Stage 20 requires ctx.state.fortifications (Stage 10 output).");
+      }
       const warpFortParams = ctx.params.warpFortParams;
       const warpDebugEnabled = Boolean(ctx.params.warpDebugEnabled);
 
       const nt = runNewTownStage({
         ctx,
-        gates: env.gatesOriginal,
-        bastions: env.bastions,
+        gates: fort.gates,
+        bastions: fort.bastions,
         cx,
         cy,
-        wallR,
+        wallR: fort.wallR,
         baseR,
-        ditchOuter: env.ditchOuter,
-        wallBase: env.wallBase,
-        ditchWidth: env.ditchWidth,
-        glacisWidth: env.glacisWidth,
-        wallFinal: env.wallFinal,
-        bastionPolys: env.bastionPolys,
+        ditchOuter: fort.ditchOuter,
+        wallBase: fort.wallBase,
+        ditchWidth: fort.ditchWidth,
+        glacisWidth: fort.glacisWidth,
+        wallFinal: fort.wallFinal,
+        bastionPolys: fort.bastionPolys,
         warpDebugEnabled,
       });
-
+      ctx.state.newTown = nt;
       env.newTown = nt.newTown;
       env.primaryGate = nt.primaryGate;
       ctx.primaryGate = nt.primaryGate;
@@ -100,14 +105,31 @@ export const PIPELINE_STAGES = [
     id: 30,
     name: "outerBoundary",
     run(env) {
-      const outerBoundary = runOuterBoundaryStage(env.footprint, env.newTown);
+      const ctx = env.ctx;
+  
+      const fort = ctx.state.fortifications;
+      const nt = ctx.state.newTown;
+  
+      if (!fort) {
+        throw new Error("[EMCG] Stage 30 requires ctx.state.fortifications (Stage 10 output).");
+      }
+      if (!nt) {
+        throw new Error("[EMCG] Stage 30 requires ctx.state.newTown (Stage 20 output).");
+      }
+  
+      const outerBoundary = runOuterBoundaryStage(fort.footprint, nt.newTown);
+  
+      // Canonical Phase 2 output
+      ctx.state.outerBoundary = outerBoundary;
+  
+      // Phase 1 bridge output (keep until Stage 50/70 migrate)
       env.outerBoundary = outerBoundary;
-
-      // Preserve existing ctx writes.
-      env.ctx.geom.outerBoundary = outerBoundary;
-      env.ctx.geom.cx = env.cx;
-      env.ctx.geom.cy = env.cy;
-      env.ctx.geom.wallR = env.wallR;
+  
+      // Preserve existing ctx writes (bridge).
+      ctx.geom.outerBoundary = outerBoundary;
+      ctx.geom.cx = env.cx;
+      ctx.geom.cy = env.cy;
+      ctx.geom.wallR = fort.wallR;
     },
   },
 
@@ -115,14 +137,24 @@ export const PIPELINE_STAGES = [
     id: 40,
     name: "water",
     run(env) {
+      const ctx = env.ctx;
+      const outerBoundary = ctx.state.outerBoundary;
+    
+      if (!outerBoundary) {
+        throw new Error("[EMCG] Stage 40 requires ctx.state.outerBoundary (Stage 30 output).");
+      }
+    
       env.waterModel = runWaterStage({
         waterKind: env.waterKind,
-        ctx: env.ctx,
-        outerBoundary: env.outerBoundary,
+        ctx,
+        outerBoundary,
         cx: env.cx,
         cy: env.cy,
         baseR: env.baseR,
       });
+    
+      // Optional canonical output for later migration of Stage 70.
+      ctx.state.waterModel = env.waterModel;
     },
   },
 
@@ -130,14 +162,21 @@ export const PIPELINE_STAGES = [
     id: 50,
     name: "wards",
     run(env) {
+      const ctx = env.ctx;
+      const outerBoundary = ctx.state.outerBoundary;
+      
+      if (!outerBoundary) {
+        throw new Error("[EMCG] Stage 50 requires ctx.state.outerBoundary (Stage 30 output).");
+      }
+      
       const wardsOut = runWardsStage({
-        ctx: env.ctx,
+        ctx,
         baseR: env.baseR,
         cx: env.cx,
         cy: env.cy,
-        outerBoundary: env.outerBoundary,
+        outerBoundary,
       });
-
+      ctx.state.wards = wardsOut;
       env.wardSeeds = wardsOut.wardSeeds;
       env.wardsWithRoles = wardsOut.wardsWithRoles;
       env.wardRoleIndices = wardsOut.wardRoleIndices;
