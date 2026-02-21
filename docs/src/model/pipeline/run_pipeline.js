@@ -71,6 +71,8 @@ export function runPipeline(ctx) {
   const avenue = (Array.isArray(env.primaryRoads) && env.primaryRoads.length >= 2)
     ? env.primaryRoads[1]
     : [env.anchors.plaza, env.anchors.citadel];
+  globalThis.__EMCG_AUDIT__ = globalThis.__EMCG_AUDIT__ || {};
+  globalThis.__EMCG_AUDIT__.stageTimings = ctx.audit.stageTimings;
   
   return assembleModel({
     footprint: env.footprint,
