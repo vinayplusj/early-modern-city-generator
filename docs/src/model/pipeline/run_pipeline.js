@@ -142,7 +142,7 @@ export function runPipeline(ctx) {
     landmarks: S.landmarks ?? env.landmarks,
   
     // Anchors (canonical)
-    anchors: anchors ?? env.anchors,
+    anchors: S.anchors,
   
     // Site
     site: { water: env.waterKind, hasDock: env.hasDock },
