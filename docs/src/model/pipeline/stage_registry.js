@@ -382,8 +382,8 @@ export const PIPELINE_STAGES = [
       env.gatesWarped = fortGeom.gatesWarped;
       env.primaryGateWarped = fortGeom.primaryGateWarped;
 
-      env.anchors.gates = env.gatesWarped;
-      env.anchors.primaryGate = env.primaryGateWarped;
+      env.ctx.state.anchors.gates = env.gatesWarped;
+      env.ctx.state.anchors.primaryGate = env.primaryGateWarped;
     },
   },
 
@@ -422,7 +422,7 @@ export const PIPELINE_STAGES = [
     ctx.state.docks = docks;
 
     // Bridge (preserve existing behaviour)
-    env.anchors.docks = docks;
+    env.ctx.state.anchors.docks = docks;
   },
 },
 
@@ -509,7 +509,7 @@ export const PIPELINE_STAGES = [
       ctx.state.landmarks = marketOut.landmarks;
       
       // Bridge behaviour (preserve renderer expectations)
-      env.anchors.market = marketOut.marketAnchor;
+      env.ctx.state.anchors.market = marketOut.marketAnchor;
       env.marketCentre = marketOut.marketCentre;
       env.landmarks = marketOut.landmarks;
     },
