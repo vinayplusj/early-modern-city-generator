@@ -362,6 +362,7 @@ export const PIPELINE_STAGES = [
         gates: env.gatesOriginal,
         primaryGate: env.primaryGate,
       });
+      env.ctx.state.fortGeometryWarped = fortGeom;
 
       env.fortR = fortGeom.fortR;
 
