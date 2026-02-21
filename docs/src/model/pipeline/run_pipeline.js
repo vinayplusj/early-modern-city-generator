@@ -56,6 +56,11 @@ export function runPipeline(ctx) {
     stage.run(env);
   }
 
+  const roads = env.primaryRoads;
+  const avenue = (Array.isArray(env.primaryRoads) && env.primaryRoads.length >= 2)
+    ? env.primaryRoads[1]
+    : [env.anchors.plaza, env.anchors.citadel];
+  
   return assembleModel({
     footprint: env.footprint,
     cx: (env.centre?.x ?? env.cx),
@@ -91,13 +96,13 @@ export function runPipeline(ctx) {
     centre: env.centre,
     baseR: env.baseR,
     citadel: env.citadel,
-    avenue: env.avenue,
+    avenue,
     primaryGateWarped: env.primaryGateWarped,
 
     site: { water: env.waterKind, hasDock: env.hasDock },
     waterModel: env.waterModel,
 
-    roads: env.roads,
+    roads,
     primaryRoads: env.primaryRoads,
     ring: env.ring,
     ring2: env.ring2,
