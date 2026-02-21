@@ -12,11 +12,12 @@ export function drawWallsAndRingsAndWarp(ctx, {
   warp,
   fortHulls,
 }) {
-  // Curtain wall (warped) - draw first
-  if (wallCurtain && wallCurtain.length >= 3) {
+  // Curtain wall (warped) - debug geometry kept, rendering disabled
+  const showCurtainWall = false;
+  if (showCurtainWall && wallCurtain && wallCurtain.length >= 3) {
     const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#00ff00";
     const curtainWidth = warp?.wall?.drawCurtain?.width ?? 3;
-
+  
     ctx.save();
     ctx.strokeStyle = curtainStroke;
     ctx.lineWidth = curtainWidth;
@@ -35,24 +36,24 @@ export function drawWallsAndRingsAndWarp(ctx, {
     drawPoly(ctx, wall, true);
     ctx.stroke();
   }
-  console.log("warp wall draw keys:", warp?.wall?.drawCurtain, warp?.wall?.drawComposite);
 
-  // Bastions (polygons) in outworks colour
-  if (Array.isArray(bastionPolys)) {
+  // Bastions (polygons) - debug geometry kept, rendering disabled
+  const showBastionPolys = false;
+  if (showBastionPolys && Array.isArray(bastionPolys)) {
     ctx.save();
-
+  
     const outworksStroke = warp?.outworks?.draw?.stroke ?? "#ffcc80";
     const outworksWidth = warp?.outworks?.draw?.width ?? 2;
-
+  
     ctx.strokeStyle = outworksStroke;
     ctx.lineWidth = outworksWidth;
-
+  
     for (const poly of bastionPolys) {
       if (!Array.isArray(poly) || poly.length < 3) continue;
       drawPoly(ctx, poly, true);
       ctx.stroke();
     }
-
+  
     ctx.restore();
   }
   
