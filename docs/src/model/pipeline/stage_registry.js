@@ -387,23 +387,44 @@ export const PIPELINE_STAGES = [
     },
   },
 
-  {
-    id: 130,
-    name: "docks",
-    run(env) {
-      env.anchors.docks = runDocksStage({
-        hasDock: env.hasDock,
-        anchors: env.anchors,
-        newTown: env.newTown,
-        outerBoundary: env.outerBoundary,
-        wallBase: env.wallBaseForDraw,
-        centre: env.centre,
-        waterModel: env.waterModel,
-        width: env.width,
-        height: env.height,
-      });
-    },
+{
+  id: 130,
+  name: "docks",
+  run(env) {
+    const ctx = env.ctx;
+
+    const anchors = ctx.state.anchors;
+    const outerBoundary = ctx.state.outerBoundary;
+    const waterModel = ctx.state.waterModel;
+    const newTown = ctx.state.newTown;
+
+    const fortGeom = ctx.state.fortGeometryWarped;
+
+    if (!anchors) throw new Error("[EMCG] Stage 130 requires ctx.state.anchors (Stage 60 output).");
+    if (!outerBoundary) throw new Error("[EMCG] Stage 130 requires ctx.state.outerBoundary (Stage 30 output).");
+    if (!waterModel) throw new Error("[EMCG] Stage 130 requires ctx.state.waterModel (Stage 70 output).");
+    if (!newTown) throw new Error("[EMCG] Stage 130 requires ctx.state.newTown (Stage 20 output).");
+    if (!fortGeom) throw new Error("[EMCG] Stage 130 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+
+    const docks = runDocksStage({
+      hasDock: env.hasDock,
+      anchors,
+      newTown: newTown.newTown,
+      outerBoundary,
+      wallBase: fortGeom.wallBaseForDraw,
+      centre: (ctx.state.fortifications?.centre ?? env.centre),
+      waterModel,
+      width: env.width,
+      height: env.height,
+    });
+
+    // Canonical output
+    ctx.state.docks = docks;
+
+    // Bridge (preserve existing behaviour)
+    env.anchors.docks = docks;
   },
+},
 
   {
     id: 140,
@@ -457,22 +478,37 @@ export const PIPELINE_STAGES = [
     id: 160,
     name: "market",
     run(env) {
+      const ctx = env.ctx;
+
+      const anchors = ctx.state.anchors;
+      const wards = ctx.state.wards;
+      const fort = ctx.state.fortifications;
+      const fortGeom = ctx.state.fortGeometryWarped;
+      
+      if (!anchors) throw new Error("[EMCG] Stage 160 requires ctx.state.anchors (Stage 60 output).");
+      if (!wards) throw new Error("[EMCG] Stage 160 requires ctx.state.wards (Stage 50 output).");
+      if (!fort) throw new Error("[EMCG] Stage 160 requires ctx.state.fortifications (Stage 10 output).");
+      if (!fortGeom) throw new Error("[EMCG] Stage 160 requires ctx.state.fortGeometryWarped (Stage 120 output).");
       const marketOut = runMarketStage({
-        anchors: env.anchors,
-        wardsWithRoles: env.wardsWithRoles,
-        wallBaseForDraw: env.wallBaseForDraw,
-        centre: env.centre,
-        primaryGateWarped: env.primaryGateWarped,
+        anchors,
+        wardsWithRoles: wards.wardsWithRoles,
+        wallBaseForDraw: fortGeom.wallBaseForDraw,
+        centre: fort.centre ?? env.centre,
+        primaryGateWarped: fortGeom.primaryGateWarped ?? env.primaryGateWarped,
         cx: env.cx,
         cy: env.cy,
         baseR: env.baseR,
-        footprint: env.footprint,
+        footprint: fort.footprint,
         width: env.width,
         height: env.height,
         citadel: env.citadel,
-        minWallClear: env.ctx.params.minWallClear,
+        minWallClear: ctx.params.minWallClear,
       });
 
+      ctx.state.market = marketOut;
+      ctx.state.landmarks = marketOut.landmarks;
+      
+      // Bridge behaviour (preserve renderer expectations)
       env.anchors.market = marketOut.marketAnchor;
       env.marketCentre = marketOut.marketCentre;
       env.landmarks = marketOut.landmarks;
