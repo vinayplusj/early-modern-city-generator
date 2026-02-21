@@ -32,6 +32,7 @@ export const PIPELINE_STAGES = [
       const { ctx, rng, cx, cy, baseR, bastionCount, gateCount } = env;
 
       const fort = runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount);
+      env.ctx.state.fortifications = fort;
 
       env.fort = fort;
       env.footprint = fort.footprint;
