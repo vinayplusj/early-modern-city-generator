@@ -272,13 +272,26 @@ export const PIPELINE_STAGES = [
     },
   },
 
-  {
-    id: 100,
-    name: "citadel",
-    run(env) {
-      env.citadel = runCitadelStage(env.rng, env.anchors, env.baseR);
-    },
+{
+  id: 100,
+  name: "citadel",
+  run(env) {
+    const ctx = env.ctx;
+    const anchors = ctx.state.anchors;
+
+    if (!anchors) {
+      throw new Error("[EMCG] Stage 100 requires ctx.state.anchors (Stage 60 output).");
+    }
+
+    const citadel = runCitadelStage(env.rng, anchors, env.baseR);
+
+    // Canonical output
+    ctx.state.citadel = citadel;
+
+    // Bridge output (until run_pipeline.js reads S.citadel)
+    env.citadel = citadel;
   },
+},
   
   {
     id: 110,
@@ -530,6 +543,7 @@ export const PIPELINE_STAGES = [
       const districts = ctx.state.districts;
       const wards = ctx.state.wards;
       const fortGeom = ctx.state.fortGeometryWarped;
+      const newTown = ctx.state.newTown;
   
       if (!routingMesh) throw new Error("[EMCG] Stage 170 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 170 requires ctx.state.anchors (Stage 60 output).");
@@ -537,6 +551,7 @@ export const PIPELINE_STAGES = [
       if (!districts) throw new Error("[EMCG] Stage 170 requires ctx.state.districts (Stage 90 output).");
       if (!wards) throw new Error("[EMCG] Stage 170 requires ctx.state.wards (Stage 50 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 170 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+      if (!newTown) throw new Error("[EMCG] Stage 170 requires ctx.state.newTown (Stage 20 output).");
   
       const roadsOut = runRoadGraphAndBlocksStage({
         ctx,
@@ -551,7 +566,7 @@ export const PIPELINE_STAGES = [
         ring2: env.ring2,
         squareCentre: anchors.plaza,
         citCentre: anchors.citadel,
-        newTown: env.newTown,
+        newTown: newTown.newTown,
         districts,
         wardsWithRoles: wards.wardsWithRoles,
       });
@@ -559,8 +574,10 @@ export const PIPELINE_STAGES = [
       env.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
       env.roadGraph = roadsOut.roadGraph;
       env.blocks = roadsOut.blocks;
+  
       ctx.state.roadGraph = roadsOut.roadGraph;
       ctx.state.blocks = roadsOut.blocks;
+      ctx.state.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
     },
   },
 
