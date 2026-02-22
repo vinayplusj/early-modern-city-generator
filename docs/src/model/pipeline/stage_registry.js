@@ -455,21 +455,34 @@ export const PIPELINE_STAGES = [
     id: 150,
     name: "outworks",
     run(env) {
+      const ctx = env.ctx;
+    
+      const fortGeom = ctx.state.fortGeometryWarped;
+      const warp = ctx.state.warp;
+      const newTown = ctx.state.newTown;
+    
+      if (!fortGeom) throw new Error("[EMCG] Stage 150 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+      if (!warp) throw new Error("[EMCG] Stage 150 requires ctx.state.warp (Stage 110 output).");
+      if (!newTown) throw new Error("[EMCG] Stage 150 requires ctx.state.newTown (Stage 20 output).");
+    
       env.ravelins = runOutworksStage({
-        gatesWarped: env.gatesWarped,
-        primaryGateWarped: env.primaryGateWarped,
+        gatesWarped: fortGeom.gatesWarped,
+        primaryGateWarped: fortGeom.primaryGateWarped,
         cx: env.cx,
         cy: env.cy,
-        fortR: env.fortR,
-        ditchWidth: env.ditchWidth,
-        glacisWidth: env.glacisWidth,
-        newTown: env.newTown,
+        fortR: fortGeom.fortR ?? env.fortR,
+        ditchWidth: fortGeom.ditchWidth ?? env.ditchWidth,
+        glacisWidth: fortGeom.glacisWidth ?? env.glacisWidth,
+        newTown: newTown.newTown,
         bastionCount: env.bastionCount,
-        bastionPolysWarpedSafe: env.bastionPolysWarpedSafe,
-        wallForOutworks: env.wallForDraw,
-        warpOutworks: env.warpOutworks,
-        warpDebugEnabled: Boolean(env.ctx.params.warpDebugEnabled),
+        bastionPolysWarpedSafe: warp.bastionPolysWarpedSafe ?? env.bastionPolysWarpedSafe,
+        wallForOutworks: warp.wallForDraw ?? env.wallForDraw,
+        warpOutworks: warp.warpOutworks ?? env.warpOutworks,
+        warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
       });
+    
+      // Optional canonical output (recommended)
+      ctx.state.outworks = env.ravelins;
     },
   },
 
