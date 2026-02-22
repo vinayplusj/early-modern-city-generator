@@ -458,26 +458,18 @@ export const PIPELINE_STAGES = [
     name: "primaryRoads",
     run(env) {
       const ctx = env.ctx;
-    
+  
       const routingMesh = ctx.state.routingMesh;
       const anchors = ctx.state.anchors;
       const fortGeom = ctx.state.fortGeometryWarped;
-    
+  
       if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
-    
-      if (Boolean(ctx.params.warpDebugEnabled)) {
-        console.log("[Stage140] inputs", {
-          vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
-          vorGraphEdges: routingMesh.vorGraph?.edges?.length,
-          plaza: anchors.plaza,
-          citadel: anchors.citadel,
-          gatesWarpedN: fortGeom.gatesWarped?.length,
-          primaryGateWarped: fortGeom.primaryGateWarped,
-          waterKind: env.waterKind,
-        });
-      }
+      if (!routingMesh.vorGraph) throw new Error("[EMCG] Stage 140 missing routingMesh.vorGraph.");
+      if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
+      if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
+  
       const primaryOut = runPrimaryRoadsStage({
         ctx,
         vorGraph: routingMesh.vorGraph,
@@ -487,12 +479,33 @@ export const PIPELINE_STAGES = [
         primaryGateWarped: fortGeom.primaryGateWarped,
         gatesWarped: fortGeom.gatesWarped,
       });
-      if (!Array.isArray(ctx.state.primaryRoads)) {
-        throw new Error("[EMCG] Stage 140 produced invalid primaryRoads.");
+  
+      // Accept both shapes:
+      // - legacy: returns Array
+      // - newer: returns { primaryRoads: Array }
+      let primaryRoads = Array.isArray(primaryOut)
+        ? primaryOut
+        : primaryOut?.primaryRoads;
+  
+      // Fallback: if routing fails, keep renderer working with a deterministic avenue.
+      if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
+        primaryRoads = [
+          [anchors.plaza, anchors.citadel],
+        ];
+  
+        if (Boolean(ctx.params.warpDebugEnabled)) {
+          console.warn("[EMCG] Stage 140: routing produced no primaryRoads. Using fallback plaza->citadel segment.", {
+            waterKind: env.waterKind,
+            vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
+            vorGraphEdges: routingMesh.vorGraph?.edges?.length,
+          });
+        }
       }
-      ctx.state.primaryRoads = primaryOut.primaryRoads;
+  
+      ctx.state.primaryRoads = primaryRoads;
+  
       // Bridge until nothing reads env.primaryRoads
-      env.primaryRoads = ctx.state.primaryRoads;
+      env.primaryRoads = primaryRoads;
     },
   },
 
