@@ -378,12 +378,8 @@ export const PIPELINE_STAGES = [
       env.ring = fortGeom.ring;
       env.ring2 = fortGeom.ring2;
       env.ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
-      
-      env.gatesWarped = fortGeom.gatesWarped;
-      env.primaryGateWarped = fortGeom.primaryGateWarped;
-
-      env.ctx.state.anchors.gates = env.gatesWarped;
-      env.ctx.state.anchors.primaryGate = env.primaryGateWarped;
+      env.ctx.state.anchors.gates = fortGeom.gatesWarped;
+      env.ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
     },
   },
 
@@ -573,7 +569,7 @@ export const PIPELINE_STAGES = [
 
         vorGraph: env.vorGraph,
         primaryRoads: env.primaryRoads,
-        anchors: env.anchors,
+        anchors: env.ctx.state.anchors,
         wallBase: env.wallBase,
         outerBoundary: env.outerBoundary,
         width: env.width,
