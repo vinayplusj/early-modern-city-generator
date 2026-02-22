@@ -64,18 +64,32 @@ export function assembleModel({
   anchors,
 }) {
   const safeBaseR = Number.isFinite(baseR) ? baseR : 0;
+
+  const wallCurtain =
+    (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
+      ? wallCurtainForDraw
+      : wallBase;
+
+  const wall = (Array.isArray(wallForDraw) && wallForDraw.length >= 2) ? wallForDraw : null;
+  const bastionPolys = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
+  const gates = Array.isArray(gatesWarped) ? gatesWarped : [];
+
+  const roadsArr = Array.isArray(roads) ? roads : null;
+  const primaryRoadsArr = Array.isArray(primaryRoads) ? primaryRoads : roadsArr;
+
   return {
     footprint,
     cx,
     cy,
     debug,
+
     // Walls + moatworks
     wallBase,
-    wallCurtain: wallCurtainForDraw || wallBase,
-    wall: wallForDraw,
-    bastionPolys: bastionPolysWarpedSafe,
+    wallCurtain,
+    wall,
+    bastionPolys,
     bastionHull,
-    gates: gatesWarped,
+    gates,
     ravelins,
     ditchOuter,
     ditchInner,
@@ -110,8 +124,8 @@ export function assembleModel({
     water: waterModel,
 
     // Roads
-    roads,
-    primaryRoads,
+    roads: roadsArr,
+    primaryRoads: primaryRoadsArr,
     ring,
     ring2,
     secondaryRoads: secondaryRoadsLegacy,
