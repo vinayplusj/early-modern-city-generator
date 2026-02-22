@@ -530,6 +530,8 @@ export const PIPELINE_STAGES = [
   {
     id: 170,
     name: "roadGraphAndBlocks",
+    const fortGeom = ctx.state.fortGeometryWarped;
+    if (!fortGeom) throw new Error("[EMCG] Stage 170 requires ctx.state.fortGeometryWarped (Stage 120 output).");
     run(env) {
       const ctx = env.ctx;
     
@@ -553,7 +555,7 @@ export const PIPELINE_STAGES = [
         waterKind: env.waterKind,
         rng: env.rng,
         primaryRoads,
-        gatesWarped: env.gatesWarped,
+        gatesWarped: fortGeom.gatesWarped,
         ring: env.ring,
         ring2: env.ring2,
         squareCentre: anchors.plaza,
