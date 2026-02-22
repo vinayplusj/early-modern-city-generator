@@ -80,95 +80,134 @@ function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
   return q;
 }
 
+function dist2(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
 export function buildAnchors(ctx) {
-  const wallBase = ctx?.geom?.wallBase;
-  const wards = ctx?.wards?.cells;
+  // ---------------- Phase 2 canonical reads with Phase 1 fallbacks ----------------
+  const fort = ctx?.state?.fortifications ?? null;
+
+  // Prefer canonical fort wall base; fall back to old ctx.geom.wallBase if present.
+  const wallBase =
+    fort?.wallBase ??
+    ctx?.geom?.wallBase ??
+    null;
+
+  // Prefer canonical wards output; fall back to older ctx.wards.cells.
+  const wards =
+    ctx?.state?.wards?.wardsWithRoles ??
+    ctx?.wards?.cells ??
+    null;
 
   if (!Array.isArray(wallBase) || wallBase.length < 3) {
-    throw new Error("anchors stage requires ctx.geom.wallBase polygon");
+    throw new Error("[EMCG] anchors stage requires wallBase polygon (ctx.state.fortifications.wallBase or ctx.geom.wallBase).");
   }
   if (!Array.isArray(wards) || wards.length < 1) {
-    throw new Error("anchors stage requires ctx.wards.cells (role-tagged wards)");
+    throw new Error("[EMCG] anchors stage requires role-tagged wards (ctx.state.wards.wardsWithRoles or ctx.wards.cells).");
   }
 
-  const w = ctx.canvas.w;
-  const h = ctx.canvas.h;
+  const w = ctx?.canvas?.w;
+  const h = ctx?.canvas?.h;
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    throw new Error("[EMCG] anchors stage requires ctx.canvas.w and ctx.canvas.h.");
+  }
 
-  const baseR = ctx?.params?.baseR;
+  // Base radius: prefer param, else match pipeline frame.
+  const baseR = Number.isFinite(ctx?.params?.baseR)
+    ? ctx.params.baseR
+    : Math.min(w, h) * 0.33;
+
   const minWallClear = ctx?.params?.minWallClear;
   const minAnchorSep = ctx?.params?.minAnchorSep;
   const pad = Number.isFinite(ctx?.params?.canvasPad) ? ctx.params.canvasPad : 10;
 
-  if (!Number.isFinite(baseR) || baseR <= 0) {
-    throw new Error("anchors stage requires ctx.params.baseR");
-  }
   if (!Number.isFinite(minWallClear) || minWallClear < 0) {
-    throw new Error("anchors stage requires ctx.params.minWallClear");
+    throw new Error("[EMCG] anchors stage requires ctx.params.minWallClear.");
   }
   if (!Number.isFinite(minAnchorSep) || minAnchorSep <= 0) {
-    throw new Error("anchors stage requires ctx.params.minAnchorSep");
+    throw new Error("[EMCG] anchors stage requires ctx.params.minAnchorSep.");
   }
 
-  // Centre is purely canvas-derived (deterministic).
-  const centre = { x: ctx.canvas.cx, y: ctx.canvas.cy };
+  // Centre: prefer fort centre, else pipeline-like canvas-derived fallback.
+  const centre =
+    (isPoint(fort?.centre) ? fort.centre : null) ??
+    { x: w * 0.5, y: h * 0.55 };
 
-  // Ward-driven: pick the wards by role.
-  const plazaWard = wards.find((wd) => wd && wd.role === "plaza") || null;
-  const citadelWard = wards.find((wd) => wd && wd.role === "citadel") || null;
-  function dist2(a, b) {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    return dx * dx + dy * dy;
-  }
+  // ---------------- Ward selection (role-first, deterministic fallback) ----------------
+  const plazaWardByRole = wards.find((wd) => wd && wd.role === "plaza") || null;
+  const citadelWardByRole = wards.find((wd) => wd && wd.role === "citadel") || null;
 
-  function pickAlternateCitadelWardInner(plazaPoint) {
-    // Prefer inner wards only. This preserves the design intent.
-    const inner = wards.filter((w) => w && w.role === "inner");
-    if (inner.length === 0) return null;
-
+  function pickWardNearestTo(point, candidates) {
     let best = null;
-    let bestD2 = -Infinity;
-
-    for (const w of inner) {
-      const c = wardCentroid(w);
+    let bestD2 = Infinity;
+    for (const wd of candidates) {
+      const c = wardCentroid(wd);
       if (!isPoint(c)) continue;
-
-      const d2 = dist2(c, plazaPoint);
-      if (d2 < minAnchorSep * minAnchorSep) continue;      
-      if (d2 > bestD2) {
-        bestD2 = d2;
-        best = w;
-      }
-    }
-    if (!best) {
-      // If all inner wards are within minAnchorSep, fall back to farthest anyway.
-      for (const w of inner) {
-        const c = wardCentroid(w);
-        if (!isPoint(c)) continue;
-        const d2 = dist2(c, plazaPoint);
-        if (d2 > bestD2) {
-          bestD2 = d2;
-          best = w;
-        }
+      const d = dist2(c, point);
+      if (d < bestD2) {
+        bestD2 = d;
+        best = wd;
       }
     }
     return best;
   }
 
-  if (!plazaWard) throw new Error("No plaza ward found");
-  if (!citadelWard) throw new Error("No citadel ward found");
+  function pickWardFarthestFrom(point, candidates, minSep) {
+    let best = null;
+    let bestD2 = -Infinity;
+    const minSep2 = minSep * minSep;
+
+    for (const wd of candidates) {
+      const c = wardCentroid(wd);
+      if (!isPoint(c)) continue;
+      const d = dist2(c, point);
+      if (d < minSep2) continue;
+      if (d > bestD2) {
+        bestD2 = d;
+        best = wd;
+      }
+    }
+
+    // If all candidates are too close, fall back to pure farthest.
+    if (!best) {
+      for (const wd of candidates) {
+        const c = wardCentroid(wd);
+        if (!isPoint(c)) continue;
+        const d = dist2(c, point);
+        if (d > bestD2) {
+          bestD2 = d;
+          best = wd;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  // Plaza: role "plaza" if present else nearest-to-centre.
+  const plazaWard =
+    plazaWardByRole ??
+    pickWardNearestTo(centre, wards);
+
+  // Citadel: role "citadel" if present else prefer inner wards, else farthest from plaza.
+  const innerWards = wards.filter((wd) => wd && wd.role === "inner");
+  const citadelWard =
+    citadelWardByRole ??
+    (innerWards.length ? pickWardFarthestFrom(wardCentroid(plazaWard) || centre, innerWards, minAnchorSep) : null) ??
+    pickWardFarthestFrom(wardCentroid(plazaWard) || centre, wards, minAnchorSep);
+
+  if (!plazaWard) throw new Error("[EMCG] anchors stage could not select plaza ward (roles missing and no usable ward centroids).");
+  if (!citadelWard) throw new Error("[EMCG] anchors stage could not select citadel ward (roles missing and no usable ward centroids).");
 
   const plazaPoly = wardPoly(plazaWard);
   const citadelPoly = wardPoly(citadelWard);
 
   // Initial candidates from ward centroid.
-  let plaza = wardCentroid(plazaWard) || { x: ctx.canvas.cx, y: ctx.canvas.cy };
-  let citadel = wardCentroid(citadelWard) || { x: ctx.canvas.cx - baseR * 0.12, y: ctx.canvas.cy + baseR * 0.02 };
-
-  if (citadelWard && citadelWard.role !== "inner" && wards.some((w) => w && w.role === "inner")) {
-    const alt = pickAlternateCitadelWardInner(plaza);
-    if (alt) citadel = wardCentroid(alt) || citadel;
-  }  
+  let plaza = wardCentroid(plazaWard) || { x: centre.x, y: centre.y };
+  let citadel = wardCentroid(citadelWard) || { x: centre.x - baseR * 0.12, y: centre.y + baseR * 0.02 };
 
   // Ensure each anchor is inside its ward poly if available.
   if (plazaPoly && !pointInPolyOrOn(plaza, plazaPoly, 1e-6)) {
@@ -207,34 +246,34 @@ export function buildAnchors(ctx) {
   plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
   citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
 
-  // Market is not ward-driven yet. Keep it null here; generate.js can compute it for now.
-  // In window 1 we only stabilise plaza/citadel.
+  // Market is not ward-driven yet.
   const market = null;
 
   // Docks are site-driven; keep null in stage for now.
   const docks = null;
 
-  // Final invariants (throwing here is good; it surfaces real bugs).
+  // Final invariants
   assertFinitePoint(plaza, "anchors.plaza");
   assertFinitePoint(citadel, "anchors.citadel");
 
-  // Repair pass: if plaza and citadel are too close, choose a different inner ward for citadel,
-  // then enforce separation deterministically inside wallBase.
+  // Repair pass: if too close, pick a different inner ward for citadel, then enforce separation.
   const d0 = Math.hypot(citadel.x - plaza.x, citadel.y - plaza.y);
   if (!(d0 >= minAnchorSep)) {
-    const alt = pickAlternateCitadelWardInner(plaza);
-    if (alt) {
-      const altPoly = wardPoly(alt);
-      let altC = wardCentroid(alt) || citadel;
+    if (innerWards.length) {
+      const alt = pickWardFarthestFrom(plaza, innerWards, minAnchorSep);
+      if (alt) {
+        const altPoly = wardPoly(alt);
+        let altC = wardCentroid(alt) || citadel;
 
-      if (altPoly && !pointInPolyOrOn(altC, altPoly, 1e-6)) {
-        altC = pushInsidePoly(altC, altPoly, wardCentroid(alt) || centre, 4, 60);
+        if (altPoly && !pointInPolyOrOn(altC, altPoly, 1e-6)) {
+          altC = pushInsidePoly(altC, altPoly, wardCentroid(alt) || centre, 4, 60);
+        }
+
+        altC = ensureInside(wallBase, altC, centreHint, 1.0);
+        altC = pushAwayFromWall(wallBase, altC, minWallClear, centreHint);
+
+        citadel = altC;
       }
-
-      altC = ensureInside(wallBase, altC, centreHint, 1.0);
-      altC = pushAwayFromWall(wallBase, altC, minWallClear, centreHint);
-
-      citadel = altC;
     }
 
     const sep = enforceMinSeparation(plaza, citadel, minAnchorSep);
@@ -251,7 +290,6 @@ export function buildAnchors(ctx) {
     citadel = ensureInside(wallBase, citadel, centreHint, 1.0);
   }
 
-  // Now validate strictly.
   assertDistinctPoints(plaza, citadel, minAnchorSep, "plaza", "citadel");
 
   return {
