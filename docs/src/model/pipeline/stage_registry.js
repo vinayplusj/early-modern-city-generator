@@ -231,7 +231,9 @@ export const PIPELINE_STAGES = [
         cy: env.cy,
         baseR: env.baseR,
       });
-    
+      // Bridge (legacy readers)
+      ctx.mesh = ctx.mesh || {};
+      ctx.mesh.vorGraph = meshOut.vorGraph;
       // Canonical Phase 2 output
       ctx.state.routingMesh = {
         vorGraph: meshOut.vorGraph,
@@ -346,7 +348,11 @@ export const PIPELINE_STAGES = [
   
       // Canonical
       ctx.state.warp = warpOut;
-  
+      // Canonical convenience aliases (Phase 2)
+      ctx.state.warpWall = warpOut?.warpWall ?? null;
+      ctx.state.warpOutworks = warpOut?.warpOutworks ?? null;
+      ctx.state.wallForDraw = warpOut?.wallForDraw ?? null;
+      ctx.state.wallCurtainForDraw = warpOut?.wallCurtainForDraw ?? null;  
       // Bridge (keep until Stage 120 and Stage 150 are fully canonical)
       env.warpOut = warpOut;
       env.wallCurtainForDraw = warpOut?.wallCurtainForDraw || null;
@@ -449,6 +455,7 @@ export const PIPELINE_STAGES = [
   
       // Canonical anchor mutation (preferred)
       anchors.docks = docks;
+      ctx.state.anchors = anchors; // explicit canonical write
   
     },
   },
@@ -483,29 +490,15 @@ export const PIPELINE_STAGES = [
       // Accept both shapes:
       // - legacy: returns Array
       // - newer: returns { primaryRoads: Array }
-      let primaryRoads = Array.isArray(primaryOut)
+      const primaryRoads = Array.isArray(primaryOut)
         ? primaryOut
         : primaryOut?.primaryRoads;
-  
-      // Fallback: if routing fails, keep renderer working with a deterministic avenue.
-      if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
-        primaryRoads = [[anchors.plaza, anchors.citadel]];
       
-        if (Boolean(ctx.params.warpDebugEnabled)) {
-          console.warn(
-            "[EMCG] Stage 140: routing produced no primaryRoads. Using fallback plaza->citadel segment.",
-            {
-              waterKind: env.waterKind,
-              vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
-              vorGraphEdges: routingMesh.vorGraph?.edges?.length,
-            }
-          );
-        }
+      if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
+        throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
       }
-  
+      
       ctx.state.primaryRoads = primaryRoads;
-  
-      // Bridge until nothing reads env.primaryRoads
       env.primaryRoads = primaryRoads;
     },
   },
@@ -524,11 +517,14 @@ export const PIPELINE_STAGES = [
       if (!warp) throw new Error("[EMCG] Stage 150 requires ctx.state.warp (Stage 110 output).");
       if (!newTown) throw new Error("[EMCG] Stage 150 requires ctx.state.newTown (Stage 20 output).");
   
-      if (!Array.isArray(warp.bastionPolysWarpedSafe)) {
-        throw new Error("[EMCG] Stage 150 requires warp.bastionPolysWarpedSafe (Stage 110 output).");
+      const bastionsSafe = warp?.bastionPolysWarpedSafe ?? env.bastionPolysWarpedSafe;
+      const wallForOutworks = warp?.wallForDraw ?? env.wallForDraw;
+      
+      if (!Array.isArray(bastionsSafe)) {
+        throw new Error("[EMCG] Stage 150 requires bastionPolysWarpedSafe (Stage 110 output).");
       }
-      if (!Array.isArray(warp.wallForDraw)) {
-        throw new Error("[EMCG] Stage 150 requires warp.wallForDraw (Stage 110 output).");
+      if (!Array.isArray(wallForOutworks) || wallForOutworks.length < 3) {
+        throw new Error("[EMCG] Stage 150 requires wallForOutworks polyline (Stage 110 output).");
       }
   
       const outworks = runOutworksStage({
@@ -541,9 +537,9 @@ export const PIPELINE_STAGES = [
         glacisWidth: fortGeom.glacisWidth ?? env.glacisWidth,
         newTown: newTown.newTown,
         bastionCount: env.bastionCount ?? ctx.params.bastions,
-        bastionPolysWarpedSafe: warp.bastionPolysWarpedSafe,
-        wallForOutworks: warp.wallForDraw,
-        warpOutworks: warp.warpOutworks ?? null,
+        bastionPolysWarpedSafe: bastionsSafe,
+        wallForOutworks,
+        warpOutworks: warp?.warpOutworks ?? env.warpOutworks ?? null,
         warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
       });
   
@@ -663,6 +659,7 @@ export const PIPELINE_STAGES = [
       ctx.state.roadGraph = roadsOut.roadGraph;
       ctx.state.blocks = roadsOut.blocks;
       ctx.state.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
+      ctx.state.roadPolylines = roadsOut.polylines;
     },
   },
 
