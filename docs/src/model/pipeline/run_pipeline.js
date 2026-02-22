@@ -71,29 +71,32 @@ export function runPipeline(ctx) {
   }
 
   const S = ctx.state;
-
-  // Roads (prefer canonical)
+  
+  if (!S.anchors) {
+    throw new Error("[EMCG] Missing ctx.state.anchors (Stage 60 output).");
+  }
+  
   const roads = S.primaryRoads ?? env.primaryRoads ?? null;
-
-  // Avenue (prefer road[1], else plaza->citadel)
+  
   const avenue =
     (Array.isArray(roads) && roads.length >= 2)
       ? roads[1]
-      : [
-          S.anchors?.plaza ?? env.anchors?.plaza,
-          S.anchors?.citadel ?? env.anchors?.citadel,
-        ];
-
-  globalThis.__EMCG_AUDIT__ = globalThis.__EMCG_AUDIT__ || {};
-  globalThis.__EMCG_AUDIT__.stageTimings = ctx.audit.stageTimings;
-
+      : [S.anchors.plaza, S.anchors.citadel];
+  
   const fort = S.fortifications;
   const fortGeom = S.fortGeometryWarped;
   if (!fortGeom) {
     throw new Error("[EMCG] Missing ctx.state.fortGeometryWarped (Stage 120 output).");
   }
-
+  
+  if (!S.rings) {
+    throw new Error("[EMCG] Missing ctx.state.rings (Stage 120 output).");
+  }
+  
   const warp = S.warp;
+  // Optional strictness:
+  // if (!warp) throw new Error("[EMCG] Missing ctx.state.warp (Stage 110 output).");
+  
   const outworks = S.outworks;
   
   const warpWall = warp?.warpWall ?? env.warpWall ?? null;
@@ -127,7 +130,7 @@ export function runPipeline(ctx) {
     gatesWarped: fortGeom.gatesWarped,
     primaryGateWarped: fortGeom.primaryGateWarped,
 
-    ravelins: S.outworks ?? env.ravelins,
+    ravelins: outworks ?? env.ravelins,
 
     wardSeeds: S.wards?.wardSeeds,
     wardsWithRoles: S.wards?.wardsWithRoles,
@@ -136,7 +139,7 @@ export function runPipeline(ctx) {
     districts: S.districts,
 
     vorGraph: S.routingMesh?.vorGraph,
-    waterModel: S.routingMesh?.waterModel ?? env.waterModel,
+    waterModel: S.routingMesh?.waterModel ?? S.waterModel ?? env.waterModel,
 
     roads,
     primaryRoads: roads,
@@ -144,15 +147,15 @@ export function runPipeline(ctx) {
     roadGraph: S.roadGraph ?? env.roadGraph,
     blocks: S.blocks ?? env.blocks,
 
-    ring: S.rings?.ring ?? env.ring,
-    ring2: S.rings?.ring2 ?? env.ring2,
+    ring: S.rings?.ring,
+    ring2: S.rings?.ring2,
     citadel: S.citadel ?? env.citadel,
     avenue,
     newTown: S.newTown?.newTown ?? env.newTown,
     outerBoundary: S.outerBoundary ?? env.outerBoundary,
     landmarks: S.landmarks ?? env.landmarks,
 
-    anchors: S.anchors ?? env.anchors,
+    anchors: S.anchors, // no env fallback
 
     site: { water: env.waterKind, hasDock: env.hasDock },
   });
