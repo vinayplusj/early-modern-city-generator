@@ -29,6 +29,8 @@ export function runAnchorsStage(ctx) {
   if (!isPoint(anchors.citadel)) {
     throw new Error("[EMCG] Stage 60 missing anchors.citadel.");
   }
-
+  if (!isPoint(anchors.centre)) {
+    throw new Error("[EMCG] Stage 60 missing anchors.centre.");
+  }
   return anchors;
 }
