@@ -177,10 +177,6 @@ export const PIPELINE_STAGES = [
         outerBoundary,
       });
       ctx.state.wards = wardsOut;
-      env.wardSeeds = wardsOut.wardSeeds;
-      env.wardsWithRoles = wardsOut.wardsWithRoles;
-      env.wardRoleIndices = wardsOut.wardRoleIndices;
-      env.fortHulls = wardsOut.fortHulls;
     },
   },
 
@@ -229,13 +225,9 @@ export const PIPELINE_STAGES = [
         baseR: env.baseR,
       });
     
-      // Bridge outputs (downstream stages still use env.* for now)
-      env.vorGraph = meshOut.vorGraph;
-      env.waterModel = meshOut.waterModel;
-    
       // Preserve existing ctx writes (existing behaviour)
       ctx.mesh = ctx.mesh || {};
-      ctx.mesh.vorGraph = env.vorGraph;
+      ctx.mesh.vorGraph = meshOut.vorGraph;
     
       // Canonical Phase 2 output
       ctx.state.routingMesh = {
@@ -583,9 +575,10 @@ export const PIPELINE_STAGES = [
 
         cx: env.cx,
         cy: env.cy,
-        fortHulls: env.fortHulls,
+        fortHulls: env.ctx.state.wards?.fortHulls,
 
-        vorGraph: env.vorGraph,
+        vorGraph: env.ctx.state.routingMesh?.vorGraph,
+        waterModel: env.ctx.state.routingMesh?.waterModel,
         primaryRoads: env.primaryRoads,
         anchors: env.ctx.state.anchors,
         wallBase: env.wallBase,
@@ -593,7 +586,6 @@ export const PIPELINE_STAGES = [
         width: env.width,
         height: env.height,
         hasDock: env.hasDock,
-        waterModel: env.waterModel,
       });
     },
   },
