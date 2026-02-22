@@ -70,14 +70,13 @@ export function runPipeline(ctx) {
     });
   }
 
+  const S = ctx.state;
   const roads = env.primaryRoads;
   const avenue = (Array.isArray(env.primaryRoads) && env.primaryRoads.length >= 2)
     ? env.primaryRoads[1]
     : [S.anchors.plaza, S.anchors.citadel];
   globalThis.__EMCG_AUDIT__ = globalThis.__EMCG_AUDIT__ || {};
   globalThis.__EMCG_AUDIT__.stageTimings = ctx.audit.stageTimings;
-  
-  const S = ctx.state;
 
   const fort = S.fortifications;
   const wards = S.wards;
