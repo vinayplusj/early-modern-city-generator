@@ -530,23 +530,23 @@ export const PIPELINE_STAGES = [
   {
     id: 170,
     name: "roadGraphAndBlocks",
-    const fortGeom = ctx.state.fortGeometryWarped;
-    if (!fortGeom) throw new Error("[EMCG] Stage 170 requires ctx.state.fortGeometryWarped (Stage 120 output).");
     run(env) {
       const ctx = env.ctx;
-    
+  
       const routingMesh = ctx.state.routingMesh;
       const anchors = ctx.state.anchors;
       const primaryRoads = ctx.state.primaryRoads;
       const districts = ctx.state.districts;
       const wards = ctx.state.wards;
-    
+      const fortGeom = ctx.state.fortGeometryWarped;
+  
       if (!routingMesh) throw new Error("[EMCG] Stage 170 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 170 requires ctx.state.anchors (Stage 60 output).");
       if (!primaryRoads) throw new Error("[EMCG] Stage 170 requires ctx.state.primaryRoads (Stage 140 output).");
       if (!districts) throw new Error("[EMCG] Stage 170 requires ctx.state.districts (Stage 90 output).");
       if (!wards) throw new Error("[EMCG] Stage 170 requires ctx.state.wards (Stage 50 output).");
-    
+      if (!fortGeom) throw new Error("[EMCG] Stage 170 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+  
       const roadsOut = runRoadGraphAndBlocksStage({
         ctx,
         vorGraph: routingMesh.vorGraph,
@@ -564,7 +564,7 @@ export const PIPELINE_STAGES = [
         districts,
         wardsWithRoles: wards.wardsWithRoles,
       });
-
+  
       env.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
       env.roadGraph = roadsOut.roadGraph;
       env.blocks = roadsOut.blocks;
