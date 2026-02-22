@@ -427,24 +427,27 @@ export const PIPELINE_STAGES = [
     name: "primaryRoads",
     run(env) {
       const ctx = env.ctx;
+    
       const routingMesh = ctx.state.routingMesh;
       const anchors = ctx.state.anchors;
-      
+      const fortGeom = ctx.state.fortGeometryWarped;
+    
       if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
+      if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+    
       const primaryOut = runPrimaryRoadsStage({
         ctx,
         vorGraph: routingMesh.vorGraph,
         waterModel: routingMesh.waterModel,
         anchors,
         waterKind: env.waterKind,
-        primaryGateWarped: env.primaryGateWarped,
-        gatesWarped: env.gatesWarped,
+        primaryGateWarped: fortGeom.primaryGateWarped,
+        gatesWarped: fortGeom.gatesWarped,
       });
-
+    
       env.primaryRoads = primaryOut.primaryRoads;
       ctx.state.primaryRoads = env.primaryRoads;
-
     },
   },
 
