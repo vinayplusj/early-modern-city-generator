@@ -232,10 +232,6 @@ export const PIPELINE_STAGES = [
         baseR: env.baseR,
       });
     
-      // Preserve existing ctx writes (existing behaviour)
-      ctx.mesh = ctx.mesh || {};
-      ctx.mesh.vorGraph = meshOut.vorGraph;
-    
       // Canonical Phase 2 output
       ctx.state.routingMesh = {
         vorGraph: meshOut.vorGraph,
@@ -378,7 +374,7 @@ export const PIPELINE_STAGES = [
         throw new Error("[EMCG] Stage 120 requires ctx.state.warp (Stage 110 output).");
       }
   
-      const warpWall = warp?.warpWall ?? env.warpWall ?? null;
+      const warpWall = warp?.warpWall ?? env.warpWall ?? null; // bridge fallback
       const wallWarped = (warpWall && Array.isArray(warpWall.wallWarped)) ? warpWall.wallWarped : null;
   
       const fortGeom = runWarpDependentFortGeometryStage({
@@ -393,10 +389,11 @@ export const PIPELINE_STAGES = [
         primaryGate: env.primaryGate,
       });
   
+      // Canonical outputs
       ctx.state.fortGeometryWarped = fortGeom;
       ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
   
-      // bridge (keep for now)
+      // Bridge outputs (keep for now)
       env.fortR = fortGeom.fortR;
       env.ditchWidth = fortGeom.ditchWidth;
       env.glacisWidth = fortGeom.glacisWidth;
@@ -412,6 +409,7 @@ export const PIPELINE_STAGES = [
       env.gatesWarped = fortGeom.gatesWarped;
       env.primaryGateWarped = fortGeom.primaryGateWarped;
   
+      // Keep anchors canonical updated
       ctx.state.anchors.gates = fortGeom.gatesWarped;
       ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
     },
