@@ -489,22 +489,22 @@ export const PIPELINE_STAGES = [
       ctx.state.outworks = env.ravelins;
     },
   },
-
   {
     id: 160,
     name: "market",
     run(env) {
       const ctx = env.ctx;
-
+  
       const anchors = ctx.state.anchors;
       const wards = ctx.state.wards;
       const fort = ctx.state.fortifications;
       const fortGeom = ctx.state.fortGeometryWarped;
-      
+  
       if (!anchors) throw new Error("[EMCG] Stage 160 requires ctx.state.anchors (Stage 60 output).");
       if (!wards) throw new Error("[EMCG] Stage 160 requires ctx.state.wards (Stage 50 output).");
       if (!fort) throw new Error("[EMCG] Stage 160 requires ctx.state.fortifications (Stage 10 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 160 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+  
       const marketOut = runMarketStage({
         anchors,
         wardsWithRoles: wards.wardsWithRoles,
@@ -517,15 +517,16 @@ export const PIPELINE_STAGES = [
         footprint: fort.footprint,
         width: env.width,
         height: env.height,
-        citadel: env.citadel,
+        citadel: ctx.state.citadel ?? env.citadel,
         minWallClear: ctx.params.minWallClear,
       });
-
+  
+      // Canonical outputs
       ctx.state.market = marketOut;
       ctx.state.landmarks = marketOut.landmarks;
-      
-      // Bridge behaviour (preserve renderer expectations)
-      env.ctx.state.anchors.market = marketOut.marketAnchor;
+      anchors.market = marketOut.marketAnchor;
+  
+      // Bridge outputs
       env.marketCentre = marketOut.marketCentre;
       env.landmarks = marketOut.landmarks;
     },
@@ -581,28 +582,46 @@ export const PIPELINE_STAGES = [
     },
   },
 
-  {
-    id: 900,
-    name: "debugInvariants",
-    run(env) {
-      runDebugInvariantsStage({
-        debugEnabled: Boolean(env.ctx.params.warpDebugEnabled),
-        debugOut: env.debug,
+{
+  id: 900,
+  name: "debugInvariants",
+  run(env) {
+    const ctx = env.ctx;
 
-        cx: env.cx,
-        cy: env.cy,
-        fortHulls: env.ctx.state.wards?.fortHulls ?? env.fortHulls,
+    const wards = ctx.state.wards;
+    const routingMesh = ctx.state.routingMesh;
+    const anchors = ctx.state.anchors;
+    const primaryRoads = ctx.state.primaryRoads;
 
-        vorGraph: env.ctx.state.routingMesh?.vorGraph,
-        waterModel: env.ctx.state.routingMesh?.waterModel,
-        primaryRoads: env.primaryRoads,
-        anchors: env.ctx.state.anchors,
-        wallBase: env.wallBase,
-        outerBoundary: env.outerBoundary,
-        width: env.width,
-        height: env.height,
-        hasDock: env.hasDock,
-      });
-    },
+    // Debug stage should be tolerant, but enforce minimum required inputs
+    if (!wards) throw new Error("[EMCG] Stage 900 requires ctx.state.wards (Stage 50 output).");
+    if (!routingMesh) throw new Error("[EMCG] Stage 900 requires ctx.state.routingMesh (Stage 70 output).");
+    if (!anchors) throw new Error("[EMCG] Stage 900 requires ctx.state.anchors (Stage 60 output).");
+
+    runDebugInvariantsStage({
+      debugEnabled: Boolean(ctx.params.warpDebugEnabled),
+      debugOut: env.debug,
+
+      cx: env.cx,
+      cy: env.cy,
+      fortHulls: wards.fortHulls,
+
+      vorGraph: routingMesh.vorGraph,
+      waterModel: routingMesh.waterModel,
+
+      // Prefer canonical primaryRoads; fall back to env for bridge
+      primaryRoads: primaryRoads ?? env.primaryRoads,
+
+      anchors,
+
+      // These are still partially env-driven until all fort outputs are migrated
+      wallBase: ctx.state.fortifications?.wallBase ?? env.wallBase,
+      outerBoundary: ctx.state.outerBoundary ?? env.outerBoundary,
+
+      width: env.width,
+      height: env.height,
+      hasDock: env.hasDock,
+    });
   },
+},
 ];
