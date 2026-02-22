@@ -63,6 +63,7 @@ export function assembleModel({
   landmarks,
   anchors,
 }) {
+  const safeBaseR = Number.isFinite(baseR) ? baseR : 0;
   return {
     footprint,
     cx,
@@ -95,12 +96,12 @@ export function assembleModel({
     wardRoleIndices,
 
     mesh: {
-      vorGraph,
+      vorGraph: vorGraph ?? null,
     },
 
     // Anchors
     centre,
-    squareR: baseR * 0.055,
+    squareR: safeBaseR * 0.055,
     citadel,
     avenue,
     primaryGate: primaryGateWarped,
