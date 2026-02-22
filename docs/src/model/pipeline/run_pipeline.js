@@ -71,18 +71,26 @@ export function runPipeline(ctx) {
   }
 
   const S = ctx.state;
-  const roads = env.primaryRoads;
-  const avenue = (Array.isArray(env.primaryRoads) && env.primaryRoads.length >= 2)
-    ? env.primaryRoads[1]
-    : [S.anchors.plaza, S.anchors.citadel];
+  
+  // Roads (prefer canonical)
+  const roads = S.primaryRoads ?? env.primaryRoads ?? null;
+  
+  // Avenue (prefer road[1], else plaza->citadel)
+  const avenue =
+    (Array.isArray(roads) && roads.length >= 2)
+      ? roads[1]
+      : [
+          S.anchors?.plaza ?? env.anchors?.plaza,
+          S.anchors?.citadel ?? env.anchors?.citadel,
+        ];
   globalThis.__EMCG_AUDIT__ = globalThis.__EMCG_AUDIT__ || {};
   globalThis.__EMCG_AUDIT__.stageTimings = ctx.audit.stageTimings;
 
   const fort = S.fortifications;
-  const wards = S.wards;
-  const routingMesh = S.routingMesh;
-  const anchors = S.anchors;
   const fortGeom = S.fortGeometryWarped;
+  if (!S.fortGeometryWarped) {
+    throw new Error("[EMCG] Missing ctx.state.fortGeometryWarped (Stage 120 output).");
+  }
   return assembleModel({
     // Canonical geometry frame
     footprint: fort?.footprint ?? env.footprint,
@@ -102,11 +110,11 @@ export function runPipeline(ctx) {
     warpWall: env.warpWall,
     warpOutworks: env.warpOutworks,
   
-    ditchOuter: fortGeom?.ditchOuter ?? env.ditchOuter,
-    ditchInner: fortGeom?.ditchInner ?? env.ditchInner,
-    glacisOuter: fortGeom?.glacisOuter ?? env.glacisOuter,
-    ditchWidth: fortGeom?.ditchWidth ?? env.ditchWidth,
-    glacisWidth: fortGeom?.glacisWidth ?? env.glacisWidth,
+    ditchOuter: fortGeom.ditchOuter ?? env.ditchOuter,
+    ditchInner: fortGeom.ditchInner ?? env.ditchInner,
+    glacisOuter: fortGeom.glacisOuter ?? env.glacisOuter,
+    ditchWidth: fortGeom.ditchWidth ?? env.ditchWidth,
+    glacisWidth: fortGeom.glacisWidth ?? env.glacisWidth,
   
     gatesOriginal: fort?.gates ?? env.gatesOriginal,
     gatesWarped: fortGeom.gatesWarped,
@@ -114,19 +122,19 @@ export function runPipeline(ctx) {
     ravelins: env.ravelins,
   
     // Wards / districts (canonical)
-    wardSeeds: wards?.wardSeeds ?? env.wardSeeds,
-    wardsWithRoles: wards?.wardsWithRoles ?? env.wardsWithRoles,
-    wardRoleIndices: wards?.wardRoleIndices ?? env.wardRoleIndices,
-    fortHulls: wards?.fortHulls ?? env.fortHulls,
-    districts: S.districts ?? env.districts,
+    wardSeeds: S.wards?.wardSeeds,
+    wardsWithRoles: S.wards?.wardsWithRoles,
+    wardRoleIndices: S.wards?.wardRoleIndices,
+    fortHulls: S.wards?.fortHulls,
+    districts: S.districts,
   
     // Routing mesh (canonical)
-    vorGraph: routingMesh?.vorGraph ?? env.vorGraph,
-    waterModel: routingMesh?.waterModel ?? S.waterModel ?? env.waterModel,
+    vorGraph: S.routingMesh?.vorGraph,
+    waterModel: S.routingMesh?.waterModel ?? S.waterModel,
   
     // Roads / blocks / graph (canonical where available)
     roads,
-    primaryRoads: S.primaryRoads ?? env.primaryRoads,
+    primaryRoads: roads,
     secondaryRoadsLegacy: env.secondaryRoadsLegacy,
     roadGraph: S.roadGraph ?? env.roadGraph,
     blocks: S.blocks ?? env.blocks,
@@ -138,7 +146,7 @@ export function runPipeline(ctx) {
     avenue,
     newTown: (S.newTown?.newTown ?? env.newTown),
     outerBoundary: S.outerBoundary ?? env.outerBoundary,
-    landmarks: S.landmarks ?? env.landmarks,
+    landmarks: S.landmarks,
   
     // Anchors (canonical)
     anchors: S.anchors,
