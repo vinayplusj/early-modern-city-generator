@@ -44,6 +44,7 @@ export function runPrimaryRoadsStage({
   let __loggedRoutingFlagsOnce = false;
 
   function routeNodesOrFallback(nA, nB, pA, pB) {
+    if (!pA || !pB) return null;
     if (nA == null || nB == null) return [pA, pB];
 
     const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
@@ -105,5 +106,13 @@ export function runPrimaryRoadsStage({
     primaryRoads.push(routeNodesOrFallback(nPlaza, nDocks, anchors.plaza, anchors.docks));
   }
 
-  return { primaryRoads, gateForRoad };
+  // Remove any null / malformed roads defensively.
+  const cleaned = primaryRoads.filter((r) => Array.isArray(r) && r.length >= 2 && r[0] && r[r.length - 1]);
+
+  // Stage-level deterministic fallback: always provide an avenue if plaza and citadel exist.
+  if (cleaned.length === 0 && anchors?.plaza && anchors?.citadel) {
+    cleaned.push([anchors.plaza, anchors.citadel]);
+  }
+
+  return { primaryRoads: cleaned, gateForRoad };
 }
