@@ -30,29 +30,15 @@ export const PIPELINE_STAGES = [
     name: "fortifications",
     run(env) {
       const { ctx, rng, cx, cy, baseR, bastionCount, gateCount } = env;
-
+  
       const fort = runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount);
-      env.ctx.state.fortifications = fort;
-
+      ctx.state.fortifications = fort;
+  
       env.fort = fort;
       env.footprint = fort.footprint;
-      env.wallR = fort.wallR;
-
-      env.wallBase = fort.wallBase;
-      env.wallFinal = fort.wallFinal;
-
-      env.bastions = fort.bastions;
-      env.bastionPolys = fort.bastionPolys;
+  
       env.bastionPolysWarpedSafe = fort.bastionPolys;
-
       env.gatesOriginal = fort.gates;
-
-      env.ditchWidth = fort.ditchWidth;
-      env.glacisWidth = fort.glacisWidth;
-      env.ditchOuter = fort.ditchOuter;
-      env.ditchInner = fort.ditchInner;
-      env.glacisOuter = fort.glacisOuter;
-
       env.centre = fort.centre;
     },
   },
@@ -87,13 +73,13 @@ export const PIPELINE_STAGES = [
         warpDebugEnabled,
       });
       ctx.state.newTown = nt;
+      ctx.state.bastionWarpInputs = {
+        bastionsForWarp: nt.bastionsForWarp,
+        bastionPolys: nt.bastionPolys,
+      };
       env.newTown = nt.newTown;
       env.primaryGate = nt.primaryGate;
       ctx.primaryGate = nt.primaryGate;
-
-      env.wallFinal = nt.wallFinal;
-      env.bastionPolys = nt.bastionPolys;
-      env.bastionsForWarp = nt.bastionsForWarp;
 
       // Keep the warp params in env for later stages (same as previous behaviour).
       env.warpFortParams = warpFortParams;
@@ -293,7 +279,7 @@ export const PIPELINE_STAGES = [
       env.citadel = runCitadelStage(env.rng, env.anchors, env.baseR);
     },
   },
-
+  
   {
     id: 110,
     name: "warpField",
@@ -301,79 +287,92 @@ export const PIPELINE_STAGES = [
       const ctx = env.ctx;
       const wards = ctx.state.wards;
       const districts = ctx.state.districts;
-      
+      const fort = ctx.state.fortifications;
+  
+      if (!fort) throw new Error("[EMCG] Stage 110 requires ctx.state.fortifications (Stage 10 output).");
       if (!wards) throw new Error("[EMCG] Stage 110 requires ctx.state.wards (Stage 50 output).");
       if (!districts) throw new Error("[EMCG] Stage 110 requires ctx.state.districts (Stage 90 output).");
+  
+      const bastionInputs = ctx.state.bastionWarpInputs;
+      if (!bastionInputs) {
+        throw new Error("[EMCG] Stage 110 requires ctx.state.bastionWarpInputs (Stage 20 output).");
+      }
+  
       const warpOut = runWarpFieldStage({
         ctx,
         cx: env.cx,
         cy: env.cy,
-      
-        wallFinal: env.wallFinal,
-        wallBase: env.wallBase,
-      
+  
+        wallFinal: fort.wallFinal,
+        wallBase: fort.wallBase,
+  
         fortHulls: wards.fortHulls,
         districts,
-      
-        bastionsForWarp: env.bastionsForWarp,
-        bastionPolys: env.bastionPolys,
-      
+  
+        bastionsForWarp: bastionInputs.bastionsForWarp,
+        bastionPolys: bastionInputs.bastionPolys,
+  
         warpFortParams: ctx.params.warpFortParams,
         warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
       });
-
+  
       ctx.state.warp = warpOut;
       env.warpOut = warpOut;
-
+  
       env.wallCurtainForDraw = warpOut?.wallCurtainForDraw || null;
       env.warpWall = warpOut.warpWall;
       env.warpOutworks = warpOut.warpOutworks;
-
+  
       env.wallForDraw = warpOut.wallForDraw;
-
+  
       env.bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
       env.bastionHull = warpOut.bastionHullWarpedSafe;
-      
     },
   },
+  
+{
+  id: 120,
+  name: "warpDependentFortGeometry",
+  run(env) {
+    const ctx = env.ctx;
+    const fort = ctx.state.fortifications;
+    if (!fort) throw new Error("[EMCG] Stage 120 requires ctx.state.fortifications (Stage 10 output).");
 
-  {
-    id: 120,
-    name: "warpDependentFortGeometry",
-    run(env) {
-      const wallWarped = (env.warpWall && env.warpWall.wallWarped) ? env.warpWall.wallWarped : null;
+    const wallWarped = (env.warpWall && env.warpWall.wallWarped) ? env.warpWall.wallWarped : null;
 
-      const fortGeom = runWarpDependentFortGeometryStage({
-        ctx: env.ctx,
-        cx: env.cx,
-        cy: env.cy,
-        wallR: env.wallR,
-        wallBase: env.wallBase,
-        wallWarped,
-        warpWall: env.warpWall,
-        gates: env.gatesOriginal,
-        primaryGate: env.primaryGate,
-      });
-      env.ctx.state.fortGeometryWarped = fortGeom;
+    const fortGeom = runWarpDependentFortGeometryStage({
+      ctx,
+      cx: env.cx,
+      cy: env.cy,
+      wallR: fort.wallR,
+      wallBase: fort.wallBase,
+      wallWarped,
+      warpWall: env.warpWall,
+      gates: env.gatesOriginal,
+      primaryGate: env.primaryGate,
+    });
 
-      env.fortR = fortGeom.fortR;
+    ctx.state.fortGeometryWarped = fortGeom;
 
-      env.ditchWidth = fortGeom.ditchWidth;
-      env.glacisWidth = fortGeom.glacisWidth;
+    env.fortR = fortGeom.fortR;
 
-      env.wallBaseForDraw = fortGeom.wallBaseForDraw;
+    env.ditchWidth = fortGeom.ditchWidth;
+    env.glacisWidth = fortGeom.glacisWidth;
 
-      env.ditchOuter = fortGeom.ditchOuter;
-      env.ditchInner = fortGeom.ditchInner;
-      env.glacisOuter = fortGeom.glacisOuter;
+    env.wallBaseForDraw = fortGeom.wallBaseForDraw;
 
-      env.ring = fortGeom.ring;
-      env.ring2 = fortGeom.ring2;
-      env.ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
-      env.ctx.state.anchors.gates = fortGeom.gatesWarped;
-      env.ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
-    },
+    env.ditchOuter = fortGeom.ditchOuter;
+    env.ditchInner = fortGeom.ditchInner;
+    env.glacisOuter = fortGeom.glacisOuter;
+
+    env.ring = fortGeom.ring;
+    env.ring2 = fortGeom.ring2;
+    ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
+
+    ctx.state.anchors.gates = fortGeom.gatesWarped;
+    ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
   },
+},
 
 {
   id: 130,
@@ -575,7 +574,7 @@ export const PIPELINE_STAGES = [
 
         cx: env.cx,
         cy: env.cy,
-        fortHulls: env.ctx.state.wards?.fortHulls,
+        fortHulls: env.ctx.state.wards?.fortHulls ?? env.fortHulls,
 
         vorGraph: env.ctx.state.routingMesh?.vorGraph,
         waterModel: env.ctx.state.routingMesh?.waterModel,
