@@ -42,7 +42,21 @@ export function runRoadGraphAndBlocksStage({
 }) {
   // ---------------- Road polylines -> road graph ----------------
   const ROAD_EPS = 2.0;
-
+  // Primary roads can arrive in multiple shapes during Phase 2 migration.
+  // Accept:
+  // - Array<Polyline>
+  // - { primaryRoads: Array<Polyline> }
+  const primaryRoadsArr = Array.isArray(primaryRoads)
+    ? primaryRoads
+    : primaryRoads?.primaryRoads;
+  
+  // If Stage 140 produced nothing, force a minimal primary road so blocks and graph are stable.
+  const fallbackPrimary =
+    (squareCentre && citCentre)
+      ? [squareCentre, citCentre]
+      : (anchors?.plaza && anchors?.citadel)
+        ? [anchors.plaza, anchors.citadel]
+        : null;
   // Weighting and blocking rules are consistent with Stage 140.
   const roadWeight = makeRoadWeightFn({
     graph: vorGraph,
@@ -52,10 +66,12 @@ export function runRoadGraphAndBlocksStage({
   });
 
   const snapCfg = { graph: vorGraph, maxSnapDist: 40, splitEdges: true };
-
+  const hasGraph = Boolean(vorGraph && Array.isArray(vorGraph.nodes) && Array.isArray(vorGraph.edges));
   function routePointsOrFallback(pA, pB) {
-    if (!pA || !pB) return [pA, pB];
+    if (!pA || !pB) return null;
 
+    if (!hasGraph) return [pA, pB];
+    
     const nA = snapPointToGraph({ point: pA, ...snapCfg });
     const nB = snapPointToGraph({ point: pB, ...snapCfg });
     if (nA == null || nB == null) return [pA, pB];
@@ -118,20 +134,28 @@ export function runRoadGraphAndBlocksStage({
   }
 
   // Prepend routed primaries so the road graph and block extraction reflect them.
-  if (Array.isArray(primaryRoads) && primaryRoads.length) {
-    const primAsPolylines = primaryRoads
-      .filter(p => Array.isArray(p) && p.length >= 2)
-      .map(p => ({
+  const primSource = (Array.isArray(primaryRoadsArr) && primaryRoadsArr.length)
+    ? primaryRoadsArr
+    : (fallbackPrimary ? [fallbackPrimary] : []);
+  
+  if (primSource.length) {
+    const primAsPolylines = primSource
+      .filter((p) => Array.isArray(p) && p.length >= 2 && p[0] && p[p.length - 1])
+      .map((p) => ({
         points: p,
         kind: "primary",
         width: 2.5,
         nodeKindA: "junction",
         nodeKindB: "junction",
       }));
-
+  
     polylines = [...primAsPolylines, ...polylines];
   }
 
+  polylines = polylines.filter((pl) => {
+    const pts = pl?.points;
+    return Array.isArray(pts) && pts.length >= 2 && pts[0] && pts[pts.length - 1];
+  });
   const roadGraph = buildRoadGraphWithIntersections(polylines, ROAD_EPS);
 
   // ---------------- Milestone 3.6: blocks (debug) ----------------
