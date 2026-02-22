@@ -109,8 +109,8 @@ export function runPipeline(ctx) {
     glacisWidth: fortGeom?.glacisWidth ?? env.glacisWidth,
   
     gatesOriginal: fort?.gates ?? env.gatesOriginal,
-    gatesWarped: fortGeom?.gatesWarped ?? env.gatesWarped,
-    primaryGateWarped: fortGeom?.primaryGateWarped ?? env.primaryGateWarped,
+    gatesWarped: fortGeom.gatesWarped,
+    primaryGateWarped: fortGeom.primaryGateWarped,
     ravelins: env.ravelins,
   
     // Wards / districts (canonical)
