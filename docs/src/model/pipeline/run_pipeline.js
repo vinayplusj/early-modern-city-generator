@@ -95,6 +95,9 @@ export function runPipeline(ctx) {
 
   const warp = S.warp;
   const outworks = S.outworks;
+  
+  const warpWall = warp?.warpWall ?? env.warpWall ?? null;
+  const warpOutworks = warp?.warpOutworks ?? env.warpOutworks ?? null;
 
   return assembleModel({
     footprint: fort?.footprint ?? env.footprint,
@@ -110,10 +113,9 @@ export function runPipeline(ctx) {
 
     bastionPolysWarpedSafe: warp?.bastionPolysWarpedSafe ?? env.bastionPolysWarpedSafe,
     bastionHull: env.bastionHull,
-
-    warp: { wall: env.warpWall, outworks: env.warpOutworks },
-    warpWall: env.warpWall,
-    warpOutworks: env.warpOutworks,
+    warp: { wall: warpWall, outworks: warpOutworks },
+    warpWall,
+    warpOutworks,
 
     ditchOuter: fortGeom.ditchOuter ?? env.ditchOuter,
     ditchInner: fortGeom.ditchInner ?? env.ditchInner,
@@ -125,7 +127,7 @@ export function runPipeline(ctx) {
     gatesWarped: fortGeom.gatesWarped,
     primaryGateWarped: fortGeom.primaryGateWarped,
 
-    ravelins: outworks ?? env.ravelins,
+    ravelins: S.outworks ?? env.ravelins,
 
     wardSeeds: S.wards?.wardSeeds,
     wardsWithRoles: S.wards?.wardsWithRoles,
@@ -150,7 +152,7 @@ export function runPipeline(ctx) {
     outerBoundary: S.outerBoundary ?? env.outerBoundary,
     landmarks: S.landmarks ?? env.landmarks,
 
-    anchors: S.anchors,
+    anchors: S.anchors ?? env.anchors,
 
     site: { water: env.waterKind, hasDock: env.hasDock },
   });
