@@ -2,7 +2,6 @@
 // docs/src/model/stages/110_warp_field.js
 //
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
-// Extracted from generate.js without functional changes.
 
 import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField } from "../warp.js";
@@ -13,11 +12,12 @@ import { convexHull } from "../../geom/hull.js";
  * @param {object} args
  * @returns {object}
  *  {
- *    warpWall,
- *    warpOutworks,
- *    wallForDraw,
- *    bastionPolysWarpedSafe,
- *    bastionHullWarpedSafe
+ *    warpWall: object|null,
+ *    warpOutworks: object|null,
+ *    wallForDraw: Array<{x:number,y:number}>|null,
+ *    wallCurtainForDraw: Array<{x:number,y:number}>|null,
+ *    bastionPolysWarpedSafe: Array<Array<{x:number,y:number}>>|null,
+ *    bastionHullWarpedSafe: Array<{x:number,y:number}>|null
  *  }
  */
 // ---------------- Deterministic hard clamps (no field sampling) ----------------
@@ -333,9 +333,9 @@ export function runWarpFieldStage({
   // -------------------------------------------------------------------------
   if (warpWall) {
     // Preserve original output from buildFortWarp (already warped + any internal clamps).
-  if (!warpWall.wallWarpedRaw) {
-    warpWall.wallWarpedRaw = warpWall.wallWarped || null;
-  }  
+    if (!warpWall.wallWarpedRaw) {
+      warpWall.wallWarpedRaw = warpWall.wallWarped || null;
+    }
     // Overwrite: this is the final curtain after deterministic hard clamps.
     // Downstream features (ditches, attachments) should use this.
     warpWall.wallWarped = wallCurtainForDraw;
@@ -1432,11 +1432,11 @@ export function runWarpFieldStage({
 
 
   return {
-    warpWall,
-    warpOutworks,
-    wallForDraw,              // composite
-    wallCurtainForDraw,       // new, debug only
-    bastionPolysWarpedSafe,
-    bastionHullWarpedSafe,
+    warpWall: warpWall ?? null,
+    warpOutworks: warpOutworks ?? null,
+    wallForDraw: (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null,
+    wallCurtainForDraw: (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) ? wallCurtainForDraw : null,
+    bastionPolysWarpedSafe: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : null,
+    bastionHullWarpedSafe: (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) ? bastionHullWarpedSafe : null,
   };
 }
