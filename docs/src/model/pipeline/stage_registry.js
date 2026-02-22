@@ -467,6 +467,17 @@ export const PIPELINE_STAGES = [
       if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
     
+      if (Boolean(ctx.params.warpDebugEnabled)) {
+        console.log("[Stage140] inputs", {
+          vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
+          vorGraphEdges: routingMesh.vorGraph?.edges?.length,
+          plaza: anchors.plaza,
+          citadel: anchors.citadel,
+          gatesWarpedN: fortGeom.gatesWarped?.length,
+          primaryGateWarped: fortGeom.primaryGateWarped,
+          waterKind: env.waterKind,
+        });
+      }
       const primaryOut = runPrimaryRoadsStage({
         ctx,
         vorGraph: routingMesh.vorGraph,
