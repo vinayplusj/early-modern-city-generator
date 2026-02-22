@@ -32,13 +32,31 @@ export const PIPELINE_STAGES = [
       const { ctx, rng, cx, cy, baseR, bastionCount, gateCount } = env;
   
       const fort = runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount);
+  
+      // Canonical Phase 2 output
       ctx.state.fortifications = fort;
   
+      // Bridge outputs (keep until every downstream stage reads ctx.state.fortifications)
       env.fort = fort;
-      env.footprint = fort.footprint;
   
+      env.footprint = fort.footprint;
+      env.wallR = fort.wallR;
+  
+      env.wallBase = fort.wallBase;
+      env.wallFinal = fort.wallFinal;
+  
+      env.bastions = fort.bastions;
+      env.bastionPolys = fort.bastionPolys;
       env.bastionPolysWarpedSafe = fort.bastionPolys;
+  
       env.gatesOriginal = fort.gates;
+  
+      env.ditchWidth = fort.ditchWidth;
+      env.glacisWidth = fort.glacisWidth;
+      env.ditchOuter = fort.ditchOuter;
+      env.ditchInner = fort.ditchInner;
+      env.glacisOuter = fort.glacisOuter;
+  
       env.centre = fort.centre;
     },
   },
@@ -81,6 +99,8 @@ export const PIPELINE_STAGES = [
       env.primaryGate = nt.primaryGate;
       ctx.primaryGate = nt.primaryGate;
 
+      // Bridge until Stage 110 reads fort.wallFinal only
+      env.wallFinal = nt.wallFinal;
       // Keep the warp params in env for later stages (same as previous behaviour).
       env.warpFortParams = warpFortParams;
       env.warpDebugEnabled = warpDebugEnabled;
@@ -170,8 +190,9 @@ export const PIPELINE_STAGES = [
     id: 60,
     name: "anchors",
     run(env) {
-      env.anchors = runAnchorsStage(env.ctx);
-      env.ctx.state.anchors = env.anchors;
+      const ctx = env.ctx;
+      env.anchors = runAnchorsStage(ctx);
+      ctx.state.anchors = env.anchors;
     },
   },
 
@@ -272,44 +293,42 @@ export const PIPELINE_STAGES = [
     },
   },
 
-{
-  id: 100,
-  name: "citadel",
-  run(env) {
-    const ctx = env.ctx;
-    const anchors = ctx.state.anchors;
-
-    if (!anchors) {
-      throw new Error("[EMCG] Stage 100 requires ctx.state.anchors (Stage 60 output).");
-    }
-
-    const citadel = runCitadelStage(env.rng, anchors, env.baseR);
-
-    // Canonical output
-    ctx.state.citadel = citadel;
-
-    // Bridge output (until run_pipeline.js reads S.citadel)
-    env.citadel = citadel;
+  {
+    id: 100,
+    name: "citadel",
+    run(env) {
+      const ctx = env.ctx;
+      const anchors = ctx.state.anchors;
+  
+      if (!anchors) {
+        throw new Error("[EMCG] Stage 100 requires ctx.state.anchors (Stage 60 output).");
+      }
+  
+      const citadel = runCitadelStage(env.rng, anchors, env.baseR);
+  
+      // Canonical output
+      ctx.state.citadel = citadel;
+  
+      // Bridge output (until everything reads ctx.state.citadel)
+      env.citadel = citadel;
+    },
   },
-},
   
   {
     id: 110,
     name: "warpField",
     run(env) {
       const ctx = env.ctx;
+  
+      const fort = ctx.state.fortifications;
       const wards = ctx.state.wards;
       const districts = ctx.state.districts;
-      const fort = ctx.state.fortifications;
+      const bastionInputs = ctx.state.bastionWarpInputs;
   
       if (!fort) throw new Error("[EMCG] Stage 110 requires ctx.state.fortifications (Stage 10 output).");
       if (!wards) throw new Error("[EMCG] Stage 110 requires ctx.state.wards (Stage 50 output).");
       if (!districts) throw new Error("[EMCG] Stage 110 requires ctx.state.districts (Stage 90 output).");
-  
-      const bastionInputs = ctx.state.bastionWarpInputs;
-      if (!bastionInputs) {
-        throw new Error("[EMCG] Stage 110 requires ctx.state.bastionWarpInputs (Stage 20 output).");
-      }
+      if (!bastionInputs) throw new Error("[EMCG] Stage 110 requires ctx.state.bastionWarpInputs (Stage 20 output).");
   
       const warpOut = runWarpFieldStage({
         ctx,
@@ -329,102 +348,110 @@ export const PIPELINE_STAGES = [
         warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
       });
   
+      // Canonical
       ctx.state.warp = warpOut;
-      env.warpOut = warpOut;
   
+      // Bridge (keep until Stage 120 and Stage 150 are fully canonical)
+      env.warpOut = warpOut;
       env.wallCurtainForDraw = warpOut?.wallCurtainForDraw || null;
       env.warpWall = warpOut.warpWall;
       env.warpOutworks = warpOut.warpOutworks;
-  
       env.wallForDraw = warpOut.wallForDraw;
-  
       env.bastionPolysWarpedSafe = warpOut.bastionPolysWarpedSafe;
       env.bastionHull = warpOut.bastionHullWarpedSafe;
     },
   },
   
-{
-  id: 120,
-  name: "warpDependentFortGeometry",
-  run(env) {
-    const ctx = env.ctx;
-    const fort = ctx.state.fortifications;
-    if (!fort) throw new Error("[EMCG] Stage 120 requires ctx.state.fortifications (Stage 10 output).");
-
-    const wallWarped = (env.warpWall && env.warpWall.wallWarped) ? env.warpWall.wallWarped : null;
-
-    const fortGeom = runWarpDependentFortGeometryStage({
-      ctx,
-      cx: env.cx,
-      cy: env.cy,
-      wallR: fort.wallR,
-      wallBase: fort.wallBase,
-      wallWarped,
-      warpWall: env.warpWall,
-      gates: env.gatesOriginal,
-      primaryGate: env.primaryGate,
-    });
-
-    ctx.state.fortGeometryWarped = fortGeom;
-
-    env.fortR = fortGeom.fortR;
-
-    env.ditchWidth = fortGeom.ditchWidth;
-    env.glacisWidth = fortGeom.glacisWidth;
-
-    env.wallBaseForDraw = fortGeom.wallBaseForDraw;
-
-    env.ditchOuter = fortGeom.ditchOuter;
-    env.ditchInner = fortGeom.ditchInner;
-    env.glacisOuter = fortGeom.glacisOuter;
-
-    env.ring = fortGeom.ring;
-    env.ring2 = fortGeom.ring2;
-    ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
-
-    ctx.state.anchors.gates = fortGeom.gatesWarped;
-    ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
+  {
+    id: 120,
+    name: "warpDependentFortGeometry",
+    run(env) {
+      const ctx = env.ctx;
+      const fort = ctx.state.fortifications;
+  
+      if (!fort) {
+        throw new Error("[EMCG] Stage 120 requires ctx.state.fortifications (Stage 10 output).");
+      }
+  
+      const wallWarped = (env.warpWall && env.warpWall.wallWarped) ? env.warpWall.wallWarped : null;
+  
+      const fortGeom = runWarpDependentFortGeometryStage({
+        ctx,
+        cx: env.cx,
+        cy: env.cy,
+        wallR: fort.wallR,
+        wallBase: fort.wallBase,
+        wallWarped,
+        warpWall: env.warpWall,
+        gates: env.gatesOriginal,
+        primaryGate: env.primaryGate,
+      });
+  
+      // Canonical
+      ctx.state.fortGeometryWarped = fortGeom;
+      ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
+  
+      // Bridge outputs (still used by later stages and renderer)
+      env.fortR = fortGeom.fortR;
+      env.ditchWidth = fortGeom.ditchWidth;
+      env.glacisWidth = fortGeom.glacisWidth;
+      env.wallBaseForDraw = fortGeom.wallBaseForDraw;
+  
+      env.ditchOuter = fortGeom.ditchOuter;
+      env.ditchInner = fortGeom.ditchInner;
+      env.glacisOuter = fortGeom.glacisOuter;
+  
+      env.ring = fortGeom.ring;
+      env.ring2 = fortGeom.ring2;
+  
+      env.gatesWarped = fortGeom.gatesWarped;
+      env.primaryGateWarped = fortGeom.primaryGateWarped;
+  
+      // Keep anchors canonical updated (your anchors canonical step)
+      ctx.state.anchors.gates = fortGeom.gatesWarped;
+      ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
+    },
   },
-},
-
-{
-  id: 130,
-  name: "docks",
-  run(env) {
-    const ctx = env.ctx;
-
-    const anchors = ctx.state.anchors;
-    const outerBoundary = ctx.state.outerBoundary;
-    const waterModel = ctx.state.waterModel;
-    const newTown = ctx.state.newTown;
-
-    const fortGeom = ctx.state.fortGeometryWarped;
-
-    if (!anchors) throw new Error("[EMCG] Stage 130 requires ctx.state.anchors (Stage 60 output).");
-    if (!outerBoundary) throw new Error("[EMCG] Stage 130 requires ctx.state.outerBoundary (Stage 30 output).");
-    if (!waterModel) throw new Error("[EMCG] Stage 130 requires ctx.state.waterModel (Stage 70 output).");
-    if (!newTown) throw new Error("[EMCG] Stage 130 requires ctx.state.newTown (Stage 20 output).");
-    if (!fortGeom) throw new Error("[EMCG] Stage 130 requires ctx.state.fortGeometryWarped (Stage 120 output).");
-
-    const docks = runDocksStage({
-      hasDock: env.hasDock,
-      anchors,
-      newTown: newTown.newTown,
-      outerBoundary,
-      wallBase: fortGeom.wallBaseForDraw,
-      centre: (ctx.state.fortifications?.centre ?? env.centre),
-      waterModel,
-      width: env.width,
-      height: env.height,
-    });
-
-    // Canonical output
-    ctx.state.docks = docks;
-
-    // Bridge (preserve existing behaviour)
-    env.ctx.state.anchors.docks = docks;
+  {
+    id: 130,
+    name: "docks",
+    run(env) {
+      const ctx = env.ctx;
+  
+      const anchors = ctx.state.anchors;
+      const outerBoundary = ctx.state.outerBoundary;
+      const waterModel = ctx.state.waterModel;
+      const newTown = ctx.state.newTown;
+      const fortGeom = ctx.state.fortGeometryWarped;
+  
+      if (!anchors) throw new Error("[EMCG] Stage 130 requires ctx.state.anchors (Stage 60 output).");
+      if (!outerBoundary) throw new Error("[EMCG] Stage 130 requires ctx.state.outerBoundary (Stage 30 output).");
+      if (!waterModel) throw new Error("[EMCG] Stage 130 requires ctx.state.waterModel (Stage 70 output).");
+      if (!newTown) throw new Error("[EMCG] Stage 130 requires ctx.state.newTown (Stage 20 output).");
+      if (!fortGeom) throw new Error("[EMCG] Stage 130 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+  
+      const docks = runDocksStage({
+        hasDock: env.hasDock,
+        anchors,
+        newTown: newTown.newTown,
+        outerBoundary,
+        wallBase: fortGeom.wallBaseForDraw,
+        centre: (ctx.state.fortifications?.centre ?? env.centre),
+        waterModel,
+        width: env.width,
+        height: env.height,
+      });
+  
+      // Canonical output
+      ctx.state.docks = docks;
+  
+      // Canonical anchor mutation (preferred)
+      anchors.docks = docks;
+  
+      // Optional bridge if any renderer still reads env.anchors.docks
+      env.anchors = anchors;
+    },
   },
-},
 
   {
     id: 140,
@@ -499,6 +526,7 @@ export const PIPELINE_STAGES = [
       const wards = ctx.state.wards;
       const fort = ctx.state.fortifications;
       const fortGeom = ctx.state.fortGeometryWarped;
+      const citadel = ctx.state.citadel ?? env.citadel;
   
       if (!anchors) throw new Error("[EMCG] Stage 160 requires ctx.state.anchors (Stage 60 output).");
       if (!wards) throw new Error("[EMCG] Stage 160 requires ctx.state.wards (Stage 50 output).");
@@ -517,16 +545,18 @@ export const PIPELINE_STAGES = [
         footprint: fort.footprint,
         width: env.width,
         height: env.height,
-        citadel: ctx.state.citadel ?? env.citadel,
+        citadel,
         minWallClear: ctx.params.minWallClear,
       });
   
-      // Canonical outputs
+      // Canonical
       ctx.state.market = marketOut;
       ctx.state.landmarks = marketOut.landmarks;
+  
+      // Canonical anchor mutation
       anchors.market = marketOut.marketAnchor;
   
-      // Bridge outputs
+      // Bridges (until assemble/run_pipeline fully stops reading env.*)
       env.marketCentre = marketOut.marketCentre;
       env.landmarks = marketOut.landmarks;
     },
@@ -545,6 +575,7 @@ export const PIPELINE_STAGES = [
       const wards = ctx.state.wards;
       const fortGeom = ctx.state.fortGeometryWarped;
       const newTown = ctx.state.newTown;
+      const rings = ctx.state.rings;
   
       if (!routingMesh) throw new Error("[EMCG] Stage 170 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 170 requires ctx.state.anchors (Stage 60 output).");
@@ -563,8 +594,8 @@ export const PIPELINE_STAGES = [
         rng: env.rng,
         primaryRoads,
         gatesWarped: fortGeom.gatesWarped,
-        ring: env.ring,
-        ring2: env.ring2,
+        ring: rings?.ring ?? env.ring,
+        ring2: rings?.ring2 ?? env.ring2,
         squareCentre: anchors.plaza,
         citCentre: anchors.citadel,
         newTown: newTown.newTown,
