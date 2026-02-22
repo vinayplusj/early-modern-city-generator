@@ -365,6 +365,10 @@ export const PIPELINE_STAGES = [
   {
     id: 120,
     name: "warpDependentFortGeometry",
+    const fort = ctx.state.fortifications;
+    if (!fort) {
+      throw new Error("[EMCG] Stage 120 requires ctx.state.fortifications (Stage 10 output).");
+    }
     run(env) {
       const ctx = env.ctx;
       const fort = ctx.state.fortifications;
@@ -469,6 +473,9 @@ export const PIPELINE_STAGES = [
       if (!routingMesh.vorGraph) throw new Error("[EMCG] Stage 140 missing routingMesh.vorGraph.");
       if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
       if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
+      if (!anchors.plaza || !anchors.citadel) {
+        throw new Error("[EMCG] Stage 140 cannot fallback without anchors.plaza and anchors.citadel.");
+      }
   
       const primaryOut = runPrimaryRoadsStage({
         ctx,
@@ -493,11 +500,11 @@ export const PIPELINE_STAGES = [
           [anchors.plaza, anchors.citadel],
         ];
   
-        if (Boolean(ctx.params.warpDebugEnabled)) {
-          console.warn("[EMCG] Stage 140: routing produced no primaryRoads. Using fallback plaza->citadel segment.", {
-            waterKind: env.waterKind,
-            vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
-            vorGraphEdges: routingMesh.vorGraph?.edges?.length,
+      if (Boolean(ctx.params.warpDebugEnabled)) {
+        console.warn("[EMCG] Stage 140: routing produced no primaryRoads. Using fallback plaza->citadel segment.", {
+          waterKind: env.waterKind,
+          vorGraphNodes: routingMesh.vorGraph?.nodes?.length,
+          vorGraphEdges: routingMesh.vorGraph?.edges?.length,
           });
         }
       }
