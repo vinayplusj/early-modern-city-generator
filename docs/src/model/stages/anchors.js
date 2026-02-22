@@ -21,7 +21,7 @@ function clampPointToCanvas(p, w, h, pad) {
 }
 
 function isPoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+  return Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
 function wardPoly(w) {
@@ -80,33 +80,29 @@ function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
   return q;
 }
 
-function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
-
 export function buildAnchors(ctx) {
-  // ---------------- Phase 2 canonical reads with Phase 1 fallbacks ----------------
+  // ---- Phase 2 canonical reads with Phase 1 fallbacks ----
   const fort = ctx?.state?.fortifications ?? null;
 
-  // Prefer canonical fort wall base; fall back to old ctx.geom.wallBase if present.
   const wallBase =
     fort?.wallBase ??
     ctx?.geom?.wallBase ??
     null;
 
-  // Prefer canonical wards output; fall back to older ctx.wards.cells.
   const wards =
     ctx?.state?.wards?.wardsWithRoles ??
     ctx?.wards?.cells ??
     null;
 
   if (!Array.isArray(wallBase) || wallBase.length < 3) {
-    throw new Error("[EMCG] anchors stage requires wallBase polygon (ctx.state.fortifications.wallBase or ctx.geom.wallBase).");
+    throw new Error(
+      "[EMCG] anchors stage requires wallBase polygon (ctx.state.fortifications.wallBase or ctx.geom.wallBase)."
+    );
   }
   if (!Array.isArray(wards) || wards.length < 1) {
-    throw new Error("[EMCG] anchors stage requires role-tagged wards (ctx.state.wards.wardsWithRoles or ctx.wards.cells).");
+    throw new Error(
+      "[EMCG] anchors stage requires role-tagged wards (ctx.state.wards.wardsWithRoles or ctx.wards.cells)."
+    );
   }
 
   const w = ctx?.canvas?.w;
@@ -115,7 +111,7 @@ export function buildAnchors(ctx) {
     throw new Error("[EMCG] anchors stage requires ctx.canvas.w and ctx.canvas.h.");
   }
 
-  // Base radius: prefer param, else match pipeline frame.
+  // Prefer ctx.params.baseR if present, else match pipeline frame.
   const baseR = Number.isFinite(ctx?.params?.baseR)
     ? ctx.params.baseR
     : Math.min(w, h) * 0.33;
@@ -131,85 +127,24 @@ export function buildAnchors(ctx) {
     throw new Error("[EMCG] anchors stage requires ctx.params.minAnchorSep.");
   }
 
-  // Centre: prefer fort centre, else pipeline-like canvas-derived fallback.
+  // Centre: prefer fort centre if present, else match pipeline.
   const centre =
     (isPoint(fort?.centre) ? fort.centre : null) ??
     { x: w * 0.5, y: h * 0.55 };
 
-  // ---------------- Ward selection (role-first, deterministic fallback) ----------------
-  const plazaWardByRole = wards.find((wd) => wd && wd.role === "plaza") || null;
-  const citadelWardByRole = wards.find((wd) => wd && wd.role === "citadel") || null;
+  // ---- Strict role requirements (preserve behaviour) ----
+  const plazaWard = wards.find((wd) => wd && wd.role === "plaza") || null;
+  const citadelWard = wards.find((wd) => wd && wd.role === "citadel") || null;
 
-  function pickWardNearestTo(point, candidates) {
-    let best = null;
-    let bestD2 = Infinity;
-    for (const wd of candidates) {
-      const c = wardCentroid(wd);
-      if (!isPoint(c)) continue;
-      const d = dist2(c, point);
-      if (d < bestD2) {
-        bestD2 = d;
-        best = wd;
-      }
-    }
-    return best;
-  }
-
-  function pickWardFarthestFrom(point, candidates, minSep) {
-    let best = null;
-    let bestD2 = -Infinity;
-    const minSep2 = minSep * minSep;
-
-    for (const wd of candidates) {
-      const c = wardCentroid(wd);
-      if (!isPoint(c)) continue;
-      const d = dist2(c, point);
-      if (d < minSep2) continue;
-      if (d > bestD2) {
-        bestD2 = d;
-        best = wd;
-      }
-    }
-
-    // If all candidates are too close, fall back to pure farthest.
-    if (!best) {
-      for (const wd of candidates) {
-        const c = wardCentroid(wd);
-        if (!isPoint(c)) continue;
-        const d = dist2(c, point);
-        if (d > bestD2) {
-          bestD2 = d;
-          best = wd;
-        }
-      }
-    }
-
-    return best;
-  }
-
-  // Plaza: role "plaza" if present else nearest-to-centre.
-  const plazaWard =
-    plazaWardByRole ??
-    pickWardNearestTo(centre, wards);
-
-  // Citadel: role "citadel" if present else prefer inner wards, else farthest from plaza.
-  const innerWards = wards.filter((wd) => wd && wd.role === "inner");
-  const citadelWard =
-    citadelWardByRole ??
-    (innerWards.length ? pickWardFarthestFrom(wardCentroid(plazaWard) || centre, innerWards, minAnchorSep) : null) ??
-    pickWardFarthestFrom(wardCentroid(plazaWard) || centre, wards, minAnchorSep);
-
-  if (!plazaWard) throw new Error("[EMCG] anchors stage could not select plaza ward (roles missing and no usable ward centroids).");
-  if (!citadelWard) throw new Error("[EMCG] anchors stage could not select citadel ward (roles missing and no usable ward centroids).");
+  if (!plazaWard) throw new Error("No plaza ward found");
+  if (!citadelWard) throw new Error("No citadel ward found");
 
   const plazaPoly = wardPoly(plazaWard);
   const citadelPoly = wardPoly(citadelWard);
 
-  // Initial candidates from ward centroid.
   let plaza = wardCentroid(plazaWard) || { x: centre.x, y: centre.y };
   let citadel = wardCentroid(citadelWard) || { x: centre.x - baseR * 0.12, y: centre.y + baseR * 0.02 };
 
-  // Ensure each anchor is inside its ward poly if available.
   if (plazaPoly && !pointInPolyOrOn(plaza, plazaPoly, 1e-6)) {
     plaza = pushInsidePoly(plaza, plazaPoly, wardCentroid(plazaWard) || centre, 4, 60);
   }
@@ -217,7 +152,6 @@ export function buildAnchors(ctx) {
     citadel = pushInsidePoly(citadel, citadelPoly, wardCentroid(citadelWard) || centre, 4, 60);
   }
 
-  // Now apply wall constraints.
   const centreHint = centre;
 
   plaza = ensureInside(wallBase, plaza, centreHint, 1.0);
@@ -226,7 +160,6 @@ export function buildAnchors(ctx) {
   plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
   citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
 
-  // Enforce separation and re-apply constraints (bounded deterministic pass).
   {
     const sep = enforceMinSeparation(plaza, citadel, minAnchorSep);
     plaza = ensureInside(wallBase, sep.a, centreHint, 1.0);
@@ -236,7 +169,6 @@ export function buildAnchors(ctx) {
     citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
   }
 
-  // Canvas clamp and re-constraint.
   plaza = clampPointToCanvas(plaza, w, h, pad);
   citadel = clampPointToCanvas(citadel, w, h, pad);
 
@@ -246,50 +178,11 @@ export function buildAnchors(ctx) {
   plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
   citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
 
-  // Market is not ward-driven yet.
   const market = null;
-
-  // Docks are site-driven; keep null in stage for now.
   const docks = null;
 
-  // Final invariants
   assertFinitePoint(plaza, "anchors.plaza");
   assertFinitePoint(citadel, "anchors.citadel");
-
-  // Repair pass: if too close, pick a different inner ward for citadel, then enforce separation.
-  const d0 = Math.hypot(citadel.x - plaza.x, citadel.y - plaza.y);
-  if (!(d0 >= minAnchorSep)) {
-    if (innerWards.length) {
-      const alt = pickWardFarthestFrom(plaza, innerWards, minAnchorSep);
-      if (alt) {
-        const altPoly = wardPoly(alt);
-        let altC = wardCentroid(alt) || citadel;
-
-        if (altPoly && !pointInPolyOrOn(altC, altPoly, 1e-6)) {
-          altC = pushInsidePoly(altC, altPoly, wardCentroid(alt) || centre, 4, 60);
-        }
-
-        altC = ensureInside(wallBase, altC, centreHint, 1.0);
-        altC = pushAwayFromWall(wallBase, altC, minWallClear, centreHint);
-
-        citadel = altC;
-      }
-    }
-
-    const sep = enforceMinSeparation(plaza, citadel, minAnchorSep);
-    plaza = ensureInside(wallBase, sep.a, centreHint, 1.0);
-    citadel = ensureInside(wallBase, sep.b, centreHint, 1.0);
-
-    plaza = pushAwayFromWall(wallBase, plaza, minWallClear, centreHint);
-    citadel = pushAwayFromWall(wallBase, citadel, minWallClear, centreHint);
-
-    plaza = clampPointToCanvas(plaza, w, h, pad);
-    citadel = clampPointToCanvas(citadel, w, h, pad);
-
-    plaza = ensureInside(wallBase, plaza, centreHint, 1.0);
-    citadel = ensureInside(wallBase, citadel, centreHint, 1.0);
-  }
-
   assertDistinctPoints(plaza, citadel, minAnchorSep, "plaza", "citadel");
 
   return {
