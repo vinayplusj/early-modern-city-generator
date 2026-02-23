@@ -65,6 +65,13 @@ import {
   filterIdsWithValidPoly,
   wardCentroid,
 } from "./ward_shape_utils.js";
+import {
+  selectOuterLoopDeterministic,
+  computeEnclosedNonMembers,
+  promoteEnclosedIds,
+  farthestMembersSummary,
+  forceSingleOuterLoopInPlace,
+} from "./ward_role_hulls.js";
 
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
@@ -358,92 +365,10 @@ export function assignWardRoles({ wards, centre, params }) {
 
  outerHull._memberIdsForHull = outerIdsForHull0;
  innerHull._memberIdsForHull = coreIdsForHull;
-
- function signedArea(poly) {
-   if (!Array.isArray(poly) || poly.length < 3) return 0;
-   let a = 0;
-   for (let i = 0; i < poly.length; i++) {
-     const p = poly[i];
-     const q = poly[(i + 1) % poly.length];
-     a += (p.x * q.y) - (q.x * p.y);
-   }
-   return 0.5 * a;
- }
  
- function selectOuterLoopDeterministic(hull, preferPoint) {
-   const loops = hull?.loops;
-   if (!Array.isArray(loops) || loops.length === 0) return null;
- 
-   // Prefer loops that contain the centre, then choose largest by absolute area.
-   const scored = [];
-   for (let i = 0; i < loops.length; i++) {
-     const loop = loops[i];
-     if (!Array.isArray(loop) || loop.length < 3) continue;
- 
-     const contains =
-       preferPoint &&
-       Number.isFinite(preferPoint.x) &&
-       Number.isFinite(preferPoint.y) &&
-       pointInPolyOrOn(preferPoint, loop, 1e-6);
- 
-     scored.push({
-       i,
-       contains: contains ? 1 : 0,
-       areaAbs: Math.abs(signedArea(loop)),
-     });
-   }
- 
-   if (scored.length === 0) return null;
- 
-   scored.sort((a, b) => {
-     if (a.contains !== b.contains) return b.contains - a.contains; // centre-containing first
-     if (a.areaAbs !== b.areaAbs) return b.areaAbs - a.areaAbs;     // largest area next
-     return a.i - b.i;                                             // stable tie-break
-   });
- 
-   return scored[0].i;
- }
-
  // ---- Outer hull closure: promote enclosed wards (geometry-valid) and rebuild once ----
 let outerHullFinal = outerHull;
 let outerIdsForHullFinal = outerIdsForHull0;
-
-function computeEnclosedNonMembers({ outerLoop, memberSet }) {
-  if (!Array.isArray(outerLoop) || outerLoop.length < 3) return [];
-
-  const enclosed = [];
-  for (const w of wardsCopy) {
-    const id = w?.id;
-    if (!Number.isFinite(id)) continue;
-    if (memberSet.has(id)) continue;
-
-    // Use deterministic representative point (centroid -> poly centroid -> seed fallback).
-    const c = wardCentroid(w);
-    if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
-
-    if (pointInPolyOrOn(c, outerLoop, 1e-6)) enclosed.push(id);
-  }
-
-  enclosed.sort((a, b) => a - b);
-  return enclosed;
-}
-
-function promoteEnclosedIds({ enclosedIds, memberSet }) {
-  // Only promote wards with valid polygons (strict invariant).
-  const promoted = [];
-  for (const id of enclosedIds) {
-    if (memberSet.has(id)) continue;
-    const idx = idToIndex.get(id);
-    if (!Number.isInteger(idx)) continue;
-    const w = wardsCopy[idx];
-
-    if (!wardHasValidPoly(w)) continue;
-    memberSet.add(id);
-    promoted.push(id);
-  }
-  promoted.sort((a, b) => a - b);
-  return promoted;
-}
 
 // Step 1 (OPTIONAL): closure by promoting enclosed wards.
 // Option 1: keep this OFF (default). We want outer hull membership = core + ring1 only.
@@ -451,12 +376,22 @@ function promoteEnclosedIds({ enclosedIds, memberSet }) {
 if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_enclosed") {
   const outerLoop0 = outerHullFinal?.outerLoop;
   const enclosed0 = computeEnclosedNonMembers({
+    wardsCopy,
     outerLoop: outerLoop0,
     memberSet: new Set(outerIdsForHullFinal),
+    idToIndex,
+    wardCentroid,
+    pointInPolyOrOn,
   });
 
   const memberSet1 = new Set(outerIdsForHullFinal);
-  const promoted = promoteEnclosedIds({ enclosedIds: enclosed0, memberSet: memberSet1 });
+  const promoted = promoteEnclosedIds({
+    enclosedIds: enclosed0,
+    memberSet: memberSet1,
+    wardsCopy,
+    idToIndex,
+    wardHasValidPoly,
+  });
 
   if (promoted.length > 0) {
     outerIdsForHullFinal = Array.from(memberSet1).sort((a, b) => a - b);
@@ -479,7 +414,11 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
  // Step 2: if holes still remain, force a single outer loop deterministically.
  // This keeps downstream wall warping stable (one curtain trace).
  if (Array.isArray(outerHullFinal?.loops) && outerHullFinal.loops.length > 1) {
-   const chosenIdx = selectOuterLoopDeterministic(outerHullFinal, centre);
+   const chosenIdx = selectOuterLoopDeterministic({
+    hull: outerHullFinal,
+    preferPoint: centre,
+    pointInPolyOrOn,
+  });
  
    if (Number.isInteger(chosenIdx)) {
      const chosen = outerHullFinal.loops[chosenIdx];
@@ -492,15 +431,11 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
      });
  
      // Preserve original loops for debugging.
-     outerHullFinal._originalLoops = outerHullFinal.loops;
- 
-     // Collapse to one loop and clear hole flags.
-     outerHullFinal.loops = [chosen];
-     outerHullFinal.outerLoopIndex = 0;
-     outerHullFinal.outerLoop = chosen;
-     outerHullFinal.holeCount = 0;
-     outerHullFinal._forcedSingleLoop = true;
-     outerHullFinal._forcedSingleLoopChosenIndex = chosenIdx;
+     forceSingleOuterLoopInPlace({
+       hull: outerHullFinal,
+       chosenIdx,
+       preferPoint: centre,
+     });
 
      if (Array.isArray(outerHullFinal.warnings)) {
        outerHullFinal.warnings = outerHullFinal.warnings.filter((w) => !String(w).includes("holeCount="));
@@ -513,66 +448,28 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
   const outerLoop = outerHullFinal?.outerLoop;
   const memberSet = new Set(outerIdsForHullFinal);
 
-  const enclosedFinal = computeEnclosedNonMembers({ outerLoop, memberSet });
+  const enclosedFinal = computeEnclosedNonMembers({
+    wardsCopy,
+    outerLoop,
+    memberSet,
+    idToIndex,
+    wardCentroid,
+    pointInPolyOrOn,
+  });
 
   // Use logical sets for isCore / isRing1 flags (reporting only).
   const coreSet = new Set(coreIds);
   const ring1Set = new Set(ring1Ids);
 
   // Members farthest (reporting: based on final hull member IDs).
-  const membersDetailed = [];
-  for (const id of outerIdsForHullFinal) {
-    const idx = idToIndex.get(id);
-    const w = Number.isInteger(idx) ? wardsCopy[idx] : null;
-    const d = (w && Number.isFinite(w.distToCentre)) ? w.distToCentre : null;
-    const role = (w && typeof w.role === "string") ? w.role : null;
-
-    membersDetailed.push({
-      id,
-      role,
-      distToCentre: d,
-      isCore: coreSet.has(id),
-      isRing1: ring1Set.has(id),
-    });
-  }
-
-  membersDetailed.sort((a, b) => {
-    const da = Number.isFinite(a.distToCentre) ? a.distToCentre : -Infinity;
-    const db = Number.isFinite(b.distToCentre) ? b.distToCentre : -Infinity;
-    return db - da;
+  const summary = farthestMembersSummary({
+    wardsCopy,
+    memberIds: outerIdsForHullFinal,
+    idToIndex,
+    topN: 10,
   });
-
-  const topFarthest = membersDetailed.slice(0, 10).map((m) => ({
-    id: m.id,
-    role: m.role,
-    dist: Number.isFinite(m.distToCentre) ? +m.distToCentre.toFixed(3) : null,
-    isCore: m.isCore,
-    isRing1: m.isRing1,
-  }));
-
-  const dists = membersDetailed
-    .map((m) => m.distToCentre)
-    .filter((v) => Number.isFinite(v))
-    .sort((a, b) => a - b);
-
-  function quantile(sorted, q) {
-    if (!sorted.length) return null;
-    const i = (sorted.length - 1) * q;
-    const i0 = Math.floor(i);
-    const i1 = Math.min(sorted.length - 1, i0 + 1);
-    const t = i - i0;
-    return sorted[i0] * (1 - t) + sorted[i1] * t;
-  }
-
-  const maxDist = dists.length ? dists[dists.length - 1] : null;
-  const p95Dist = quantile(dists, 0.95);
-
-  console.info("[Hulls] outerHull members farthest (final)", {
-    members: outerIdsForHullFinal.length,
-    maxDist: Number.isFinite(maxDist) ? +maxDist.toFixed(3) : null,
-    p95Dist: Number.isFinite(p95Dist) ? +p95Dist.toFixed(3) : null,
-    topFarthest,
-  });
+  
+  console.info("[Hulls] outerHull members farthest (final)", summary);
 
   // Enclosed non-members adjacency to ring1 (same as your prior logic).
   let adjacency = null;
