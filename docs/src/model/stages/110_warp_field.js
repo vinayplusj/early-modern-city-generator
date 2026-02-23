@@ -8,14 +8,13 @@ import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
-import {
-  rayPolyMaxT,
-  safeNorm,
-  clampPolylineInsidePolyAlongRays
-} from "../../geom/radial_ray_clamp.js";
+import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
 import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
+import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
+import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
+
 /**
  * @param {object} args
  * @returns {object}
@@ -116,28 +115,7 @@ export function runWarpFieldStage({
     params: ctx.params.warpFort,
   });
 
-  // ---- Draw style hints (consumed by renderer) ----
-  if (warpWall) {
-    // Warped curtain wall (inner/warped reference)
-    warpWall.drawCurtain = {
-      stroke: "#00ff00", // debug green (pick what you want)
-      width: 3,
-    };
-  
-    // Final composite wall (bastioned outline)
-    warpWall.drawComposite = {
-      stroke: "#d9d9d9", // normal wall grey (pick what you want)
-      width: 3,
-    };
-  }
-
-  // Outworks (bastions, ravelins, etc.): light orange
-  if (warpOutworks) {
-    warpOutworks.draw = {
-      stroke: "#ffcc80", // light orange
-      width: 2,
-    };
-  }
+  applyWarpfieldDrawHints({ warpWall, warpOutworks });
 
   const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
   const tMid = Number.isFinite(ctx?.params?.warpFort?.tMid) ? ctx.params.warpFort.tMid : 0.3;
@@ -154,15 +132,6 @@ export function runWarpFieldStage({
     tMid,
     midMargin,
   });
-
-  if (warpWall?.field?.delta) {
-    let minD = Infinity, maxD = -Infinity;
-    for (const d of warpWall.field.delta) {
-      if (!Number.isFinite(d)) continue;
-      minD = Math.min(minD, d);
-      maxD = Math.max(maxD, d);
-    }
-  }
 
   // Curtain wall (pre-bastion) for clamp + debug.
   // This is the FINAL curtain polyline that downstream attachments should follow.
@@ -371,30 +340,13 @@ export function runWarpFieldStage({
 
   // Debug audits (preserve same log behaviour).
   if (warpDebugEnabled) {
-  // Deterministic WALL audit: verify outside inner hull along centre rays.
-  (function auditWallDeterministic() {
-    if (!warpDebugEnabled) return;
-    if (!Array.isArray(wallCurtainForDraw) || wallCurtainForDraw.length < 3) return;
-    if (!Array.isArray(innerHull) || innerHull.length < 3) return;
-  
-    const centrePt = { x: cx, y: cy };
-    const m = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
-  
-    let belowMin = 0;
-    for (const p of wallCurtainForDraw) {
-      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-  
-      const n = safeNorm(p.x - centrePt.x, p.y - centrePt.y);
-      if (!n) continue;
-  
-      const tBoundary = rayPolyMaxT(centrePt, { x: n.x, y: n.y }, innerHull);
-      if (!Number.isFinite(tBoundary)) continue;
-  
-      // Should be >= boundary + margin
-      const rMin = tBoundary + m;
-      if (n.m < rMin - 1e-6) belowMin++;
-    }
-  })();
+  auditWallDeterministicOutsideInnerHull({
+    debugEnabled: warpDebugEnabled,
+    wallCurtainForDraw,
+    innerHull,
+    centre: { x: cx, y: cy },
+    margin: Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2,
+  });
 
     auditRadialClamp({
       name: "BASTIONS",
@@ -428,9 +380,6 @@ export function runWarpFieldStage({
     wallCurtainForDraw,
     bastionPolysWarpedSafe
   );
-  
-  // Preserve your existing fallback behaviour.
-  const wallCompositeForDraw = compositeWall || wallCurtainForDraw;
 
   if (Array.isArray(compositeWall) && compositeWall.length >= 3) {
     wallForDraw = compositeWall;
