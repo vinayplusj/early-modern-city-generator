@@ -9,24 +9,8 @@ import {
   loopSelfIntersectionCount,
   loopMetrics,
 } from "../geom/loop_metrics.js";
+import { angle, normAngle, inSector, sortAngles } from "../geom/angle_sector.js";
 
-function angle(cx, cy, p) {
-  return Math.atan2(p.y - cy, p.x - cx);
-}
-
-function normAngle(a) {
-  const t = a % (Math.PI * 2);
-  return t < 0 ? t + Math.PI * 2 : t;
-}
-
-function inSector(a, a0, a1) {
-  if (a0 <= a1) return a >= a0 && a < a1;
-  return a >= a0 || a < a1;
-}
-
-function sortAngles(angles) {
-  return angles.slice().sort((x, y) => x - y);
-}
 
 export function buildRadialDistricts(rng, outerBoundary, cx, cy, opts = {}) {
   const {
