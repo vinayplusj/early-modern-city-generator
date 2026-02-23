@@ -79,6 +79,8 @@ export const PIPELINE_STAGES = [
         warpDebugEnabled,
       });
       ctx.state.newTown = nt;
+      // Canonical Phase 2 output (used by Stage 120).
+      ctx.state.primaryGate = nt.primaryGate;
       ctx.state.bastionWarpInputs = {
         bastionsForWarp: nt.bastionsForWarp,
         bastionPolys: nt.bastionPolys,
@@ -357,6 +359,10 @@ export const PIPELINE_STAGES = [
   
       const warpWall = warp?.warpWall ?? env.warpWall ?? null; // bridge fallback
       const wallWarped = (warpWall && Array.isArray(warpWall.wallWarped)) ? warpWall.wallWarped : null;
+
+      // Canonical gate source is the Stage 10 fortifications output.
+      const gatesOriginal = fort.gates;
+      const primaryGate = ctx.state.primaryGate ?? env.primaryGate ?? null;
   
       const fortGeom = runWarpDependentFortGeometryStage({
         ctx,
@@ -366,8 +372,8 @@ export const PIPELINE_STAGES = [
         wallBase: fort.wallBase,
         wallWarped,
         warpWall,
-        gates: env.gatesOriginal,
-        primaryGate: env.primaryGate,
+        gates: gatesOriginal,
+        primaryGate,
       });
   
       // Canonical outputs
