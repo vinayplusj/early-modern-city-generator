@@ -11,13 +11,11 @@ import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity
 import {
   rayPolyMaxT,
   safeNorm,
-  clampPolylineOutsidePolyAlongRays,
   clampPolylineInsidePolyAlongRays
 } from "../../geom/radial_ray_clamp.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
-import { clampPointToMidBandAlongRay, clampPolylineToMidBandAlongRays } from "../../geom/radial_midband_clamp.js";
-
+import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
 /**
  * @param {object} args
  * @returns {object}
@@ -141,39 +139,21 @@ export function runWarpFieldStage({
     };
   }
 
+  const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
+  const tMid = Number.isFinite(ctx?.params?.warpFort?.tMid) ? ctx.params.warpFort.tMid : 0.3;
+  const midMargin = Number.isFinite(ctx?.params?.warpFort?.midMargin) ? ctx.params.warpFort.midMargin : 0;
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
-  // Hard invariant (deterministic): curtain vertices must be OUTSIDE inner hull.
-  // This is a post-condition clamp that does not depend on field sampling.
   let wallWarpedSafe = wallWarped;
-  
-  if (Array.isArray(wallWarpedSafe) && Array.isArray(innerHull) && innerHull.length >= 3) {
-    const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
-  
-    // First, enforce the hard invariant: outside inner hull.
-    wallWarpedSafe = clampPolylineOutsidePolyAlongRays(
-      wallWarpedSafe,
-      { x: cx, y: cy },
-      innerHull,
-      innerMargin
-    );
-  
-    // Then, enforce "not too far from inner hull" by clamping to the midway curve
-    // between inner hull and outer hull.
-    if (outerHullLoop) {
-      const tMid = Number.isFinite(ctx?.params?.warpFort?.curtainMidT) ? ctx.params.warpFort.curtainMidT : 0.3;
-      const midMargin = Number.isFinite(ctx?.params?.warpFort?.curtainMidMargin) ? ctx.params.warpFort.curtainMidMargin : 6;
-  
-      wallWarpedSafe = clampPolylineToMidBandAlongRays(
-        wallWarpedSafe,
-        { x: cx, y: cy },
-        innerHull,
-        outerHullLoop,
-        tMid,
-        innerMargin,
-        midMargin
-      );
-    }
-  }
+  const centre = { x: cx, y: cy };
+  wallWarpedSafe = clampCurtainPostConditions({
+    wallWarped: wallWarpedSafe,
+    centre,
+    innerHull,
+    outerHullLoop,
+    innerMargin,
+    tMid,
+    midMargin,
+  });
 
   if (warpWall?.field?.delta) {
     let minD = Infinity, maxD = -Infinity;
@@ -267,7 +247,7 @@ export function runWarpFieldStage({
     const q = warpPolylineRadial([p], { x: cx, y: cy }, warpWall.field, warpWall.params)[0];
   }
     
-  const centre = { x: cx, y: cy };
+
   // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
   // This is the "min clamp" for bastions (ensures points stay away from the wall base).
   const curtainMinField =
@@ -392,7 +372,6 @@ export function runWarpFieldStage({
   // Debug audits (preserve same log behaviour).
   if (warpDebugEnabled) {
   // Deterministic WALL audit: verify outside inner hull along centre rays.
-  // This matches the clamp we actually enforce (clampPolylineOutsidePolyAlongRays).
   (function auditWallDeterministic() {
     if (!warpDebugEnabled) return;
     if (!Array.isArray(wallCurtainForDraw) || wallCurtainForDraw.length < 3) return;
