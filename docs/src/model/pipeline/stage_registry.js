@@ -25,42 +25,30 @@ import { runRoadGraphAndBlocksStage } from "../stages/170_road_graph_and_blocks.
 import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 
 export const PIPELINE_STAGES = [
-  {
+    {
     id: 10,
     name: "fortifications",
     run(env) {
       const { ctx, rng, cx, cy, baseR, bastionCount, gateCount } = env;
   
-      const fort = runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount);
+      const fort = runFortificationsStage(ctx, env.rng.fort, cx, cy, baseR, bastionCount, gateCount);
   
-      // Canonical Phase 2 output
       ctx.state.fortifications = fort;
   
-      // Bridge outputs (keep until every downstream stage reads ctx.state.fortifications)
-      env.fort = fort;
-  
-      env.footprint = fort.footprint;
-      env.wallR = fort.wallR;
-  
+      // Minimal env bridges (keep until everything reads ctx.state.*)
       env.wallBase = fort.wallBase;
       env.wallFinal = fort.wallFinal;
-  
-      env.bastions = fort.bastions;
-      env.bastionPolys = fort.bastionPolys;
-      env.bastionPolysWarpedSafe = fort.bastionPolys;
-  
       env.gatesOriginal = fort.gates;
-  
-      env.ditchWidth = fort.ditchWidth;
-      env.glacisWidth = fort.glacisWidth;
-      env.ditchOuter = fort.ditchOuter;
-      env.ditchInner = fort.ditchInner;
-      env.glacisOuter = fort.glacisOuter;
-  
+      env.footprint = fort.footprint;
+      env.wallR = fort.wallR;
       env.centre = fort.centre;
+  
+      // Legacy ctx.geom bridges (anchors + other older modules)
+      ctx.geom = ctx.geom || {};
+      ctx.geom.wallBase = fort.wallBase;
+      ctx.geom.wallR = fort.wallR;
     },
   },
-
   {
     id: 20,
     name: "newTown",
@@ -112,6 +100,7 @@ export const PIPELINE_STAGES = [
     name: "outerBoundary",
     run(env) {
       const ctx = env.ctx;
+      ctx.geom = ctx.geom || {};
   
       const fort = ctx.state.fortifications;
       const nt = ctx.state.newTown;
@@ -138,29 +127,27 @@ export const PIPELINE_STAGES = [
       ctx.geom.wallR = fort.wallR;
     },
   },
-
   {
     id: 40,
     name: "water",
     run(env) {
       const ctx = env.ctx;
       const outerBoundary = ctx.state.outerBoundary;
-    
+  
       if (!outerBoundary) {
         throw new Error("[EMCG] Stage 40 requires ctx.state.outerBoundary (Stage 30 output).");
       }
-    
-      env.waterModel = runWaterStage({
+  
+      const waterModel = runWaterStage({
         waterKind: env.waterKind,
-        ctx,
+        rng: env.rng.water,
         outerBoundary,
         cx: env.cx,
         cy: env.cy,
         baseR: env.baseR,
       });
-    
-      // Optional canonical output for later migration of Stage 70.
-      ctx.state.waterModel = env.waterModel;
+      ctx.state.waterModel = waterModel;
+      env.waterModel = waterModel; // optional bridge
     },
   },
 
@@ -201,25 +188,17 @@ export const PIPELINE_STAGES = [
     name: "routingMesh",
     run(env) {
       const ctx = env.ctx;
-    
+  
       const wards = ctx.state.wards;
       const anchors = ctx.state.anchors;
       const outerBoundary = ctx.state.outerBoundary;
-      const waterModel = ctx.state.waterModel; // set by Stage 40
-    
-      if (!wards) {
-        throw new Error("[EMCG] Stage 70 requires ctx.state.wards (Stage 50 output).");
-      }
-      if (!anchors) {
-        throw new Error("[EMCG] Stage 70 requires ctx.state.anchors (Stage 60 output).");
-      }
-      if (!outerBoundary) {
-        throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
-      }
-      if (!waterModel) {
-        throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
-      }
-    
+      const waterModel = ctx.state.waterModel;
+  
+      if (!wards) throw new Error("[EMCG] Stage 70 requires ctx.state.wards (Stage 50 output).");
+      if (!anchors) throw new Error("[EMCG] Stage 70 requires ctx.state.anchors (Stage 60 output).");
+      if (!outerBoundary) throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
+      if (!waterModel) throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
+  
       const meshOut = runRoutingMeshStage({
         ctx,
         wardsWithRoles: wards.wardsWithRoles,
@@ -231,17 +210,13 @@ export const PIPELINE_STAGES = [
         cy: env.cy,
         baseR: env.baseR,
       });
-      // Bridge (legacy readers)
-      ctx.mesh = ctx.mesh || {};
-      ctx.mesh.vorGraph = meshOut.vorGraph;
-      // Canonical Phase 2 output
+  
       ctx.state.routingMesh = {
         vorGraph: meshOut.vorGraph,
         waterModel: meshOut.waterModel,
       };
-    
-      // Also keep canonical waterModel fresh (Stage 140 expects env.waterModel now, but
-      // later we will migrate it to ctx.state.routingMesh.waterModel).
+  
+      // Optional: keep waterModel fresh
       ctx.state.waterModel = meshOut.waterModel;
     },
   },
@@ -302,7 +277,7 @@ export const PIPELINE_STAGES = [
         throw new Error("[EMCG] Stage 100 requires ctx.state.anchors (Stage 60 output).");
       }
   
-      const citadel = runCitadelStage(env.rng, anchors, env.baseR);
+      const citadel = runCitadelStage(env.rng.anchors, anchors, env.baseR);
   
       // Canonical output
       ctx.state.citadel = citadel;
@@ -630,7 +605,7 @@ export const PIPELINE_STAGES = [
         waterModel: routingMesh.waterModel,
         anchors,
         waterKind: env.waterKind,
-        rng: env.rng,
+        rng: env.rng.global,
         primaryRoads,
         gatesWarped: fortGeom.gatesWarped,
         ring: rings.ring,
