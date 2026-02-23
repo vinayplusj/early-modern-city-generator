@@ -72,6 +72,8 @@ import {
   farthestMembersSummary,
   forceSingleOuterLoopInPlace,
 } from "./ward_role_hulls.js";
+import { assignOutsideRolesByBands } from "./ward_role_outside.js";
+import { normaliseParams, setRole } from "./ward_role_params.js";
 
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
@@ -562,6 +564,7 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
     wards: wardsCopy,
     outsideOrder: outside,
     params: p,
+    setRole,
   });
 
   // Add a ringIndex for debugging / later logic:
@@ -627,91 +630,7 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
  * }
  */
 
-/* (rest of file unchanged below this point) */
-function assignOutsideRolesByBands({ wards, outsideOrder, params }) {
-  const n = outsideOrder.length;
-  if (n <= 0) return;
-
-  const bands = normaliseOutsideBands(params.outsideBands);
-
-  // Compute deterministic cut indices.
-  const cut = [];
-  let acc = 0;
-  for (const b of bands) {
-    acc += b.pct;
-    cut.push(Math.floor(acc * n));
-  }
-
-  // Ensure monotonic and last cut covers all.
-  for (let i = 0; i < cut.length; i++) {
-    cut[i] = clampInt(cut[i], 0, n);
-    if (i > 0 && cut[i] < cut[i - 1]) cut[i] = cut[i - 1];
-  }
-  cut[cut.length - 1] = n;
-
-  let start = 0;
-  for (let bi = 0; bi < bands.length; bi++) {
-    const end = cut[bi];
-    const role = bands[bi].role;
-
-    for (let i = start; i < end; i++) {
-      setRole(wards, outsideOrder[i].id, role);
-    }
-    start = end;
-  }
-}
-
-function normaliseOutsideBands(outsideBands) {
-  // Default deterministic distribution.
-  const def = [
-    { role: "new_town", pct: 0.20 },
-    { role: "slums", pct: 0.15 },
-    { role: "farms", pct: 0.25 },
-    { role: "plains", pct: 0.20 },
-    { role: "woods", pct: 0.20 },
-  ];
-
-  if (!Array.isArray(outsideBands) || outsideBands.length === 0) return def;
-
-  // Validate and normalise to sum to 1.
-  const cleaned = [];
-  let sum = 0;
-
-  for (const b of outsideBands) {
-    const role = String(b?.role || "").trim();
-    const pct = Number(b?.pct);
-    if (!role) continue;
-    if (!Number.isFinite(pct) || pct <= 0) continue;
-    cleaned.push({ role, pct });
-    sum += pct;
-  }
-
-  if (cleaned.length === 0) return def;
-
-  // Normalise.
-  return cleaned.map((b) => ({ role: b.role, pct: b.pct / sum }));
-}
-
 /* ------------------------------- Utilities -------------------------------- */
-
-function setRole(wards, id, role) {
-  const w = wards.find((x) => x.id === id);
-  if (!w) return;
-  w.role = role;
-}
-
-function normaliseParams(params) {
-  return {
-    innerCount: clampInt(params?.innerCount ?? 8, 1, 200),
-    maxPlugAdds: clampInt(params?.maxPlugAdds ?? 0, 0, 20),
-
-    // Option 1 default: do NOT promote enclosed wards into outer hull membership.
-    // Set to "promote_enclosed" only when you explicitly want legacy behaviour.
-    outerHullClosureMode: String(params?.outerHullClosureMode || "none"),
-
-    outsideBands: params?.outsideBands,
-  };
-}
 
 function dist(a, b) {
   const dx = a.x - b.x;
