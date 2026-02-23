@@ -16,7 +16,7 @@ import {
 } from "../../geom/radial_ray_clamp.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
-
+import { clampPointToMidBandAlongRay, clampPolylineToMidBandAlongRays } from "../../geom/radial_midband_clamp.js";
 
 /**
  * @param {object} args
