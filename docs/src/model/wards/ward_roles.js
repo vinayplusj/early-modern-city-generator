@@ -34,7 +34,6 @@
   *   id:number,
   *   seed:Point,
   *   poly:Point[]|null,
-  *   centroid:Point|null,
   *   area:number|null,
   *   distToCentre:number,
   *   role?:string,
@@ -57,116 +56,15 @@
 
  */
 import { buildDistrictLoopsFromWards } from "../districts.js";
-import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
-import { isPoint } from "../../geom/primitives.js";
+import { pointInPolyOrOn } from "../../geom/poly.js";
 import { proposePlugSeq } from "./ward_role_plug.js";
-
-function wardHasValidPoly(w) {
-  const poly = (Array.isArray(w?.poly) && w.poly.length >= 3) ? w.poly
-    : (Array.isArray(w?.polygon) && w.polygon.length >= 3) ? w.polygon
-    : null;
-
-  return Array.isArray(poly) && poly.length >= 3;
-}
-
-function idsWithMissingPoly(wards, ids) {
-  const out = [];
-  for (const id of ids) {
-    if (!Number.isFinite(id)) continue;
-    const w = wards.find((x) => x?.id === id);
-    if (!wardHasValidPoly(w)) out.push(id);
-  }
-  out.sort((a, b) => a - b);
-  return out;
-}
-
-function filterIdsWithValidPoly(wards, ids) {
-  const out = [];
-  for (const id of ids) {
-    if (!Number.isFinite(id)) continue;
-    const w = wards.find((x) => x?.id === id);
-    if (wardHasValidPoly(w)) out.push(id);
-  }
-  out.sort((a, b) => a - b);
-  return out;
-}
-
-function wardAdjacency(wards) {
-  // Build adjacency by shared polygon edges using quantised point keys.
-  // Invariant: wards are Voronoi partitions clipped to same boundary, so shared borders exist.
-
-  const bbox = (() => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const w of wards) {
-      const poly = w?.poly;
-      if (!Array.isArray(poly)) continue;
-      for (const p of poly) {
-        if (!p) continue;
-        if (p.x < minX) minX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y > maxY) maxY = p.y;
-      }
-    }
-    const ok = Number.isFinite(minX);
-    return ok ? { minX, minY, maxX, maxY } : null;
-  })();
-
-  if (!bbox) return wards.map(() => []);
-
-  const dx = bbox.maxX - bbox.minX;
-  const dy = bbox.maxY - bbox.minY;
-  const diag = Math.sqrt(dx * dx + dy * dy);
-
-  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
-  const inv = 1 / eps;
-
-  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
-  const edgeKey = (aKey, bKey) => (aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`);
-
-  // edgeKey -> list of ward indices that have this edge
-  const edgeOwners = new Map();
-
-  for (let wi = 0; wi < wards.length; wi++) {
-    const poly =
-     (Array.isArray(wards[wi]?.poly) && wards[wi].poly.length >= 3) ? wards[wi].poly :
-     (Array.isArray(wards[wi]?.polygon) && wards[wi].polygon.length >= 3) ? wards[wi].polygon :
-     null;
-   
-   if (!poly) continue;
-
-
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i];
-      const b = poly[(i + 1) % poly.length];
-      if (!a || !b) continue;
-      const aKey = keyOf(a);
-      const bKey = keyOf(b);
-      if (aKey === bKey) continue;
-
-      const k = edgeKey(aKey, bKey);
-      if (!edgeOwners.has(k)) edgeOwners.set(k, []);
-      edgeOwners.get(k).push(wi);
-    }
-  }
-
-  const adj = wards.map(() => new Set());
-
-  for (const owners of edgeOwners.values()) {
-    if (owners.length < 2) continue;
-    // If more than 2 owners due to quantisation, connect all pairs deterministically.
-    for (let i = 0; i < owners.length; i++) {
-      for (let j = i + 1; j < owners.length; j++) {
-        const a = owners[i];
-        const b = owners[j];
-        adj[a].add(b);
-        adj[b].add(a);
-      }
-    }
-  }
-
-  return adj.map((s) => Array.from(s).sort((a, b) => a - b));
-}
+import { wardAdjacency } from "./ward_adjacency.js";
+import {
+  wardHasValidPoly,
+  idsWithMissingPoly,
+  filterIdsWithValidPoly,
+  wardCentroid,
+} from "./ward_shape_utils.js";
 
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
@@ -928,29 +826,6 @@ function clampInt(v, lo, hi) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
-}
-export function wardCentroid(w) {
-  if (!w) return null;
-
-  if (isPoint(w.centroid)) return w.centroid;
-
-  const poly =
-    (Array.isArray(w.polygon) && w.polygon.length >= 3) ? w.polygon :
-    (Array.isArray(w.poly) && w.poly.length >= 3) ? w.poly :
-    null;
-
-  if (poly) {
-    const c = centroid(poly);
-    if (isPoint(c)) return c;
-  }
-
-  if (isPoint(w.site)) return w.site;
-  if (isPoint(w.seed)) return w.seed;
-  if (isPoint(w.point)) return w.point;
-  if (isPoint(w.center)) return w.center;
-  if (isPoint(w.centre)) return w.centre;
-
-  return null;
 }
 
 if (typeof window !== "undefined") {
