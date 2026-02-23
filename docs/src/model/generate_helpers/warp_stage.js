@@ -7,7 +7,7 @@
 // - Automatic band tuning from the mean wall radius.
 // - Optional radial clamping against an inner and/or outer hull.
 
-import { buildWarpField, warpPolylineRadial } from "../warp.js";
+import { buildWarpField, warpPolylineRadial } from "./warp_apply.js";
 import { dist } from "../../geom/primitives.js";
 
 function clampNumber(x, lo, hi) {
