@@ -5,33 +5,19 @@
 // This preserves behaviour while moving orchestration out of generate.js.
 
 import { mulberry32 } from "../../rng/mulberry32.js";
+import { rngFork } from "../../rng/rng_fork.js";
 import { assembleModel } from "../assemble_model.js";
 import { PIPELINE_STAGES } from "./stage_registry.js";
-import { rngFork } from "../../rng/rng_fork.js"; // ensure this import exists
+
+function isPoint(p) {
+  return Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
 
 export function runPipeline(ctx) {
-  
-  // Root RNG (optional to keep around)
-  const rngGlobal = mulberry32(seed);
-  
-  // Phase 2: stable per-stage RNG streams
-  const rng = {
-    global: rngGlobal,
-    fort: rngFork(seed, "stage:fort"),
-    wards: rngFork(seed, "stage:wards"),
-    anchors: rngFork(seed, "stage:anchors"),
-    newTown: rngFork(seed, "stage:newTown"),
-    water: rngFork(seed, "stage:water"),
-    outworks: rngFork(seed, "stage:outworks"),
-  };
-  // Phase 2 hardening: legacy stages still write ctx.geom.*
+  // Legacy containers that some stages still write into.
   ctx.geom = ctx.geom || {};
-  // Optional: expose for stages that still read ctx.rng.*
-  ctx.rng = rng;
-  if (!ctx.rng.water) {
-    // RNG migration is low priority: use root RNG for now (deterministic)
-    ctx.rng.water = mulberry32(seed);
-  }
+  ctx.mesh = ctx.mesh || {};
+
   const seed = ctx.seed;
   const width = ctx.canvas.w;
   const height = ctx.canvas.h;
@@ -41,8 +27,8 @@ export function runPipeline(ctx) {
 
   const bastionCount = ctx.params.bastions;
   const gateCount = ctx.params.gates;
-  // Phase 1 guard: warp params must exist before Stage 110.
-  // In Phase 2, warp params will live in ctx.params defaults (or a config module).
+
+  // Guard: warp params must exist before Stage 110.
   const warpFortParams = ctx.params.warpFortParams;
   if (!warpFortParams || !Number.isFinite(warpFortParams.samples) || warpFortParams.samples <= 0) {
     throw new Error(
@@ -51,17 +37,40 @@ export function runPipeline(ctx) {
     );
   }
 
-  ctx.state = ctx.state || {};
-  ctx.state = {}; // reset per run for Phase 2 contracts
-  const rng = mulberry32(seed);
-  const debug = {};
+  // Reset per run for Phase 2 contracts.
+  ctx.state = {};
 
-  // Preserve existing geometry frame.
+  // Deterministic frame (preserves prior behaviour).
   const cx = width * 0.5;
   const cy = height * 0.55;
   const baseR = Math.min(width, height) * 0.33;
 
-  // Shared mutable carrier for Phase 1 (later phases replace this with ctx.state outputs).
+  // Keep these on ctx for legacy consumers.
+  ctx.canvas.cx = cx;
+  ctx.canvas.cy = cy;
+  ctx.params.baseR = baseR;
+
+  // Phase 2: stable per-stage RNG streams.
+  // Stages may read ctx.rng.<label> (legacy) or env.rng.<label>.
+  const rngGlobal = mulberry32(seed);
+  const rng = {
+    global: rngGlobal,
+    fort: rngFork(seed, "stage:fort"),
+    wards: rngFork(seed, "stage:wards"),
+    anchors: rngFork(seed, "stage:anchors"),
+    newTown: rngFork(seed, "stage:newTown"),
+    water: rngFork(seed, "stage:water"),
+    warp: rngFork(seed, "stage:warp"),
+    outworks: rngFork(seed, "stage:outworks"),
+    roads: rngFork(seed, "stage:roads"),
+    market: rngFork(seed, "stage:market"),
+  };
+
+  // Legacy location for older stage code.
+  ctx.rng = rng;
+
+  const debug = {};
+
   const env = {
     ctx,
     seed,
@@ -71,115 +80,136 @@ export function runPipeline(ctx) {
     hasDock,
     bastionCount,
     gateCount,
-    rng,
+    rng, // object of streams (preferred)
     debug,
     cx,
     cy,
     baseR,
   };
 
+  // Timings audit (optional).
   ctx.audit = ctx.audit || {};
   ctx.audit.stageTimings = ctx.audit.stageTimings || [];
   ctx.audit.stageTimings.length = 0;
+
   for (const stage of PIPELINE_STAGES) {
     const t0 = performance.now();
     stage.run(env);
     const t1 = performance.now();
-  
+
     ctx.audit.stageTimings.push({
       id: stage.id,
       name: stage.name,
-      ms: Math.round((t1 - t0) * 1000) / 1000, // 0.001 ms precision
+      ms: Math.round((t1 - t0) * 1000) / 1000,
     });
   }
 
   const S = ctx.state;
-  
-  if (!S.anchors) {
-    throw new Error("[EMCG] Missing ctx.state.anchors (Stage 60 output).");
+
+  // ---- Required Phase 2 outputs ----
+  if (!S.fortifications) throw new Error("[EMCG] Missing ctx.state.fortifications (Stage 10 output).");
+  if (!S.newTown) throw new Error("[EMCG] Missing ctx.state.newTown (Stage 20 output).");
+  if (!S.outerBoundary) throw new Error("[EMCG] Missing ctx.state.outerBoundary (Stage 30 output).");
+  if (!S.waterModel) throw new Error("[EMCG] Missing ctx.state.waterModel (Stage 40 output).");
+  if (!S.wards) throw new Error("[EMCG] Missing ctx.state.wards (Stage 50 output).");
+  if (!S.anchors) throw new Error("[EMCG] Missing ctx.state.anchors (Stage 60 output).");
+  if (!S.routingMesh || !S.routingMesh.vorGraph) {
+    throw new Error("[EMCG] Missing ctx.state.routingMesh.vorGraph (Stage 70 output).");
   }
-  
-  const roads = S.primaryRoads ?? env.primaryRoads ?? null;
-  
-  const avenue =
-    (Array.isArray(roads) && roads.length >= 2)
-      ? roads[1]
-      : [S.anchors.plaza, S.anchors.citadel];
-  
-  const fort = S.fortifications;
-  const fortGeom = S.fortGeometryWarped;
-  if (!fortGeom) {
+  if (!S.districts) throw new Error("[EMCG] Missing ctx.state.districts (Stage 90 output).");
+  if (!S.warp) throw new Error("[EMCG] Missing ctx.state.warp (Stage 110 output).");
+  if (!S.fortGeometryWarped) {
     throw new Error("[EMCG] Missing ctx.state.fortGeometryWarped (Stage 120 output).");
   }
-  
-  if (!S.rings) {
-    throw new Error("[EMCG] Missing ctx.state.rings (Stage 120 output).");
+  if (!S.rings) throw new Error("[EMCG] Missing ctx.state.rings (Stage 120 output).");
+  if (!S.primaryRoads || !Array.isArray(S.primaryRoads) || S.primaryRoads.length === 0) {
+    throw new Error("[EMCG] Missing ctx.state.primaryRoads (Stage 140 output).");
   }
-  
+
+  const fort = S.fortifications;
+  const fortGeom = S.fortGeometryWarped;
   const warp = S.warp;
-  // Optional strictness:
-  // if (!warp) throw new Error("[EMCG] Missing ctx.state.warp (Stage 110 output).");
-  
-  const outworks = S.outworks;
-  
-  const warpWall = warp?.warpWall ?? env.warpWall ?? null;
-  const warpOutworks = warp?.warpOutworks ?? env.warpOutworks ?? null;
+  const anchors = S.anchors;
+
+  // Roads and avenue
+  const roads = S.primaryRoads;
+  const avenue = (roads.length >= 2) ? roads[1] : [anchors.plaza, anchors.citadel];
+
+  // Draw geometry should come from Stage 110.
+  const wallCurtainForDraw = warp.wallCurtainForDraw ?? null;
+  const wallForDraw = warp.wallForDraw ?? null;
+
+  if (!Array.isArray(wallCurtainForDraw) || wallCurtainForDraw.length < 3) {
+    throw new Error("[EMCG] Stage 110 missing warp.wallCurtainForDraw (expected closed polyline).");
+  }
+  if (!Array.isArray(wallForDraw) || wallForDraw.length < 3) {
+    throw new Error("[EMCG] Stage 110 missing warp.wallForDraw (expected closed polyline).");
+  }
+  if (!Array.isArray(warp.bastionPolysWarpedSafe)) {
+    throw new Error("[EMCG] Stage 110 missing warp.bastionPolysWarpedSafe (expected array).");
+  }
+  if (!warp.warpWall) {
+    throw new Error("[EMCG] Stage 110 missing warp.warpWall (required for Stage 120).");
+  }
+
+  const centre = isPoint(fort.centre) ? fort.centre : { x: cx, y: cy };
 
   return assembleModel({
-    footprint: fort?.footprint ?? env.footprint,
-    cx: (fort?.centre?.x ?? env.centre?.x ?? env.cx),
-    cy: (fort?.centre?.y ?? env.centre?.y ?? env.cy),
-    centre: fort?.centre ?? env.centre,
-    baseR: env.baseR,
-    debug: env.debug,
+    // Core frame
+    footprint: fort.footprint,
+    cx: centre.x,
+    cy: centre.y,
+    centre,
+    baseR,
+    debug,
 
-    wallBase: fort?.wallBase ?? env.wallBase,
-    wallCurtainForDraw: env.wallCurtainForDraw,
-    wallForDraw: env.wallForDraw,
-
-    bastionPolysWarpedSafe: warp?.bastionPolysWarpedSafe ?? env.bastionPolysWarpedSafe,
-    bastionHull: env.bastionHull,
-    warp: { wall: warpWall, outworks: warpOutworks },
-    warpWall,
-    warpOutworks,
-
-    ditchOuter: fortGeom.ditchOuter ?? env.ditchOuter,
-    ditchInner: fortGeom.ditchInner ?? env.ditchInner,
-    glacisOuter: fortGeom.glacisOuter ?? env.glacisOuter,
-    ditchWidth: fortGeom.ditchWidth ?? env.ditchWidth,
-    glacisWidth: fortGeom.glacisWidth ?? env.glacisWidth,
-
-    gatesOriginal: fort?.gates ?? env.gatesOriginal,
+    // Walls + moatworks
+    wallBase: fort.wallBase,
+    wallCurtainForDraw,
+    wallForDraw,
+    bastionPolysWarpedSafe: warp.bastionPolysWarpedSafe,
+    bastionHull: warp.bastionHullWarpedSafe ?? null,
     gatesWarped: fortGeom.gatesWarped,
+    ravelins: S.outworks ?? null,
+    ditchOuter: fortGeom.ditchOuter,
+    ditchInner: fortGeom.ditchInner,
+    glacisOuter: fortGeom.glacisOuter,
+    ditchWidth: fortGeom.ditchWidth,
+    glacisWidth: fortGeom.glacisWidth,
+
+    // Districts / blocks
+    districts: S.districts,
+    blocks: S.blocks ?? null,
+    warpWall: warp.warpWall ?? null,
+    warpOutworks: warp.warpOutworks ?? null,
+    fortHulls: S.wards?.fortHulls ?? null,
+    wardsWithRoles: S.wards?.wardsWithRoles ?? null,
+    wardSeeds: S.wards?.wardSeeds ?? null,
+    wardRoleIndices: S.wards?.wardRoleIndices ?? null,
+    vorGraph: S.routingMesh.vorGraph,
+
+    // Anchors
+    citadel: S.citadel ?? null,
+    avenue,
     primaryGateWarped: fortGeom.primaryGateWarped,
 
-    ravelins: outworks ?? env.ravelins,
+    // Site / water
+    site: { water: waterKind, hasDock },
+    waterModel: S.routingMesh.waterModel ?? S.waterModel,
 
-    wardSeeds: S.wards?.wardSeeds,
-    wardsWithRoles: S.wards?.wardsWithRoles,
-    wardRoleIndices: S.wards?.wardRoleIndices,
-    fortHulls: S.wards?.fortHulls,
-    districts: S.districts,
-
-    vorGraph: S.routingMesh?.vorGraph,
-    waterModel: S.routingMesh?.waterModel ?? S.waterModel ?? env.waterModel,
-
+    // Roads
     roads,
     primaryRoads: roads,
-    secondaryRoadsLegacy: S.secondaryRoadsLegacy ?? env.secondaryRoadsLegacy,
-    roadGraph: S.roadGraph ?? env.roadGraph,
-    blocks: S.blocks ?? env.blocks,
+    ring: S.rings.ring,
+    ring2: S.rings.ring2,
+    secondaryRoadsLegacy: S.secondaryRoadsLegacy ?? null,
+    roadGraph: S.roadGraph ?? null,
 
-    ring: S.rings?.ring,
-    ring2: S.rings?.ring2,
-    citadel: S.citadel ?? env.citadel,
-    avenue,
-    newTown: S.newTown?.newTown ?? env.newTown,
-    outerBoundary: S.outerBoundary ?? env.outerBoundary,
-    landmarks: S.landmarks ?? env.landmarks,
-
-    anchors: S.anchors, // no env fallback
-
-    site: { water: env.waterKind, hasDock: env.hasDock },
+    // New Town / boundary / markers
+    newTown: S.newTown.newTown,
+    outerBoundary: S.outerBoundary,
+    gatesOriginal: fort.gates,
+    landmarks: S.landmarks ?? null,
+    anchors,
   });
 }
