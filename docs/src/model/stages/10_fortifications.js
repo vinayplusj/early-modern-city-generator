@@ -23,6 +23,7 @@ import {
  * @returns {object} stage outputs (see below)
  */
 export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount) {
+  ctx.geom = ctx.geom || {};
   // ---------------- Footprint + main fortifications ----------------
   const footprint = generateFootprint(rng, cx, cy, baseR, 22);
   const wallR = baseR * 0.78;
