@@ -433,9 +433,14 @@ function clampToNeighbour(v, n, maxStep) {
 function sampleDelta(field, theta) {
   const t = wrapAngle(theta);
   const u = (t / (Math.PI * 2)) * field.N;
-  const i0 = Math.floor(u) % field.N;
+
+  const fu = Math.floor(u);
+  let i0 = fu % field.N;
+  if (i0 < 0) i0 += field.N;      // key fix: normalise negative remainder
+
   const i1 = (i0 + 1) % field.N;
-  const f = u - Math.floor(u);
+  const f = u - fu;
+
   return field.delta[i0] * (1 - f) + field.delta[i1] * f;
 }
 
