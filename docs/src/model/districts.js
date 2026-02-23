@@ -10,7 +10,7 @@ import {
   loopMetrics,
 } from "../geom/loop_metrics.js";
 import { angle, normAngle, inSector, sortAngles } from "../geom/angle_sector.js";
-
+import { buildLoopsFromPolys, cyclicDistance, nextIndex, prevIndex } from "./mesh/loops_from_polys.js";
 
 export function buildRadialDistricts(rng, outerBoundary, cx, cy, opts = {}) {
   const {
@@ -121,18 +121,6 @@ function findDistrictIndexForPoint(districts, cx, cy, p) {
     if (inSector(a, a0, a1)) return i;
   }
   return 0;
-}
-
-function cyclicDistance(a, b, n) {
-  return (b - a + n) % n;
-}
-
-function nextIndex(i, n) {
-  return (i + 1) % n;
-}
-
-function prevIndex(i, n) {
-  return (i - 1 + n) % n;
 }
 
 export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) {
@@ -305,157 +293,6 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
   }
 
   return districts;
-}
-
-// ---------------------------------------------------------------------------
-// District geometry helpers (membership lists only; no district poly ownership)
-// ---------------------------------------------------------------------------
-function buildLoopsFromPolys(polys) {
-  // Edge-cancellation union boundary via quantised point keys.
-  // Returns all boundary loops (outer + holes, if any).
-  const bbox = (() => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const poly of polys) {
-      if (!Array.isArray(poly) || poly.length < 3) continue;
-      for (const p of poly) {
-        if (!p) continue;
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
-  })();
-
-  if (!bbox) return [];
-
-  const dx = bbox.maxX - bbox.minX;
-  const dy = bbox.maxY - bbox.minY;
-  const diag = Math.sqrt(dx * dx + dy * dy);
-
-  const eps = Math.max(1e-6, Math.min(1e-2, diag * 2e-6));
-  const inv = 1 / eps;
-
-  const keyOf = (p) => `${Math.round(p.x * inv)},${Math.round(p.y * inv)}`;
-  const eKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-
-  const rep = new Map();     // pointKey -> representative {x,y}
-  const edgeCount = new Map(); // edgeKey -> count
-
-  for (const poly of polys) {
-    if (!Array.isArray(poly) || poly.length < 3) continue;
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i];
-      const b = poly[(i + 1) % poly.length];
-      if (!a || !b) continue;
-
-      const ak = keyOf(a);
-      const bk = keyOf(b);
-      if (ak === bk) continue;
-
-      if (!rep.has(ak)) rep.set(ak, { x: a.x, y: a.y });
-      if (!rep.has(bk)) rep.set(bk, { x: b.x, y: b.y });
-
-      const k = eKey(ak, bk);
-      edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
-    }
-  }
-
-  // Boundary edges are those that appear exactly once.
-  const adj = new Map();   // pointKey -> Set(pointKey)
-  const unused = new Set(); // boundary edge keys not yet consumed
-
-  function addAdj(u, v) {
-    if (!adj.has(u)) adj.set(u, new Set());
-    adj.get(u).add(v);
-  }
-
-  for (const [k, c] of edgeCount.entries()) {
-    if (c !== 1) continue;
-    const parts = k.split("|");
-    const a = parts[0];
-    const b = parts[1];
-    addAdj(a, b);
-    addAdj(b, a);
-    unused.add(k);
-  }
-
-  function nextNeighbour(curr, prev) {
-    const nbrs = adj.get(curr);
-    if (!nbrs) return null;
-
-    const ordered = Array.from(nbrs).sort();
-    for (const n of ordered) {
-      if (n === prev) continue;
-      const k = eKey(curr, n);
-      if (unused.has(k)) return n;
-    }
-    for (const n of ordered) {
-      const k = eKey(curr, n);
-      if (unused.has(k)) return n;
-    }
-    return null;
-  }
-
-  const loops = [];
-
-  const keysSorted = () => Array.from(adj.keys()).sort();
-
-  while (unused.size > 0) {
-    let start = null;
-
-    for (const u of keysSorted()) {
-      const nbrs = adj.get(u);
-      if (!nbrs) continue;
-      for (const v of nbrs) {
-        if (unused.has(eKey(u, v))) {
-          start = u;
-          break;
-        }
-      }
-      if (start) break;
-    }
-
-    if (!start) break;
-
-    const nbrs0 = Array.from(adj.get(start) || []).sort();
-    let first = null;
-    for (const v of nbrs0) {
-      if (unused.has(eKey(start, v))) {
-        first = v;
-        break;
-      }
-    }
-    if (!first) break;
-
-    const loopKeys = [start, first];
-    unused.delete(eKey(start, first));
-
-    let prev = start;
-    let curr = first;
-
-    for (let step = 0; step < 200000; step++) {
-      const nxt = nextNeighbour(curr, prev);
-      if (!nxt) break;
-
-      unused.delete(eKey(curr, nxt));
-      
-      if (nxt === start) {
-        if (loopKeys[loopKeys.length - 1] !== start) loopKeys.push(start);
-        break;
-      }
-
-      prev = curr;
-      curr = nxt;
-      loopKeys.push(curr);
-    }
-
-    const loop = loopKeys.map((k) => rep.get(k)).filter(Boolean);
-    if (loop.length >= 4) loops.push(loop);
-  }
-
-  return loops;
 }
 
 /**
