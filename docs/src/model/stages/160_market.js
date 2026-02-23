@@ -13,7 +13,7 @@ import {
   clampPointToCanvas,
 } from "../../geom/primitives.js";
 
-import { wardCentroid } from "../wards/ward_roles.js";
+import { wardCentroid } from "../wards/ward_shape_utils.js";
 
 import { computeInitialMarketCentre, safeMarketNudge } from "../generate_helpers/market.js";
 import { ensureInside, pushAwayFromWall } from "../anchors/anchor_constraints.js";
