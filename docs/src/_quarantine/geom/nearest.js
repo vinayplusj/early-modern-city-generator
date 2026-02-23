@@ -1,5 +1,6 @@
 // src/geom/nearest.js
 // Nearest-point helpers used for snapping roads to rings.
+// Quarantined on 23 feb 2026
 
 export function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
