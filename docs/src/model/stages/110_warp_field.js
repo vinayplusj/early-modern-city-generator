@@ -30,51 +30,7 @@ import { clampPointToMidBandAlongRay, clampPolylineToMidBandAlongRays } from "..
  *    bastionHullWarpedSafe: Array<{x:number,y:number}>|null
  *  }
  */
-// Clamp a point so it stays within a radial band:
-// - outside innerPoly by innerMargin
-// - inside the "mid" radius between innerPoly and outerPoly by midMargin
-//
-// t in [0,1]: 0 => at inner hull, 1 => at outer hull, 0.5 => halfway.
-function clampPointToMidBandAlongRay(p, centre, innerPoly, outerPoly, t, innerMargin, midMargin) {
-  const n = safeNorm(p.x - centre.x, p.y - centre.y);
-  if (!n) return p;
 
-  const dir = { x: n.x, y: n.y };
-
-  const rIn = rayPolyMaxT(centre, dir, innerPoly);
-  const rOut = rayPolyMaxT(centre, dir, outerPoly);
-  if (!Number.isFinite(rIn) || !Number.isFinite(rOut)) return p;
-  if (rOut <= rIn + 1e-6) return p;
-  
-  // Minimum radius: keep outside inner hull.
-  const rMin = rIn + (innerMargin || 0);
-
-  // Midway radius between inner and outer hulls.
-  const tt = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.3));
-  const rMid = rIn + tt * (rOut - rIn);
-
-  // Maximum radius: stay inside the midway curve (minus margin), but never below rMin.
-  const rMax = Math.max(rMin, rMid - (midMargin || 0));
-
-  if (n.m < rMin) return { x: centre.x + n.x * rMin, y: centre.y + n.y * rMin };
-  if (n.m > rMax) return { x: centre.x + n.x * rMax, y: centre.y + n.y * rMax };
-  return p;
-}
-
-function clampPolylineToMidBandAlongRays(poly, centre, innerPoly, outerPoly, t, innerMargin, midMargin) {
-  if (!Array.isArray(poly) || poly.length < 2) return poly;
-  if (!Array.isArray(innerPoly) || innerPoly.length < 3) return poly;
-  if (!Array.isArray(outerPoly) || outerPoly.length < 3) return poly;
-
-  const out = new Array(poly.length);
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    out[i] = (p && Number.isFinite(p.x) && Number.isFinite(p.y))
-      ? clampPointToMidBandAlongRay(p, centre, innerPoly, outerPoly, t, innerMargin, midMargin)
-      : p;
-  }
-  return out;
-}
 export function runWarpFieldStage({
   ctx,
   cx,
@@ -376,94 +332,14 @@ export function runWarpFieldStage({
 
   // ---------------------------------------------------------------------------
 
-    // Apply per-bastion shrink independently, then re-clamp to the band.
-  const enableRadialMaxShrink = (warpOutworks?.params?.enableRadialMaxShrink === true);
-  
-  if (enableRadialMaxShrink && warpOutworks?.maxField && Array.isArray(bastionPolysWarpedSafe)) {
-    const shrinkStats = [];
-
-    bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-
-      // Fast path.
-      if (polyFitsMaxField(poly, centre, warpOutworks.maxField, warpOutworks.clampMaxMargin)) {
-        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0, W: 0 });
-        return poly;
-      }
-
-      const c = centroidOfPoly(poly);
-      if (!c) {
-        shrinkStats.push({ idx, T: 0, movedBefore: 0, overshoot: 0, W: 0, note: "no_centroid" });
-        return poly;
-      }
-      
-      // (1) Vertex distance from centroid (size / spread)
-      const sizeR = avgRadiusFromCentroid(poly, c);          // pixels
-      const sizeN = Math.min(1.0, sizeR / 140);              // normalise
-      
-      // (2) Apex distance from curtain wall along outward normal
-      const { apex } = findApex(poly, centre);
-      let apexClear = 0;
-      if (apex && wallCurtainForDraw) {
-        apexClear = apexClearanceAlongWallNormal(apex, wallCurtainForDraw, centre); // pixels, signed
-      }
-      // Lower clearance => higher shrink pressure
-      const apexN = Math.min(1.0, Math.max(0.0, 1.0 - (apexClear / 50)));
-      
-      // (3) Centroid distance from global centre
-      const centreDist = dist(c, centre);
-      const baseR = (warpOutworks?.rMean && Number.isFinite(warpOutworks.rMean)) ? warpOutworks.rMean : 500;
-      const radialN = Math.min(1.0, centreDist / Math.max(1, baseR * 1.4));
-      
-      // Combine (weights are tunable)
-      const W = (0.40 * sizeN) + (0.35 * apexN) + (0.25 * radialN);
-      
-      const res = shrinkPolyToFitWeighted(
-        poly,
-        centre,
-        warpOutworks.maxField,
-        warpOutworks.clampMaxMargin,
-        warpOutworks.params,
-        W
-      );
-
-      const reclamped = clampPolylineRadial(
-        res.poly,
-        centre,
-        curtainMinField,
-        null, // do not enforce radial max for bastions
-        2,
-        0
-      );
-
-      // Safety fallback.
-      if (!Array.isArray(reclamped) || reclamped.length < 3) {
-        shrinkStats.push({ idx, T: 1, movedBefore: res.movedBefore, overshoot: res.overshoot, W: res.W, note: "reclamp_invalid" });
-        return poly;
-      }
-
-      // Hard invariant: outworks must remain inside the outer hull polygon.
-      // Deterministic “shrink-to-fit” along centre rays.
-      let reclampedSafe = reclamped;
-
-      if (outerHullLoop) {
-        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 2;
-        reclampedSafe = clampPolylineInsidePolyAlongRays(reclampedSafe, centre, outerHullLoop, m);
-      }
-      
-      shrinkStats.push({
-        idx,
-        T: res.T,
-        movedBefore: res.movedBefore,
-        overshoot: res.overshoot,
-        W: res.W,
-      });
-      
-      return reclampedSafe;
-    });
-
-    warpOutworks.bastionShrink = shrinkStats;
-  }
+  bastionPolysWarpedSafe = shrinkOutworksToFit({
+    bastionPolysWarpedSafe,
+    centre,
+    wallCurtainForDraw,
+    curtainMinField,
+    outerHullLoop,
+    warpOutworks,
+  });
   // ---------------- Strict convexity repair (post-warp, post-shrink) ----------------
   // Enforce: all turns match expectedSign AND no near-collinear turns.
   // Only affects 5-point bastions: [B0, S0, T, S1, B1].
