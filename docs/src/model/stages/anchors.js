@@ -7,7 +7,7 @@ import {
   ensureInside,
   pushAwayFromWall,
   enforceMinSeparation,
-} from "../anchors/anchor_constraints.js";
+} from "../domain/anchor_constraints.js";
 
 import { assertFinitePoint, assertDistinctPoints } from "../invariants.js";
 
