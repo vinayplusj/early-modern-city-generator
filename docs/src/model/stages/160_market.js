@@ -16,7 +16,7 @@ import {
 import { wardCentroid } from "../wards/ward_shape_utils.js";
 
 import { computeInitialMarketCentre, safeMarketNudge } from "../generate_helpers/market.js";
-import { ensureInside, pushAwayFromWall } from "../anchors/anchor_constraints.js";
+import { ensureInside, pushAwayFromWall } from "../domain/anchor_constraints.js";
 
 /**
  * @param {object} args
