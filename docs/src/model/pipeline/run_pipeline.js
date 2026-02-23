@@ -7,8 +7,31 @@
 import { mulberry32 } from "../../rng/mulberry32.js";
 import { assembleModel } from "../assemble_model.js";
 import { PIPELINE_STAGES } from "./stage_registry.js";
+import { rngFork } from "../../rng/rng_fork.js"; // ensure this import exists
 
 export function runPipeline(ctx) {
+  
+  // Root RNG (optional to keep around)
+  const rngGlobal = mulberry32(seed);
+  
+  // Phase 2: stable per-stage RNG streams
+  const rng = {
+    global: rngGlobal,
+    fort: rngFork(seed, "stage:fort"),
+    wards: rngFork(seed, "stage:wards"),
+    anchors: rngFork(seed, "stage:anchors"),
+    newTown: rngFork(seed, "stage:newTown"),
+    water: rngFork(seed, "stage:water"),
+    outworks: rngFork(seed, "stage:outworks"),
+  };
+  // Phase 2 hardening: legacy stages still write ctx.geom.*
+  ctx.geom = ctx.geom || {};
+  // Optional: expose for stages that still read ctx.rng.*
+  ctx.rng = rng;
+  if (!ctx.rng.water) {
+    // RNG migration is low priority: use root RNG for now (deterministic)
+    ctx.rng.water = mulberry32(seed);
+  }
   const seed = ctx.seed;
   const width = ctx.canvas.w;
   const height = ctx.canvas.h;
