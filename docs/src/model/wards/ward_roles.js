@@ -55,7 +55,7 @@
  * }}
 
  */
-import { buildDistrictLoopsFromWards } from "../districts.js";
+import { buildDistrictLoopsFromWards } from "../mesh/district_loops_from_wards.js";
 import { pointInPolyOrOn } from "../../geom/poly.js";
 import { proposePlugSeq } from "./ward_role_plug.js";
 import { wardAdjacency } from "./ward_adjacency.js";
