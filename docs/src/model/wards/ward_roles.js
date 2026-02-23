@@ -74,6 +74,7 @@ import {
 } from "./ward_role_hulls.js";
 import { assignOutsideRolesByBands } from "./ward_role_outside.js";
 import { normaliseParams, setRole } from "./ward_role_params.js";
+import { selectCoreWards } from "./ward_role_select.js";
 
 export function assignWardRoles({ wards, centre, params }) {
   const p = normaliseParams(params);
@@ -81,74 +82,24 @@ export function assignWardRoles({ wards, centre, params }) {
   // Defensive copy so caller can keep original list if needed.
   const wardsCopy = wards.map((w) => ({ ...w }));
 
- // Recompute distToCentre if missing (keeps this module usable standalone).
-  for (const w of wardsCopy) {
-    if (!Number.isFinite(w.distToCentre)) {
-      w.distToCentre = dist(w.seed, centre);
-    }
-  }
-
-  // Deterministic ordering: nearest first.
-  const order = wardsCopy
-    .slice()
-    .sort((a, b) => {
-      const da = a.distToCentre;
-      const db = b.distToCentre;
-      if (da < db) return -1;
-      if (da > db) return 1;
-      return a.id - b.id;
-    });
-
-  if (order.length < 3) {
-    // Not enough wards to assign roles meaningfully.
-    // Assign everything as plains as a safe fallback.
-    for (const w of wardsCopy) w.role = "plains";
-    return {
-      wards: wardsCopy,
-      indices: { plaza: -1, citadel: -1, inner: [], outside: wardsCopy.map((w) => w.id) },
-    };
-  }
-
-  // Roles by required ordering.
-  const plazaWard = order[0];
-
-  // Select a citadel candidate deterministically before picking inner wards.
-  // Default: the ward immediately after the inner band in distance order.
-  const innerCount = p.innerCount;
-
-  // Helper: map ward id -> index in wardsCopy for adjacency traversal.
-  const idToIndex = new Map();
-  for (let i = 0; i < wardsCopy.length; i++) idToIndex.set(wardsCopy[i].id, i);
-
-  const plazaIdx = idToIndex.get(plazaWard.id);
-
-  // Fallback safety: if id mapping fails, degrade to distance-only logic.
-  if (plazaIdx === undefined) {
-    for (const w of wardsCopy) w.role = "plains";
-    return {
-      wards: wardsCopy,
-      indices: { plaza: -1, citadel: -1, inner: [], outside: wardsCopy.map((w) => w.id) },
-    };
-  }
-
-  // Choose initial inner candidates by distance order (excluding plaza).
-  const candidatesByOrder = order.slice(1);
-
-  // Choose citadel ward as the (innerCount + 1)th in distance order (excluding plaza).
-  // If not enough, pick last available.
-  const citadelWard = candidatesByOrder[Math.min(innerCount, candidatesByOrder.length - 1)];
-  let citadelId = citadelWard ? citadelWard.id : plazaWard.id;
-  let citadelIdx = idToIndex.get(citadelId);
-
-  // Build adjacency on wardsCopy (consistent data set).
-  const adj = wardAdjacency(wardsCopy);
-
-  // Deterministic flood fill outward from plaza until innerCount wards selected.
-  // Exclude plaza and citadel from the inner set.
-  const exclude = new Set([plazaIdx]);
-  if (citadelIdx !== undefined) exclude.add(citadelIdx);
-
-  const innerIdxs = [];
+  const {
+    order,
+    plazaWard,
+    idToIndex,
+    plazaIdx,
+    citadelId,
+    citadelIdx,
+    innerIdxs,
+    adj,
+    outsideOrder,
+  } = selectCoreWards({
+    wardsCopy,
+    centre,
+    params: p,
+    wardAdjacency,
+    // distFn is optional; only pass it if ward_roles.js already defines/imports dist()
+    // distFn: dist,
+  });
  
   const fortCoreIdxs = (innerArr = innerIdxs) => {
    const arr = Array.isArray(innerArr) ? innerArr : [];
@@ -554,15 +505,9 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
   const used = new Set([plazaWard.id, citadelId, ...innerIdxs.map((i) => wardsCopy[i]?.id).filter(Number.isFinite)]);
 
   // Remaining wards are "outside candidates".
-  const outside = order.filter((w) => !used.has(w.id));
-
-  // Assign outside roles deterministically.
-  // Phase 1 (safe, Commit-ready): distance bands only.
-  // Phase 2 (later): refine using containment vs fortTargetPoly and adjacency.
-
   assignOutsideRolesByBands({
     wards: wardsCopy,
-    outsideOrder: outside,
+    outsideOrder: outsideOrder,
     params: p,
     setRole,
   });
@@ -602,7 +547,7 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
       plaza: plazaWard.id,
       citadel: citadelId,
       inner: innerWards.map((w) => w.id),
-      outside: outside.map((w) => w.id),
+      outside: outsideOrder.map((w) => w.id),
     },
     fortHulls,
   };
