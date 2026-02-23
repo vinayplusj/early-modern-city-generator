@@ -59,6 +59,7 @@
 import { buildDistrictLoopsFromWards } from "../districts.js";
 import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
+import { proposePlugSeq } from "./ward_role_plug.js";
 
 function wardHasValidPoly(w) {
   const poly = (Array.isArray(w?.poly) && w.poly.length >= 3) ? w.poly
@@ -334,115 +335,6 @@ export function assignWardRoles({ wards, centre, params }) {
   setRole(wardsCopy, plazaWard.id, "plaza");
   setRole(wardsCopy, citadelId, "citadel");
 
- function proposePlugSeq({ innerIdxsNow, maxAddsLeft }) {
-   const depthMax = Math.min(3, maxAddsLeft);
-   const beamWidth = 12;
-   const candidateLimit = 25;
- 
-   const plazaIdx2 = plazaIdx;
-   const citadelIdx2 = idToIndex.get(citadelId);
-   
-   const isCore = (idx, innerSet) =>
-     idx === plazaIdx2 || idx === citadelIdx2 || innerSet.has(idx);
- 
-   function orderedCandidates(innerArr) {
-     const innerSet = new Set(innerArr);
- 
-     const candidateSet = new Set();
- 
-     const frontierSeeds = [
-       ...innerArr,
-       ...(Number.isInteger(plazaIdx2) ? [plazaIdx2] : []),
-       ...(Number.isInteger(citadelIdx2) ? [citadelIdx2] : []),
-     ];
- 
-     for (const u of frontierSeeds) {
-       for (const v of (adj[u] || [])) candidateSet.add(v);
-     }
- 
-     const baseMaxDist =
-      innerArr.length
-        ? Math.max(...innerArr.map((i) => wardsCopy[i]?.distToCentre ?? 0))
-        : 0;
-    
-    let cands = Array.from(candidateSet)
-      .filter((v) => !isCore(v, innerSet))
-      .sort((a, b) => {
-        const da = wardsCopy[a]?.distToCentre ?? Infinity;
-        const db = wardsCopy[b]?.distToCentre ?? Infinity;
-        if (da !== db) return da - db;
-        const ia = wardsCopy[a]?.id ?? 0;
-        const ib = wardsCopy[b]?.id ?? 0;
-        return ia - ib;
-      });
-    
-    // Only apply the “do not pull far wards” gate if baseMaxDist is meaningful.
-    if (baseMaxDist > 0) {
-      cands = cands.filter(
-        (v) => (wardsCopy[v]?.distToCentre ?? Infinity) <= baseMaxDist * 1.35
-      );
-    }
-    
-    return cands.slice(0, candidateLimit);
-   }
- 
-   function score(innerArr) {
-    const { holeCount: holes } = buildDistrictLoopsFromWards(
-     wardsCopy,
-     fortCoreWardIds(innerArr)
-   );
-
-    let distSum = 0;
-    for (const i of innerArr) distSum += wardsCopy[i]?.distToCentre ?? 1e9;
-    return { holes, distSum };
-  } 
- 
-   const base = innerIdxsNow.slice();
-   const baseScore = score(base);
-   if (baseScore.holes === 0) return [];
- 
-   // Beam states: { seq, innerArr, holes, distSum }
-   let beam = [{ seq: [], innerArr: base, ...baseScore }];
- 
-   for (let depth = 1; depth <= depthMax; depth++) {
-     const next = [];
- 
-     for (const state of beam) {
-       if (state.holes === 0) return state.seq;
- 
-       const cand = orderedCandidates(state.innerArr);
- 
-       for (const v of cand) {
-         const inner2 = state.innerArr.concat([v]);
-         const sc = score(inner2);
-         next.push({ seq: state.seq.concat([v]), innerArr: inner2, ...sc });
-       }
-     }
- 
-     if (next.length === 0) break;
- 
-     next.sort((a, b) => {
-       if (a.holes !== b.holes) return a.holes - b.holes;
-       if (a.distSum !== b.distSum) return a.distSum - b.distSum;
- 
-       // Stable tie-break: compare ward ids of the sequence
-       const aKey = a.seq.map((i) => String(wardsCopy[i]?.id ?? i)).join(",");
-       const bKey = b.seq.map((i) => String(wardsCopy[i]?.id ?? i)).join(",");
-       return aKey.localeCompare(bKey);
-     });
- 
-     beam = next.slice(0, beamWidth);
- 
-     if (beam[0].holes === 0) return beam[0].seq;
-   }
- 
-   // If we cannot solve, still return a sequence that improves holes (if any).
-   const best = beam[0];
-   if (best && best.holes < baseScore.holes) return best.seq;
- 
-   return [];
- }
-
  // Optional: plug holes by adding a few extra inner wards (deterministic).
  const maxPlugAdds = p.maxPlugAdds;
  if (maxPlugAdds > 0) {
@@ -455,7 +347,17 @@ export function assignWardRoles({ wards, centre, params }) {
 
      if (holesBefore === 0) break;
    
-     const seq = proposePlugSeq({ innerIdxsNow: innerIdxs, maxAddsLeft: addsLeft });
+     const seq = proposePlugSeq({
+       wardsCopy,
+       adj,
+       plazaIdx,
+       citadelId,
+       idToIndex,
+       innerIdxsNow: innerIdxs,
+       maxAddsLeft: addsLeft,
+       fortCoreWardIds,
+       buildDistrictLoopsFromWards,
+     });
      if (!seq || seq.length === 0) break;
    
      // Apply the sequence (bounded by remaining budget)
@@ -920,8 +822,17 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
  * - Next  ~20%: plains
  * - Remaining: woods
  *
- * This is tunable via params.outsideBands.
+ * Override via params.outsideBands:
+ * {
+ *   bands: [
+ *     { role: "new_town", pct: 0.2 },
+ *     { role: "slums",    pct: 0.15 },
+ *     ...
+ *   ]
+ * }
  */
+
+/* (rest of file unchanged below this point) */
 function assignOutsideRolesByBands({ wards, outsideOrder, params }) {
   const n = outsideOrder.length;
   if (n <= 0) return;
