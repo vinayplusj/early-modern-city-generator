@@ -123,72 +123,6 @@ export function assignWardRoles({ wards, centre, params }) {
    return ids;
  };
 
- const visited = new Set([plazaIdx]);
-  let frontier = [plazaIdx];
-
-  while (frontier.length && innerIdxs.length < innerCount) {
-    const nextFrontier = [];
-    frontier.sort((a, b) => a - b);
-
-    for (const u of frontier) {
-      const nbrs = adj[u] || [];
-      for (const v of nbrs) {
-        if (visited.has(v)) continue;
-        visited.add(v);
-        nextFrontier.push(v);
-
-        if (!exclude.has(v)) {
-          innerIdxs.push(v);
-          if (innerIdxs.length >= innerCount) break;
-        }
-      }
-      if (innerIdxs.length >= innerCount) break;
-    }
-
-    frontier = nextFrontier;
-  }
-
-  // Fallback: if BFS did not yield enough, fill by distance order deterministically.
-  if (innerIdxs.length < innerCount) {
-    const excludeIds = new Set([plazaWard.id, citadelId]);
-    const already = new Set(innerIdxs.map((i) => wardsCopy[i]?.id));
-
-    for (const w of candidatesByOrder) {
-      if (innerIdxs.length >= innerCount) break;
-      if (excludeIds.has(w.id)) continue;
-      if (already.has(w.id)) continue;
-      const idx = idToIndex.get(w.id);
-      if (idx === undefined) continue;
-      innerIdxs.push(idx);
-      already.add(w.id);
-    }
-  }
-
-  // Now ensure citadel is distinct from plaza and inner wards.
- // If collision, pick next available by order.
- {
-   const usedIds = new Set([plazaWard.id, ...innerIdxs.map((i) => wardsCopy[i].id)]);
- 
-   if (usedIds.has(citadelId)) {
-     // Try to pick an alternative citadel.
-     const alt = order.find((w) => !usedIds.has(w.id));
-     if (alt) {
-       citadelId = alt.id;
-       citadelIdx = idToIndex.get(citadelId);
-     }
- 
-     // Always ensure citadel is not in innerIdxs, even if no alt exists.
-     if (Number.isInteger(citadelIdx)) {
-       const pos = innerIdxs.indexOf(citadelIdx);
-       if (pos >= 0) innerIdxs.splice(pos, 1);
-     }
-   }
- }
- 
-  exclude.clear();
-  exclude.add(plazaIdx);
-  if (Number.isInteger(citadelIdx)) exclude.add(citadelIdx);
-
  // Assign plaza + citadel now. Inner is assigned after optional plugging.
   setRole(wardsCopy, plazaWard.id, "plaza");
   setRole(wardsCopy, citadelId, "citadel");
@@ -380,7 +314,6 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
        holeCountBefore: outerHullFinal.holeCount,
        loopsBefore: outerHullFinal.loops.length,
        chosenLoopIndex: chosenIdx,
-       chosenLoopAreaAbs: +Math.abs(signedArea(chosen)).toFixed(3),
      });
  
      // Preserve original loops for debugging.
@@ -551,46 +484,4 @@ if ((outerHullFinal?.holeCount ?? 0) > 0 && p.outerHullClosureMode === "promote_
     },
     fortHulls,
   };
-}
-
-/* ---------------------------- Outside role logic --------------------------- */
-
-/**
- * Deterministic distance-band role assignment.
- *
- * Default pattern (closest to farthest among outside wards):
- * - First ~20%: new_town
- * - Next  ~15%: slums
- * - Next  ~25%: farms
- * - Next  ~20%: plains
- * - Remaining: woods
- *
- * Override via params.outsideBands:
- * {
- *   bands: [
- *     { role: "new_town", pct: 0.2 },
- *     { role: "slums",    pct: 0.15 },
- *     ...
- *   ]
- * }
- */
-
-/* ------------------------------- Utilities -------------------------------- */
-
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function clampInt(v, lo, hi) {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return lo;
-  return Math.max(lo, Math.min(hi, n));
-}
-
-if (typeof window !== "undefined") {
-  window.__wardDebug = window.__wardDebug || {};
-  window.__wardDebug.buildDistrictLoopsFromWards = buildDistrictLoopsFromWards;
-
 }
