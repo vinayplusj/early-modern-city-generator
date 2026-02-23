@@ -1,6 +1,14 @@
 // docs/src/model/districts.js
-import { centroid, pointInPolyOrOn, segIntersect } from "../geom/poly.js";
+import { centroid, pointInPolyOrOn} from "../geom/poly.js";
 import { isPoint } from "../geom/primitives.js";
+import {
+  polyAreaSigned,
+  loopBBox,
+  loopPerimeter,
+  loopMinMaxEdge,
+  loopSelfIntersectionCount,
+  loopMetrics,
+} from "../geom/loop_metrics.js";
 
 function angle(cx, cy, p) {
   return Math.atan2(p.y - cy, p.x - cx);
@@ -318,117 +326,6 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
 // ---------------------------------------------------------------------------
 // District geometry helpers (membership lists only; no district poly ownership)
 // ---------------------------------------------------------------------------
-
-function polyAreaSigned(poly) {
-  if (!Array.isArray(poly) || poly.length < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a * 0.5;
-}
-
-function loopBBox(loop) {
-  if (!Array.isArray(loop) || loop.length === 0) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of loop) {
-    if (!p) continue;
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
-}
-
-function loopPerimeter(loop) {
-  if (!Array.isArray(loop) || loop.length < 2) return 0;
-  let s = 0;
-  for (let i = 0; i < loop.length; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % loop.length];
-    if (!a || !b) continue;
-    s += Math.hypot(b.x - a.x, b.y - a.y);
-  }
-  return s;
-}
-
-function loopMinMaxEdge(loop) {
-  if (!Array.isArray(loop) || loop.length < 2) return { min: 0, max: 0 };
-  let min = Infinity;
-  let max = 0;
-  for (let i = 0; i < loop.length; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % loop.length];
-    if (!a || !b) continue;
-    const d = Math.hypot(b.x - a.x, b.y - a.y);
-    min = Math.min(min, d);
-    max = Math.max(max, d);
-  }
-  if (!Number.isFinite(min)) min = 0;
-  return { min, max };
-}
-
-function loopSelfIntersectionCount(loop) {
-  // O(n^2) edge intersection test, skipping adjacent edges and shared vertices.
-  if (!Array.isArray(loop) || loop.length < 4) return 0;
-
-  const n = loop.length;
-  let count = 0;
-
-  for (let i = 0; i < n; i++) {
-    const a1 = loop[i];
-    const a2 = loop[(i + 1) % n];
-    if (!a1 || !a2) continue;
-
-    for (let j = i + 1; j < n; j++) {
-      // Edges: (i,i+1) and (j,j+1)
-      // Skip same edge and adjacent edges.
-      if (j === i) continue;
-      if (j === (i + 1) % n) continue;
-      if ((i === (j + 1) % n)) continue;
-
-      const b1 = loop[j];
-      const b2 = loop[(j + 1) % n];
-      if (!b1 || !b2) continue;
-
-      // Skip if they share endpoints (common vertex).
-      if (a1 === b1 || a1 === b2 || a2 === b1 || a2 === b2) continue;
-
-      if (segIntersect(a1, a2, b1, b2)) count += 1;
-    }
-  }
-  return count;
-}
-
-function loopMetrics(loop) {
-  const bbox = loopBBox(loop);
-  const areaSigned = polyAreaSigned(loop);
-  const areaAbs = Math.abs(areaSigned);
-  const perimeter = loopPerimeter(loop);
-  const { min: minEdgeLen, max: maxEdgeLen } = loopMinMaxEdge(loop);
-
-  const dx = bbox ? (bbox.maxX - bbox.minX) : 0;
-  const dy = bbox ? (bbox.maxY - bbox.minY) : 0;
-  const diag = Math.hypot(dx, dy);
-
-  const selfIntersections = loopSelfIntersectionCount(loop);
-
-  return {
-    n: Array.isArray(loop) ? loop.length : 0,
-    areaSigned,
-    areaAbs,
-    perimeter,
-    minEdgeLen,
-    maxEdgeLen,
-    bbox,
-    diag,
-    selfIntersections,
-  };
-}
-
 function buildLoopsFromPolys(polys) {
   // Edge-cancellation union boundary via quantised point keys.
   // Returns all boundary loops (outer + holes, if any).
