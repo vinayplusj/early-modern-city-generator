@@ -1,4 +1,5 @@
 // docs/src/model/mesh/voronoi_planar_graph/snap.js
+// Quarantined on 23 Feb 2026
 
 import {
   isFiniteNumber,
