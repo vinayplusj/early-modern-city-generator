@@ -8,7 +8,13 @@ import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
- 
+import {
+  rayPolyMaxT,
+  safeNorm,
+  clampPolylineOutsidePolyAlongRays,
+  clampPolylineInsidePolyAlongRays
+} from "../../geom/radial_ray_clamp.js";
+import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 /**
  * @param {object} args
  * @returns {object}
@@ -828,194 +834,8 @@ export function runWarpFieldStage({
     // Keep stats on warpOutworks for debugging and later audits.
     warpOutworks.bastionConvex = convexStats;
   }
-    // ---------------- Composite wall builder (curtain + bastions) ----------------
-    // Build a single outer loop by splicing final bastion polygons into the final curtain loop.
-    // Assumes bastion point order [B0, S0, T, S1, B1].
-    // Deterministic; no polygon boolean ops.
-  
-    function dist2(a, b) {
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
-      return dx * dx + dy * dy;
-    }
-  
-    // Return nearest vertex index on a closed polyline (curtain) for point p.
-    // This assumes B0/B1 are already aligned very close to curtain vertices after warp.
-    function nearestVertexIndexOnClosed(poly, p) {
-      if (!Array.isArray(poly) || poly.length < 3 || !p) return -1;
-      let bestI = -1;
-      let bestD2 = Infinity;
-      for (let i = 0; i < poly.length; i++) {
-        const q = poly[i];
-        if (!q || !Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
-        const d2 = dist2(p, q);
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          bestI = i;
-        }
-      }
-      return bestI;
-    }
-  
-    // Circular forward arc from i0 to i1 inclusive on a closed polyline.
-    function circularArcInclusive(poly, i0, i1) {
-      const n = poly.length;
-      const out = [];
-      if (n < 1 || i0 < 0 || i1 < 0) return out;
-  
-      let i = i0;
-      for (let guard = 0; guard < n + 1; guard++) {
-        out.push(poly[i]);
-        if (i === i1) break;
-        i = (i + 1) % n;
-      }
-      return out;
-    }
-  
-    // Number of edges in forward circular walk i0 -> i1.
-    function circularEdgeCount(n, i0, i1) {
-      if (n <= 0) return 0;
-      return (i1 - i0 + n) % n;
-    }
-  
-    // Remove consecutive duplicate / near-duplicate points.
-    function dedupeConsecutiveClosed(poly, eps = 1e-6) {
-      if (!Array.isArray(poly) || poly.length < 2) return poly;
-      const eps2 = eps * eps;
-      const out = [];
-      for (let i = 0; i < poly.length; i++) {
-        const p = poly[i];
-        if (!p) continue;
-        const prev = out[out.length - 1];
-        if (!prev || dist2(prev, p) > eps2) out.push(p);
-      }
-      // Also drop duplicate closure point if present.
-      if (out.length >= 2 && dist2(out[0], out[out.length - 1]) <= eps2) {
-        out.pop();
-      }
-      return out;
-    }
-  
-    // Signed area helper already exists above (signedArea). Reuse it.
-  
-    // Orient a polygon to match the curtain orientation sign.
-    function orientLike(poly, targetSign) {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-      const a = signedArea(poly);
-      const s = (a >= 0) ? 1 : -1;
-      if (s === targetSign) return poly;
-      return poly.slice().reverse();
-    }
-  
-    // Build one composite loop by replacing curtain arcs with bastion arcs.
-    // Returns null on failure; caller can fall back to curtain.
-    function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) {
-      if (!Array.isArray(curtain) || curtain.length < 3) return null;
-      if (!Array.isArray(bastionPolys) || bastionPolys.length === 0) return curtain;
-  
-      const curtainClean = dedupeConsecutiveClosed(curtain, 1e-6);
-      if (curtainClean.length < 3) return null;
-  
-      const curtainSign = (signedArea(curtainClean) >= 0) ? 1 : -1;
-  
-      // Collect valid bastion splice descriptors.
-      const splices = [];
-      for (let bi = 0; bi < bastionPolys.length; bi++) {
-        let b = bastionPolys[bi];
-        if (!Array.isArray(b) || b.length !== 5) continue;
-  
-        // Match orientation to curtain so arc direction is consistent.
-        b = orientLike(b, curtainSign);
-  
-        // Semantic order after orientLike may invert.
-        // We must re-identify attachments as the two endpoints of the 5-point chain.
-        // We preserve the chain order [0..4] as the bastion arc candidate.
-        const B0 = b[0];
-        const B1 = b[4];
-  
-        const i0 = nearestVertexIndexOnClosed(curtainClean, B0);
-        const i1 = nearestVertexIndexOnClosed(curtainClean, B1);
-        if (i0 < 0 || i1 < 0 || i0 === i1) continue;
-  
-        // Curtain arc lengths in both directions; prefer replacing the shorter one.
-        const n = curtainClean.length;
-        const fwdEdges = circularEdgeCount(n, i0, i1);
-        const revEdges = circularEdgeCount(n, i1, i0);
-  
-        // We define the bastion arc in the chain direction 0->4.
-        // It should replace the shorter curtain arc between attachments.
-        const useForward = (fwdEdges <= revEdges);
-  
-        splices.push({
-          bi,
-          poly: b,
-          iStart: useForward ? i0 : i1,
-          iEnd:   useForward ? i1 : i0,
-          // Arc to insert must start at curtain[iStart] and end at curtain[iEnd].
-          // If we flip direction, reverse bastion chain.
-          bastionArc: useForward ? b : b.slice().reverse(),
-        });
-      }
-  
-      if (splices.length === 0) return curtainClean;
-  
-      // Sort splices by start index around curtain to apply deterministically.
-      splices.sort((a, b) => a.iStart - b.iStart);
-  
-      // Detect overlapping curtain intervals (simple guard).
-      // This assumes one bastion per local curtain segment and no overlap.
-      // If overlap occurs, skip composite build and fall back to curtain.
-      const n = curtainClean.length;
-      for (let k = 0; k < splices.length; k++) {
-        const s = splices[k];
-        const span = circularEdgeCount(n, s.iStart, s.iEnd);
-        if (span <= 0) return curtainClean;
-      }
-  
-      // Build composite by walking curtain once and replacing marked arcs.
-      // Use a map keyed by start index for O(1) splice lookup.
-      const spliceByStart = new Map();
-      for (const s of splices) {
-        // If duplicate starts occur, prefer the longer bastion arc (more likely real).
-        const prev = spliceByStart.get(s.iStart);
-        if (!prev || s.bastionArc.length > prev.bastionArc.length) {
-          spliceByStart.set(s.iStart, s);
-        }
-      }
-  
-      const out = [];
-      let i = 0;
-      let steps = 0;
-  
-      while (steps < n) {
-        const s = spliceByStart.get(i);
-        if (s) {
-          // Insert bastion arc, but avoid duplicating curtain point if it matches previous output.
-          for (let j = 0; j < s.bastionArc.length; j++) {
-            const p = s.bastionArc[j];
-            if (!p) continue;
-            const prev = out[out.length - 1];
-            if (!prev || dist2(prev, p) > 1e-12) out.push(p);
-          }
-  
-          // Jump to end of replaced curtain arc.
-          i = s.iEnd;
-          steps += circularEdgeCount(n, s.iStart, s.iEnd);
-        } else {
-          const p = curtainClean[i];
-          const prev = out[out.length - 1];
-          if (!prev || dist2(prev, p) > 1e-12) out.push(p);
-  
-          i = (i + 1) % n;
-          steps += 1;
-        }
-      }
-  
-      const finalOut = dedupeConsecutiveClosed(out, 1e-6);
-      if (!Array.isArray(finalOut) || finalOut.length < 3) return curtainClean;
-  
-      return finalOut;
-    }  // ---------------- Bastion hull (global convex hull) ----------------
+
+ // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
   // This must remain a convex hull; do not clamp the hull itself.
   let bastionHullWarpedSafe = null;
@@ -1098,6 +918,9 @@ export function runWarpFieldStage({
     wallCurtainForDraw,
     bastionPolysWarpedSafe
   );
+  
+  // Preserve your existing fallback behaviour.
+  const wallCompositeForDraw = compositeWall || wallCurtainForDraw;
 
   if (Array.isArray(compositeWall) && compositeWall.length >= 3) {
     wallForDraw = compositeWall;
