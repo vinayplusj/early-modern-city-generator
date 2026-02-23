@@ -5,7 +5,7 @@
 
 import { finitePointOrNull, clampPointToCanvas } from "../../geom/primitives.js";
 import { pointInPolyOrOn } from "../../geom/poly.js";
-import { isInsidePolyOrSkip } from "../geom/is_inside_poly_or_skip.js";
+import { isInsidePolyOrSkip } from "../../geom/is_inside_poly_or_skip.js";
 
 /**
  * @param {object} args
