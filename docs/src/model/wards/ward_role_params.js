@@ -29,7 +29,7 @@ export function normaliseParams(params) {
   const maxPlugAddsRaw = Number(p.maxPlugAdds);
 
   const out = {
-    innerCount: Number.isFinite(innerCountRaw) ? innerCountRaw : 4,
+    innerCount: Number.isFinite(innerCountRaw) ? innerCountRaw : 2,
     maxPlugAdds: Number.isFinite(maxPlugAddsRaw) ? maxPlugAddsRaw : 0,
     outsideBands: p.outsideBands || null,
     outerHullClosureMode:
