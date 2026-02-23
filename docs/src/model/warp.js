@@ -1,138 +1,45 @@
 // docs/src/model/warp.js
 import { raySegmentIntersection } from "../geom/intersections.js"; // or add one helper if missing
 import { pointInPolyOrOn } from "../geom/poly.js";
+import {
+  TAU,
+  wrapAngle,
+  angularDistance,
+  angularSpan,
+  smoothstep01,
+  intervalLockWeight,
+} from "./util/angles.js";
 
 export function buildWarpField({ centre, wallPoly, targetPoly = null, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
     throw new Error("warp: invalid params.samples");
   }
-  // Robust defaults (prevents NaNs when callers omit some tuning fields).
-  const maxIn = Number.isFinite(params.maxIn) ? params.maxIn : 80;
-  const maxOut = Number.isFinite(params.maxOut) ? params.maxOut : 80;
-  const maxStep = Number.isFinite(params.maxStep) ? params.maxStep : 2.5;
-  const smoothRadius = Number.isFinite(params.smoothRadius) ? Math.max(0, Math.floor(params.smoothRadius)) : 0;
 
-  // Optional directional gains (lets curtain pull inward harder without increasing outward bulge).
-  const inwardGain = Number.isFinite(params.inwardGain) ? params.inwardGain : 1.0;   // applies when delta < 0
-  const outwardGain = Number.isFinite(params.outwardGain) ? params.outwardGain : 1.0; // applies when delta > 0  
-  const N = params.samples;
-  const thetas = new Array(N);
-  const rFort = new Array(N);
-  const rTarget = new Array(N);
-    // Defensive defaults: some callers build the warp field before districts exist.
-  // Treat missing districts as an empty list (no district modulation).
-  const districtsUse = Array.isArray(districts) ? districts : [];
-  let nullCount = 0;
+  const cfg = normaliseWarpParams(params);
+  const districtsUse = normaliseDistricts(districts);
 
-  // Debug-only: how often the centre-to-wall ray does not hit the wall at a sample angle.
-  // This is a strong signal that centre is outside wallPoly or wallPoly is degenerate/self-intersecting.
-  let rFortNullSamples = 0;
+  const sampled = sampleRadii({
+    centre,
+    wallPoly,
+    targetPoly,
+    districtsUse,
+    params,
+    cfg,
+  });
 
-  for (let i = 0; i < N; i++) {
-    const theta = (i / N) * Math.PI * 2;
-    thetas[i] = theta;
-    // 1) Current wall radius (what we are warping)
-    const rawWallR = sampleRadiusAtAngle(centre, theta, wallPoly);
-    if (rawWallR == null) rFortNullSamples++;
-    rFort[i] = rawWallR;
-    
-    // Stable fallback: carry previous, else use next later
-    if (rFort[i] == null) {
-      rFort[i] = (i > 0) ? rFort[i - 1] : null;
-    }
-    
-    // 2) Target radius from the hull (what we want the wall to conform to)
-    const polyForTarget =
-      (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : wallPoly;
-    
-    let rawTargetR = sampleRadiusAtAngle(centre, theta, polyForTarget);
-    if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
-    
-    // 3) Apply your existing per-district offsets *on top* of that target hull radius
-    rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
-    // After rTarget backfill loop, before delta computation:
+  const delta = buildDelta(sampled.rFort, sampled.rTarget, cfg);
+  applyBastionDamping(delta, sampled.thetas, centre, bastions, params);
 
-  }
+  const deltaSmooth = (cfg.smoothRadius > 0) ? smoothCircular(delta, cfg.smoothRadius) : delta;
+  const deltaSafe = clampCircularSlope(deltaSmooth, cfg.maxStep);
   
-  if (params.debug && districtsUse.length > 0) {
-    nullCount = 0;
-  
-    for (let j = 0; j < N; j++) {
-      const d = districtAtAngle(thetas[j], districtsUse);
-      if (!d) nullCount++;
-    }
-  
-    // Only warn when districts exist but do not cover the full ring.
-    if (nullCount > 0) {
-      console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
-    }
-  }
-
-  // If rFort[0] is still null, find first non-null and backfill.
-  if (rFort[0] == null) {
-    let first = -1;
-    for (let i = 0; i < N; i++) {
-      if (rFort[i] != null) { first = i; break; }
-    }
-    const fallback = (first >= 0) ? rFort[first] : 0;
-    for (let i = 0; i < N; i++) {
-      if (rFort[i] == null) rFort[i] = fallback;
-    }
-  }
-
-  // Ensure rTarget has no nulls after rFort backfill (prevents delta spikes at i=0).
-  const polyForTarget =
-    (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : wallPoly;
-  
-  for (let i = 0; i < N; i++) {
-    if (rTarget[i] == null || !Number.isFinite(rTarget[i])) {
-      let rawTargetR = sampleRadiusAtAngle(centre, thetas[i], polyForTarget);
-      if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
-      rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districtsUse, rawTargetR, params);
-    }
-  }
-
-  const delta = new Array(N);
-  for (let i = 0; i < N; i++) {
-    let raw = rTarget[i] - rFort[i];
-
-    // Directional gain: stronger inward pull is usually what you want for the curtain.
-    if (raw < 0) raw *= inwardGain;
-    else if (raw > 0) raw *= outwardGain;
-
-    delta[i] = clamp(raw, -maxIn, maxOut);
-  }
-
-  for (let i = 0; i < N; i++) {
-    if (!Number.isFinite(delta[i])) delta[i] = 0;
-  }
-
-    // 1) Hard lock (your current behaviour): damp both in/out near bastions
-    const lockMask = buildBastionLockMask(thetas, centre, bastions, params);
-  
-    // 2) Clearance mask (new): only damp outward (positive) delta near bastions
-    const clearMask = buildBastionClearMask(thetas, centre, bastions, params);
-  
-    for (let i = 0; i < N; i++) {
-      // Apply lock to everything
-      let d = delta[i] * lockMask[i];
-  
-      // Apply clearance only to outward bulge
-      if (d > 0) d *= clearMask[i];
-  
-      delta[i] = d;
-    }
-
-  const deltaSmooth = (smoothRadius > 0) ? smoothCircular(delta, smoothRadius) : delta;
-  const deltaSafe = clampCircularSlope(deltaSmooth, maxStep);
-
   return {
-    N,
-    thetas,
-    rFort,
-    rTarget,
+    N: cfg.N,
+    thetas: sampled.thetas,
+    rFort: sampled.rFort,
+    rTarget: sampled.rTarget,
     delta: deltaSafe,
-    stats: params.debug ? { rFortNullSamples } : null,
+    stats: params.debug ? { rFortNullSamples: sampled.rFortNullSamples } : null,
   };
 }
 
@@ -260,6 +167,132 @@ export function enforceOutsidePolyAlongRay(points, centre, poly, margin = 0, eps
 }
 
 /* ---------- helpers ---------- */
+function normaliseWarpParams(params) {
+  const maxIn = Number.isFinite(params.maxIn) ? params.maxIn : 80;
+  const maxOut = Number.isFinite(params.maxOut) ? params.maxOut : 80;
+  const maxStep = Number.isFinite(params.maxStep) ? params.maxStep : 2.5;
+  const smoothRadius = Number.isFinite(params.smoothRadius)
+    ? Math.max(0, Math.floor(params.smoothRadius))
+    : 0;
+
+  const inwardGain = Number.isFinite(params.inwardGain) ? params.inwardGain : 1.0;
+  const outwardGain = Number.isFinite(params.outwardGain) ? params.outwardGain : 1.0;
+
+  return {
+    N: params.samples,
+    maxIn,
+    maxOut,
+    maxStep,
+    smoothRadius,
+    inwardGain,
+    outwardGain,
+  };
+}
+
+function normaliseDistricts(districts) {
+  return Array.isArray(districts) ? districts : [];
+}
+
+function sampleRadii({ centre, wallPoly, targetPoly, districtsUse, params, cfg }) {
+ const N = cfg.N;
+  const thetas = new Array(N);
+  const rFort = new Array(N);
+  const rTarget = new Array(N);
+
+  let rFortNullSamples = 0;
+
+  const polyForTarget =
+    (Array.isArray(targetPoly) && targetPoly.length >= 3) ? targetPoly : wallPoly;
+
+  for (let i = 0; i < N; i++) {
+    const theta = (i / N) * Math.PI * 2;
+    thetas[i] = theta;
+
+    const rawWallR = sampleRadiusAtAngle(centre, theta, wallPoly);
+    if (rawWallR == null) rFortNullSamples++;
+    rFort[i] = rawWallR;
+
+    if (rFort[i] == null) {
+      rFort[i] = (i > 0) ? rFort[i - 1] : null;
+    }
+
+    let rawTargetR = sampleRadiusAtAngle(centre, theta, polyForTarget);
+    if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
+    rTarget[i] = targetRadiusAtAngle(centre, theta, districtsUse, rawTargetR, params);
+  }
+
+  warnOnDistrictCoverageGaps(params, thetas, districtsUse, N);
+
+  backfillRFort(rFort, N);
+  ensureRTargetFinite(rTarget, rFort, thetas, centre, polyForTarget, districtsUse, params, N);
+
+  return { thetas, rFort, rTarget, rFortNullSamples };
+}
+
+function warnOnDistrictCoverageGaps(params, thetas, districtsUse, N) {
+  if (!params.debug || districtsUse.length === 0) return;
+
+  let nullCount = 0;
+  for (let j = 0; j < N; j++) {
+    const d = districtAtAngle(thetas[j], districtsUse);
+    if (!d) nullCount++;
+  }
+  if (nullCount > 0) {
+    console.warn("WARP DISTRICT COVERAGE FAILED", { nullCount, N });
+  }
+}
+
+function backfillRFort(rFort, N) {
+  if (rFort[0] != null) return;
+
+  let first = -1;
+  for (let i = 0; i < N; i++) {
+    if (rFort[i] != null) { first = i; break; }
+  }
+  const fallback = (first >= 0) ? rFort[first] : 0;
+  for (let i = 0; i < N; i++) {
+    if (rFort[i] == null) rFort[i] = fallback;
+  }
+}
+
+function ensureRTargetFinite(rTarget, rFort, thetas, centre, polyForTarget, districtsUse, params, N) {
+  for (let i = 0; i < N; i++) {
+    if (rTarget[i] == null || !Number.isFinite(rTarget[i])) {
+      let rawTargetR = sampleRadiusAtAngle(centre, thetas[i], polyForTarget);
+      if (rawTargetR == null) rawTargetR = rFort[i] ?? 0;
+      rTarget[i] = targetRadiusAtAngle(centre, thetas[i], districtsUse, rawTargetR, params);
+    }
+  }
+}
+
+function buildDelta(rFort, rTarget, cfg) {
+  const N = cfg.N;
+  const delta = new Array(N);
+
+  for (let i = 0; i < N; i++) {
+    let raw = rTarget[i] - rFort[i];
+    if (raw < 0) raw *= cfg.inwardGain;
+    else if (raw > 0) raw *= cfg.outwardGain;
+    delta[i] = clamp(raw, -cfg.maxIn, cfg.maxOut);
+  }
+
+  for (let i = 0; i < N; i++) {
+    if (!Number.isFinite(delta[i])) delta[i] = 0;
+  }
+
+  return delta;
+}
+
+function applyBastionDamping(delta, thetas, centre, bastions, params) {
+  const lockMask = buildBastionLockMask(thetas, centre, bastions, params);
+  const clearMask = buildBastionClearMask(thetas, centre, bastions, params);
+
+  for (let i = 0; i < delta.length; i++) {
+    let d = delta[i] * lockMask[i];
+    if (d > 0) d *= clearMask[i];
+    delta[i] = d;
+  }
+}
 
 function sampleRadiusAtAngle(centre, theta, poly) {
   // Ray from centre: centre + t * dir, t > 0
@@ -414,12 +447,6 @@ function radialBandWeight(r, bandInner, bandOuter) {
   return x * x * (3 - 2 * x);
 }
 
-function wrapAngle(theta) {
-  let t = theta % (Math.PI * 2);
-  if (t < 0) t += Math.PI * 2;
-  return t;
-}
-
 function angleInInterval(t, a0, a1) {
   const start = wrapAngle(a0);
   const end = wrapAngle(a1);
@@ -524,24 +551,6 @@ function angleOfPoint(centre, p) {
   return Math.atan2(p.y - centre.y, p.x - centre.x);
 }
 
-// Returns 0 in the locked interior, 1 far outside, smooth at edges.
-function intervalLockWeight(theta, a0, a1, feather) {
-  const t = wrapAngle(theta);
-  const start = wrapAngle(a0);
-  const end = wrapAngle(a1);
-
-  if (feather <= 1e-6) {
-    return angleInInterval(t, start, end) ? 0 : 1;
-  }
-
-  // Distance in radians to the nearest boundary of the interval.
-  const d = angularDistanceToInterval(t, start, end);
-
-  // Inside interval => d = 0 => lock (0)
-  // Outside => ramp up to 1 over 'feather'
-  return smoothstep01(d / feather);
-}
-
 function angularDistanceToInterval(t, start, end) {
   if (angleInInterval(t, start, end)) return 0;
 
@@ -550,23 +559,3 @@ function angularDistanceToInterval(t, start, end) {
   const d1 = angularDistance(t, end);
   return Math.min(d0, d1);
 }
-
-function angularSpan(a0, a1) {
-  const start = wrapAngle(a0);
-  const end = wrapAngle(a1);
-  let span = end - start;
-  if (span < 0) span += Math.PI * 2;
-  return span;
-}
-
-function angularDistance(a, b) {
-  let d = Math.abs(wrapAngle(a) - wrapAngle(b));
-  if (d > Math.PI) d = Math.PI * 2 - d;
-  return d;
-}
-
-function smoothstep01(x) {
-  const u = clamp(x, 0, 1);
-  return u * u * (3 - 2 * u);
-}
-
