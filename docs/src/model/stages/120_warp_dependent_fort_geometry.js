@@ -19,6 +19,7 @@ import { snapGatesToWall } from "../generate_helpers/snap.js";
  *   glacisOuter,
  *   ring,
  *   ring2,
+ *   wallForGateSnap,
  *   gatesWarped,
  *   primaryGateWarped
  * }
@@ -59,12 +60,18 @@ export function runWarpDependentFortGeometryStage({
   const ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
   const ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
 
-  const gatesWarped = (wallWarped && wallWarped.length >= 3)
-    ? snapGatesToWall(gates, cx, cy, wallWarped)
+  // Gate snapping must follow the wall that will be rendered as the "final" trace.
+  // Prefer the Stage 110 composite wall (warp.wallForDraw). Fall back to the warped curtain wall.
+  const wallForGateSnap = (ctx?.state?.warp?.wallForDraw && Array.isArray(ctx.state.warp.wallForDraw) && ctx.state.warp.wallForDraw.length >= 3)
+    ? ctx.state.warp.wallForDraw
+    : ((wallWarped && wallWarped.length >= 3) ? wallWarped : null);
+
+  const gatesWarped = (wallForGateSnap)
+    ? snapGatesToWall(gates, cx, cy, wallForGateSnap)
     : gates;
   
-  const primaryGateWarped = (primaryGate && wallWarped && wallWarped.length >= 3)
-    ? snapGatesToWall([primaryGate], cx, cy, wallWarped)[0]
+  const primaryGateWarped = (primaryGate && wallForGateSnap)
+    ? snapGatesToWall([primaryGate], cx, cy, wallForGateSnap)[0]
     : primaryGate;
 
   return {
@@ -77,6 +84,7 @@ export function runWarpDependentFortGeometryStage({
     glacisOuter,
     ring,
     ring2,
+    wallForGateSnap,
     gatesWarped,
     primaryGateWarped,
   };
