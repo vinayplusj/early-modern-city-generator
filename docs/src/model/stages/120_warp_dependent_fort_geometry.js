@@ -39,8 +39,6 @@ export function runWarpDependentFortGeometryStage({
     ? warpWall.params.bandOuter
     : wallR;
 
-  ctx.geom.wallR = fortR;
-
   let ditchWidth = fortR * 0.035;
   let glacisWidth = fortR * 0.08;
   ctx.params.minWallClear = ditchWidth * 1.25;
@@ -50,8 +48,6 @@ export function runWarpDependentFortGeometryStage({
   const wallBaseForDraw = (Array.isArray(wallWarped) && wallWarped.length >= 3)
     ? wallWarped
     : wallBase;
-
-  ctx.geom.wallBase = wallBaseForDraw;
 
   const ditchOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth);
   const ditchInner = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth * 0.35);
