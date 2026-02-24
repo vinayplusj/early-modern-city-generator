@@ -156,6 +156,7 @@ export function runPipeline(ctx) {
   }
 
   const centre = isPoint(fort.centre) ? fort.centre : { x: cx, y: cy };
+// Remove below message after no issue is seen
   if (ctx.geom && Object.keys(ctx.geom).length > 0) {
     throw new Error("[EMCG] ctx.geom was written during pipeline run. This is disallowed in 4.6+.");
   }
