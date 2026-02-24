@@ -48,6 +48,73 @@ function drawPolyline(ctx, poly, opts = {}) {
   ctx.restore();
 }
 
+function drawRoadPolylines(ctx, roads, kind) {
+  if (!ctx || !Array.isArray(roads) || roads.length === 0) return;
+
+  // Match the visual intent of render/stages/roads.js.
+  const isPrimary = kind === "primary";
+
+  ctx.save();
+  ctx.globalAlpha = isPrimary ? 0.95 : 0.70;
+  ctx.strokeStyle = isPrimary ? "#ffffff" : "#cfcfcf";
+  ctx.lineWidth = isPrimary ? 2.0 : 1.0;
+
+  for (const poly of roads) {
+    if (!Array.isArray(poly) || poly.length < 2) continue;
+
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawPrimaryRoadsMetaDebug(ctx, model) {
+  const enabled =
+    Boolean(model?.debug?.showPrimaryRoadsMeta) ||
+    Boolean(globalThis.__EMCG_DEBUG_PRIMARY_META__);
+  if (!enabled) return;
+
+  const meta = model?.primaryRoadsMeta;
+  const vorGraph = model?.mesh?.vorGraph;
+
+  if (!Array.isArray(meta) || meta.length === 0) return;
+  if (!vorGraph || !Array.isArray(vorGraph.nodes)) return;
+
+  const nodes = vorGraph.nodes;
+
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+  ctx.font = "10px sans-serif";
+  ctx.fillStyle = "rgba(255,255,0,0.90)";
+  ctx.strokeStyle = "rgba(255,255,0,0.70)";
+  ctx.lineWidth = 1.0;
+
+  for (const r of meta) {
+    const nodePath = r?.nodePath;
+    if (!Array.isArray(nodePath) || nodePath.length < 2) continue;
+
+    // Draw node markers along the routed path.
+    for (const nid of nodePath) {
+      const n = nodes[nid];
+      if (!n) continue;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, 2.0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Label the intent id near the start node.
+    const n0 = nodes[nodePath[0]];
+    if (n0 && typeof r?.intentId === "string") {
+      ctx.fillText(r.intentId, n0.x + 4, n0.y - 4);
+    }
+  }
+
+  ctx.restore();
+}
+
 // ---------- Public render ----------
 export function render(ctx, model) {
   const {
@@ -77,9 +144,13 @@ export function render(ctx, model) {
     anchors,
 
     roadGraph,
+    primaryRoads,
+    secondaryRoads,
     newTown,
     blocks,
     warp,
+    mesh,
+    primaryRoadsMeta,
   } = model || {};
 
   const A = anchors || {};
@@ -111,7 +182,7 @@ export function render(ctx, model) {
     warp,
     fortHulls: model?.fortHulls ?? null,
   });
-  
+
   // ---- Debug: ward-derived fort hulls (from model.fortHulls) ----
   {
     const fh = model?.fortHulls ?? null;
@@ -143,9 +214,10 @@ export function render(ctx, model) {
 
     // Ring1 = wards that sit between innerHull and outerHull.
     // Prefer the geometry-valid set when present, so we do not silently skip bad polys.
-    const ring1Raw = (Array.isArray(fh?.ring1IdsForHull) && fh.ring1IdsForHull.length > 0)
-      ? fh.ring1IdsForHull
-      : (fh?.ring1Ids || []);
+    const ring1Raw =
+      (Array.isArray(fh?.ring1IdsForHull) && fh.ring1IdsForHull.length > 0)
+        ? fh.ring1IdsForHull
+        : (fh?.ring1Ids || []);
     const ring1Ids = new Set(ring1Raw);
 
     const wards = model?.wards || [];
@@ -183,20 +255,40 @@ export function render(ctx, model) {
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
       ctx.closePath();
 
- //     ctx.fill();
+      // ctx.fill();
       ctx.stroke();
 
       ctx.restore();
     }
   }
 
-  drawRoadGraph(ctx, { roadGraph });
+  // Roads
+  // - If roadGraph is present, it is the canonical normalised output (Milestone 8+).
+  // - Otherwise, fall back to Stage 140 polylines (primaryRoads) so primary routing is visible today.
+  if (roadGraph) {
+    drawRoadGraph(ctx, { roadGraph });
+  } else {
+    drawRoadPolylines(ctx, Array.isArray(secondaryRoads) ? secondaryRoads : null, "secondary");
+    drawRoadPolylines(
+      ctx,
+      Array.isArray(primaryRoads)
+        ? primaryRoads
+        : (Array.isArray(model?.roads) ? model.roads : null),
+      "primary"
+    );
+  }
+
+  // Optional debug: mesh-referenced primary routing (Stage 140 enriched output).
+  // This is gated behind model.debug.showPrimaryRoadsMeta or globalThis.__EMCG_DEBUG_PRIMARY_META__.
+  drawPrimaryRoadsMetaDebug(ctx, {
+    ...model,
+    mesh: mesh ?? model?.mesh,
+    primaryRoadsMeta: primaryRoadsMeta ?? model?.primaryRoadsMeta,
+  });
 
   drawGatesAndPrimaryGate(ctx, { gates, primaryGate, cx, cy, squareR });
 
   drawCitadel(ctx, { citadel, anchors: A });
-  // ---- Wards debug overlay (ids + unique-edge overlay) ----
-  // This must be called, otherwise wards_debug.js will never render.
 
   drawLandmarksAndCentre(ctx, {
     wallBase,
@@ -205,8 +297,9 @@ export function render(ctx, model) {
     anchors: A,
     site,
   });
+
   // ---- Debug: draw wards overlay LAST so ids/edges are on top ----
-    drawWardsDebug(ctx, {
+  drawWardsDebug(ctx, {
     wards: model?.wards || [],
     wardSeeds: model?.wardSeeds || [],
     wardRoleIndices: model?.wardRoleIndices || null,
