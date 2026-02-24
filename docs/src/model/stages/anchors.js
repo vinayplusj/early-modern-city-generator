@@ -96,7 +96,7 @@ export function buildAnchors(ctx) {
 
   if (!Array.isArray(wallBase) || wallBase.length < 3) {
     throw new Error(
-      "[EMCG] anchors stage requires wallBase polygon (ctx.state.fortifications.wallBase or ctx.geom.wallBase)."
+      "[EMCG] anchors stage requires wallBase polygon (ctx.state.fortifications.wallBase)."
     );
   }
   if (!Array.isArray(wards) || wards.length < 1) {
