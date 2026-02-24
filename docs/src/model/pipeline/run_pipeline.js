@@ -15,7 +15,6 @@ function isPoint(p) {
 
 export function runPipeline(ctx) {
   // Legacy containers that some stages still write into.
-  ctx.geom = ctx.geom || {};
   ctx.mesh = ctx.mesh || {};
 
   const seed = ctx.seed;
@@ -157,7 +156,9 @@ export function runPipeline(ctx) {
   }
 
   const centre = isPoint(fort.centre) ? fort.centre : { x: cx, y: cy };
-
+  if (ctx.geom && Object.keys(ctx.geom).length > 0) {
+    throw new Error("[EMCG] ctx.geom was written during pipeline run. This is disallowed in 4.6+.");
+  }
   return assembleModel({
     // Core frame
     footprint: fort.footprint,
