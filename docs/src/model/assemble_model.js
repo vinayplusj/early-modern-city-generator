@@ -32,6 +32,7 @@ export function assembleModel({
   wardSeeds,
   wardRoleIndices,
 
+  mesh,
   vorGraph,
 
   // Anchors
@@ -47,8 +48,12 @@ export function assembleModel({
   // Roads
   roads,
   primaryRoads,
+  primaryRoadsMeta,
+  primaryRoadsSnappedNodes,
+  primaryRoadsGateForRoad,
   ring,
   ring2,
+  secondaryRoads,
   secondaryRoadsLegacy,
   roadGraph,
 
@@ -76,6 +81,18 @@ export function assembleModel({
 
   const roadsArr = Array.isArray(roads) ? roads : null;
   const primaryRoadsArr = Array.isArray(primaryRoads) ? primaryRoads : roadsArr;
+
+  const primaryRoadsMetaArr = Array.isArray(primaryRoadsMeta) ? primaryRoadsMeta : [];
+  const primaryRoadsSnapsObj = (primaryRoadsSnappedNodes && typeof primaryRoadsSnappedNodes === "object")
+    ? primaryRoadsSnappedNodes
+    : null;
+  const primaryRoadsGatePoint = (primaryRoadsGateForRoad && Number.isFinite(primaryRoadsGateForRoad.x) && Number.isFinite(primaryRoadsGateForRoad.y))
+    ? primaryRoadsGateForRoad
+    : null;
+
+  const secondaryRoadsArr = Array.isArray(secondaryRoads)
+    ? secondaryRoads
+    : secondaryRoadsLegacy;
 
   return {
     footprint,
@@ -109,9 +126,9 @@ export function assembleModel({
     wardSeeds,
     wardRoleIndices,
 
-    mesh: {
-      vorGraph: vorGraph ?? null,
-    },
+    mesh: (mesh && typeof mesh === "object")
+      ? { ...mesh, vorGraph: mesh.vorGraph ?? vorGraph ?? null }
+      : { vorGraph: vorGraph ?? null },
 
     // Anchors
     centre,
@@ -126,9 +143,13 @@ export function assembleModel({
     // Roads
     roads: roadsArr,
     primaryRoads: primaryRoadsArr,
+    primaryRoadsMeta: primaryRoadsMetaArr,
+    primaryRoadsSnappedNodes: primaryRoadsSnapsObj,
+    primaryRoadsGateForRoad: primaryRoadsGatePoint,
     ring,
     ring2,
-    secondaryRoads: secondaryRoadsLegacy,
+    secondaryRoads: secondaryRoadsArr,
+    secondaryRoadsLegacy,
     roadGraph,
 
     // New Town
