@@ -34,11 +34,6 @@ export const PIPELINE_STAGES = [
       const fort = runFortificationsStage(ctx, env.rng.fort, cx, cy, baseR, bastionCount, gateCount);
 
       ctx.state.fortifications = fort;
-
-      // Legacy ctx.geom bridges (older modules still read these)
-      ctx.geom = ctx.geom || {};
-      ctx.geom.wallBase = fort.wallBase;
-      ctx.geom.wallR = fort.wallR;
     },
   },
 
@@ -91,7 +86,7 @@ export const PIPELINE_STAGES = [
     name: "outerBoundary",
     run(env) {
       const ctx = env.ctx;
-      ctx.geom = ctx.geom || {};
+      
 
       const fort = ctx.state.fortifications;
       const nt = ctx.state.newTown;
@@ -106,12 +101,6 @@ export const PIPELINE_STAGES = [
       const outerBoundary = runOuterBoundaryStage(fort.footprint, nt.newTown);
 
       ctx.state.outerBoundary = outerBoundary;
-
-      // Preserve existing ctx writes (legacy)
-      ctx.geom.outerBoundary = outerBoundary;
-      ctx.geom.cx = env.cx;
-      ctx.geom.cy = env.cy;
-      ctx.geom.wallR = fort.wallR;
     },
   },
 
