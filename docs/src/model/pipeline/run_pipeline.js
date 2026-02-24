@@ -134,6 +134,10 @@ export function runPipeline(ctx) {
   // Roads and avenue
   const roads = S.primaryRoads;
   const avenue = (roads.length >= 2) ? roads[1] : [anchors.plaza, anchors.citadel];
+  // Stage 140 enriched outputs (optional, forward-compatible with Milestone 5)
+  const primaryRoadsMeta = Array.isArray(S.primaryRoadsMeta) ? S.primaryRoadsMeta : null;
+  const primaryRoadsSnappedNodes = S.primaryRoadsSnappedNodes || null;
+  const primaryRoadsGateForRoad = S.primaryRoadsGateForRoad || null;
 
   // Draw geometry should come from Stage 110.
   const wallCurtainForDraw = warp.wallCurtainForDraw ?? null;
@@ -187,6 +191,7 @@ export function runPipeline(ctx) {
     wardSeeds: S.wards?.wardSeeds ?? null,
     wardRoleIndices: S.wards?.wardRoleIndices ?? null,
     vorGraph: S.routingMesh.vorGraph,
+    mesh: S.routingMesh,
 
     // Anchors
     citadel: S.citadel ?? null,
@@ -200,8 +205,12 @@ export function runPipeline(ctx) {
     // Roads
     roads,
     primaryRoads: roads,
+    primaryRoadsMeta,
+    primaryRoadsSnappedNodes,
+    primaryRoadsGateForRoad,
     ring: S.rings.ring,
     ring2: S.rings.ring2,
+    secondaryRoads: S.secondaryRoadsLegacy ?? null,
     secondaryRoadsLegacy: S.secondaryRoadsLegacy ?? null,
     roadGraph: S.roadGraph ?? null,
 
