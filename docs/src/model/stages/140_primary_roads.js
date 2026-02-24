@@ -2,9 +2,11 @@
 //
 // Stage 140: Primary roads (routed on Voronoi planar graph).
 //
-// Contract (v0, forward-compatible):
-// - Still returns primaryRoads as legacy polylines: Array<Array<{x,y}>>
-// - Also returns primaryRoadsMeta with mesh references (nodePath + edgeIds) for Milestone 5.
+// Contract (v1, strict):
+// - Always returns an object with:
+//   { primaryRoads, primaryRoadsMeta, gateForRoad, snappedNodes }.
+// - primaryRoads is an array of polylines for current rendering.
+// - primaryRoadsMeta carries mesh references (nodePath + edgeIds) for Milestone 5+.
 //
 // Critical determinism notes:
 // - snapPointToGraph({ splitEdges:true }) mutates the graph. Snap order must remain stable.
@@ -262,7 +264,16 @@ export function runPrimaryRoadsStage({
   if (primaryRoads.length === 0 && isFinitePoint(anchors?.plaza) && isFinitePoint(anchors?.citadel)) {
     primaryRoads.push([anchors.plaza, anchors.citadel]);
   }
-
+  if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
+    throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: primaryRoads must be a non-empty array after fallback.");
+  }
+  if (!Array.isArray(primaryRoadsMeta)) {
+    throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: primaryRoadsMeta must be an array.");
+  }
+  if (!snappedNodes || typeof snappedNodes !== "object") {
+    throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: snappedNodes must be an object.");
+  }
+  
   return {
     primaryRoads,
     primaryRoadsMeta,
