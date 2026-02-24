@@ -411,19 +411,19 @@ export const PIPELINE_STAGES = [
         primaryGateWarped: anchors?.primaryGate || null,
         gatesWarped: anchors?.gates || [],
       });
-
-      const primaryRoads = Array.isArray(primaryOut)
-        ? primaryOut
-        : primaryOut?.primaryRoads;
-
+      
+      if (!primaryOut || typeof primaryOut !== "object") {
+        throw new Error("[EMCG] Stage 140 produced invalid output (expected object).");
+      }
+      
+      const { primaryRoads, primaryRoadsMeta, snappedNodes, gateForRoad } = primaryOut;
+      
       if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
         throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
       }
-
-      const primaryRoadsMeta = Array.isArray(primaryOut) ? null : primaryOut?.primaryRoadsMeta;
-      const snappedNodes = Array.isArray(primaryOut) ? null : primaryOut?.snappedNodes;
-      const gateForRoad = Array.isArray(primaryOut) ? null : primaryOut?.gateForRoad;
-
+      if (!Array.isArray(primaryRoadsMeta)) {
+        throw new Error("[EMCG] Stage 140 invariant failed: primaryRoadsMeta must be an array.");
+      }
       ctx.state.primaryRoads = primaryRoads;
       ctx.state.primaryRoadsMeta = Array.isArray(primaryRoadsMeta) ? primaryRoadsMeta : [];
       ctx.state.primaryRoadsSnappedNodes = snappedNodes || { gate: null, plaza: null, citadel: null, docks: null };
