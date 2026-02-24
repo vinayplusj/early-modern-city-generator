@@ -55,15 +55,11 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   ctx.params.roadHardAvoidWater = true;
   ctx.params.roadHardAvoidCitadel = false;
 
-  ctx.geom.wallBase = wallBase;
-
   let ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
   let ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
   let glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
 
   const centre = centroid(footprint);
-  ctx.geom.centre = centre;
-  ctx.geom.footprint = footprint;
 
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
 
