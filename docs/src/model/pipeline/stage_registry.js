@@ -441,48 +441,58 @@ export const PIPELINE_STAGES = [
     },
   },
 
-  {
-    id: 140,
-    name: "primaryRoads",
-    run(env) {
-      const ctx = env.ctx;
-  
-      const routingMesh = ctx.state.routingMesh;
-      const anchors = ctx.state.anchors;
-      const fortGeom = ctx.state.fortGeometryWarped;
-  
-      if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
-      if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
-      if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
-      if (!routingMesh.vorGraph) throw new Error("[EMCG] Stage 140 missing routingMesh.vorGraph.");
-      if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
-      if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
-  
-      const primaryOut = runPrimaryRoadsStage({
-        ctx,
-        vorGraph: routingMesh.vorGraph,
-        waterModel: routingMesh.waterModel,
-        anchors,
-        waterKind: env.waterKind,
-        primaryGateWarped: fortGeom.primaryGateWarped,
-        gatesWarped: fortGeom.gatesWarped,
-      });
-  
-      // Accept both shapes:
-      // - legacy: returns Array
-      // - newer: returns { primaryRoads: Array }
-      const primaryRoads = Array.isArray(primaryOut)
-        ? primaryOut
-        : primaryOut?.primaryRoads;
-      
-      if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
-        throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
-      }
-      
-      ctx.state.primaryRoads = primaryRoads;
-      env.primaryRoads = primaryRoads;
+    {
+      id: 140,
+      name: "primaryRoads",
+      run(env) {
+        const ctx = env.ctx;
+    
+        const routingMesh = ctx.state.routingMesh;
+        const anchors = ctx.state.anchors;
+        const fortGeom = ctx.state.fortGeometryWarped;
+    
+        if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
+        if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
+        if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
+        if (!routingMesh.vorGraph) throw new Error("[EMCG] Stage 140 missing routingMesh.vorGraph.");
+        if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
+        if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
+    
+        const primaryOut = runPrimaryRoadsStage({
+          ctx,
+          vorGraph: routingMesh.vorGraph,              // FIX: use the validated graph
+          waterModel: ctx.state.waterModel,
+          anchors,
+          waterKind: ctx.params.waterKind,
+          primaryGateWarped: anchors?.primaryGate || null,
+          gatesWarped: anchors?.gates || [],
+        });
+    
+        // Accept both shapes:
+        // - legacy: returns Array
+        // - newer: returns { primaryRoads: Array, primaryRoadsMeta, snappedNodes, gateForRoad }
+        const primaryRoads = Array.isArray(primaryOut)
+          ? primaryOut
+          : primaryOut?.primaryRoads;
+    
+        if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
+          throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
+        }
+    
+        // NEW: enriched outputs (forward-compatible with Milestone 5)
+        const primaryRoadsMeta = Array.isArray(primaryOut) ? null : primaryOut?.primaryRoadsMeta;
+        const snappedNodes = Array.isArray(primaryOut) ? null : primaryOut?.snappedNodes;
+        const gateForRoad = Array.isArray(primaryOut) ? null : primaryOut?.gateForRoad;
+    
+        ctx.state.primaryRoads = primaryRoads; // FIX: canonical state output
+        ctx.state.primaryRoadsMeta = Array.isArray(primaryRoadsMeta) ? primaryRoadsMeta : [];
+        ctx.state.primaryRoadsSnappedNodes = snappedNodes || { gate: null, plaza: null, citadel: null, docks: null };
+        ctx.state.primaryRoadsGateForRoad = gateForRoad || null;
+    
+        // Keep if anything downstream expects env.primaryRoads (optional, but safe)
+        env.primaryRoads = primaryRoads;
+      },
     },
-  },
 
   {
     id: 150,
