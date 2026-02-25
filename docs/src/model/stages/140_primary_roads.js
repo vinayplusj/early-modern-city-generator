@@ -1,16 +1,16 @@
 // docs/src/model/stages/140_primary_roads.js
 //
-// Stage 140: Primary roads (routed on Voronoi planar graph).
+// Stage 140: Primary roads (routed on graph view derived from CityMesh).
 //
 // Contract (v1, strict):
-// - Always returns an object with:
+// - Always returns an object:
 //   { primaryRoads, primaryRoadsMeta, gateForRoad, snappedNodes }.
 // - primaryRoads is an array of polylines for current rendering.
 // - primaryRoadsMeta carries mesh references (nodePath + edgeIds) for Milestone 5+.
 //
-// Critical determinism notes:
+// Determinism notes:
 // - snapPointToGraph({ splitEdges:true }) mutates the graph. Snap order must remain stable.
-// - Dijkstra is deterministic given a fixed graph + adjacency ordering (see shortest_path.js).
+// - Dijkstra is deterministic given a fixed graph + adjacency ordering.
 
 import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
@@ -25,8 +25,7 @@ function isFinitePoint(p) {
  * Convert a nodePath into a deterministic list of edge ids by selecting, for each
  * consecutive (u -> v), the smallest edgeId in graph.adj[u] that reaches v and is not disabled/blocked.
  *
- * This is intentionally local and deterministic. It does not rely on dijkstra returning prevEdge,
- * so it will still work if multiple parallel edges exist, but it will pick the smallest eligible edge id.
+ * This is intentionally local and deterministic. It does not rely on dijkstra returning prevEdge.
  */
 function nodePathToEdgeIds(graph, nodePath, blockedEdgeIds) {
   if (!graph || !Array.isArray(graph.adj) || !Array.isArray(graph.edges)) return [];
@@ -44,6 +43,7 @@ function nodePathToEdgeIds(graph, nodePath, blockedEdgeIds) {
 
     for (const step of nbrs) {
       if (!step || step.to !== v) continue;
+
       const edgeId = step.edgeId;
       const e = graph.edges[edgeId];
       if (!e || e.disabled) continue;
@@ -52,11 +52,7 @@ function nodePathToEdgeIds(graph, nodePath, blockedEdgeIds) {
       if (bestEdgeId == null || edgeId < bestEdgeId) bestEdgeId = edgeId;
     }
 
-    if (bestEdgeId == null) {
-      // If the graph was mutated in an unexpected way, return a partial list rather than lying.
-      return out;
-    }
-
+    if (bestEdgeId == null) return out; // partial list beats lying
     out.push(bestEdgeId);
   }
 
@@ -86,7 +82,7 @@ function nodePathToEdgeIds(graph, nodePath, blockedEdgeIds) {
  */
 export function runPrimaryRoadsStage({
   ctx,
-  vorGraph,
+  graph,
   waterModel,
   anchors,
   waterKind,
@@ -95,17 +91,17 @@ export function runPrimaryRoadsStage({
 }) {
   // ---------------- Road weight + blocking ----------------
   const roadWeight = makeRoadWeightFn({
-    graph: vorGraph,
+    graph,
     waterModel,
     anchors,
     params: ctx.params,
   });
 
   // Blocked edges are a function of graph flags and hard-avoid params. Compute once.
-  const blocked = buildBlockedEdgeSet(vorGraph, ctx.params);
+  const blocked = buildBlockedEdgeSet(graph, ctx.params);
 
   // ---------------- Snap endpoints (stable order; splitEdges mutates graph) ----------------
-  const snapCfg = { graph: vorGraph, maxSnapDist: 40, splitEdges: true };
+  const snapCfg = { graph, maxSnapDist: 40, splitEdges: true };
 
   const gateForRoad = (isFinitePoint(primaryGateWarped))
     ? primaryGateWarped
@@ -120,12 +116,12 @@ export function runPrimaryRoadsStage({
   const snappedNodes = { gate: nGate, plaza: nPlaza, citadel: nCitadel, docks: nDocks };
 
   // Debug: log once after snapping, to confirm flags and blocking are active.
-  if (ctx.params?.warpFort?.debug && vorGraph && Array.isArray(vorGraph.edges)) {
+  if (ctx.params?.warpFort?.debug && graph && Array.isArray(graph.edges)) {
     let activeEdges = 0;
     let waterEdges = 0;
     let citadelEdges = 0;
 
-    for (const e of vorGraph.edges) {
+    for (const e of graph.edges) {
       if (!e || e.disabled) continue;
       activeEdges += 1;
       if (e.flags && e.flags.isWater) waterEdges += 1;
@@ -147,7 +143,6 @@ export function runPrimaryRoadsStage({
 
   // ---------------- Routing helper (returns meta) ----------------
   function routeIntent({ intentId, from, to, fromPoint, toPoint, startNode, goalNode }) {
-    // Fallbacks must be explicit and deterministic.
     if (!isFinitePoint(fromPoint) || !isFinitePoint(toPoint)) return null;
 
     // If snapping failed, fall back to straight segment (keeps generator alive).
@@ -168,7 +163,7 @@ export function runPrimaryRoadsStage({
     }
 
     const nodePath = dijkstra({
-      graph: vorGraph,
+      graph,
       startNode,
       goalNode,
       weightFn: roadWeight,
@@ -191,10 +186,9 @@ export function runPrimaryRoadsStage({
       };
     }
 
-    const polyline = pathNodesToPolyline({ graph: vorGraph, nodePath });
-    const edgeIds = nodePathToEdgeIds(vorGraph, nodePath, blocked);
+    const polyline = pathNodesToPolyline({ graph, nodePath });
+    const edgeIds = nodePathToEdgeIds(graph, nodePath, blocked);
 
-    // If polyline is unexpectedly empty, fall back to straight segment.
     const safePolyline = (Array.isArray(polyline) && polyline.length >= 2) ? polyline : [fromPoint, toPoint];
 
     return {
@@ -264,8 +258,10 @@ export function runPrimaryRoadsStage({
   if (primaryRoads.length === 0 && isFinitePoint(anchors?.plaza) && isFinitePoint(anchors?.citadel)) {
     primaryRoads.push([anchors.plaza, anchors.citadel]);
   }
+
+  // Strict stage invariants
   if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
-    throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: primaryRoads must be a non-empty array after fallback.");
+    throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: primaryRoads must be non-empty after fallback.");
   }
   if (!Array.isArray(primaryRoadsMeta)) {
     throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: primaryRoadsMeta must be an array.");
@@ -273,7 +269,7 @@ export function runPrimaryRoadsStage({
   if (!snappedNodes || typeof snappedNodes !== "object") {
     throw new Error("[EMCG] runPrimaryRoadsStage invariant failed: snappedNodes must be an object.");
   }
-  
+
   return {
     primaryRoads,
     primaryRoadsMeta,
