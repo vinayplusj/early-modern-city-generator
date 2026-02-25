@@ -1,15 +1,19 @@
 // docs/src/model/stages/70_routing_mesh.js
 //
 // Stage 70: Voronoi planar graph (routing mesh) and water snapping to mesh.
-// Extracted from generate.js without functional changes.
+// Milestone 4.7: Build CityMesh from the final vorGraph and assert invariants.
+// Extracted from generate.js without functional changes (geometry behaviour unchanged).
 
 import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph.js";
 import { buildWaterOnMesh } from "../water_on_mesh.js";
 import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 
+import { buildCityMeshFromVorGraph } from "../mesh/city_mesh/build_city_mesh_from_vor_graph.js";
+import { assertCityMesh } from "../mesh/city_mesh/invariants.js";
 
 const VOR_EPS = 1e-3;
+
 function writeMeshToCtx(ctx, vorGraph, waterModel) {
   if (!ctx) return;
 
@@ -41,9 +45,10 @@ function writeMeshToCtx(ctx, vorGraph, waterModel) {
   // Water model snapped to mesh (or null if no water)
   ctx.mesh.water = waterModel ?? null;
 }
+
 /**
  * @param {object} args
- * @returns {object} { vorGraph, waterModel }
+ * @returns {object} { vorGraph, waterModel, cityMesh }
  */
 export function runRoutingMeshStage({
   ctx,
@@ -78,7 +83,7 @@ export function runRoutingMeshStage({
       graph: vorGraph,
       waterModel,
       params: ctx.params,
-    
+
       // Required routing helpers (buildWaterOnMesh still expects these)
       dijkstra,
       pathNodesToPolyline,
@@ -94,8 +99,15 @@ export function runRoutingMeshStage({
       params: ctx.params,
     });
   }
+
+  // Milestone 4.7: Build CityMesh from the final graph and assert topology invariants.
+  // This is a strict contract step: any invalid planar topology should fail here.
+  const cityMesh = buildCityMeshFromVorGraph(vorGraph);
+  assertCityMesh(cityMesh);
+
   // Persist canonical routing mesh on ctx (backward-compatible with return value).
   // This is the final graph (post-water rebuild if water exists).
   writeMeshToCtx(ctx, vorGraph, waterModel);
-  return { vorGraph, waterModel };
+
+  return { vorGraph, waterModel, cityMesh };
 }
