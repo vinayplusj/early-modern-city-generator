@@ -112,9 +112,9 @@ export function runPipeline(ctx) {
   if (!S.waterModel) throw new Error("[EMCG] Missing ctx.state.waterModel (Stage 40 output).");
   if (!S.wards) throw new Error("[EMCG] Missing ctx.state.wards (Stage 50 output).");
   if (!S.anchors) throw new Error("[EMCG] Missing ctx.state.anchors (Stage 60 output).");
-  if (!S.routingMesh || !S.routingMesh.vorGraph) {
-    throw new Error("[EMCG] Missing ctx.state.routingMesh.vorGraph (Stage 70 output).");
-  }
+  if (!S.routingMesh) throw new Error("[EMCG] Missing ctx.state.routingMesh (Stage 70 output).");
+  if (!S.routingMesh.graph) throw new Error("[EMCG] Missing ctx.state.routingMesh.graph (Stage 70 output).");
+  if (!S.routingMesh.cityMesh) throw new Error("[EMCG] Missing ctx.state.routingMesh.cityMesh (Stage 70 output).");
   if (!S.districts) throw new Error("[EMCG] Missing ctx.state.districts (Stage 90 output).");
   if (!S.warp) throw new Error("[EMCG] Missing ctx.state.warp (Stage 110 output).");
   if (!S.fortGeometryWarped) {
@@ -191,7 +191,8 @@ export function runPipeline(ctx) {
     wardsWithRoles: S.wards?.wardsWithRoles ?? null,
     wardSeeds: S.wards?.wardSeeds ?? null,
     wardRoleIndices: S.wards?.wardRoleIndices ?? null,
-    vorGraph: S.routingMesh.vorGraph,
+    vorGraph: S.routingMesh.graph,
+    mesh: S.routingMesh,
     mesh: S.routingMesh,
 
     // Anchors
