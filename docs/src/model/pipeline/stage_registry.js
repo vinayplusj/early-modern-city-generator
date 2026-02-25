@@ -188,13 +188,19 @@ export const PIPELINE_STAGES = [
         cy: env.cy,
         baseR: env.baseR,
       });
-
+      
       ctx.state.routingMesh = {
-        vorGraph: meshOut.vorGraph,
+        // CityMesh-first topology
+        cityMesh: meshOut.cityMesh,
+        graph: meshOut.graph,
+      
+        // Keep legacy for now (optional). Remove once all consumers are migrated.
+        vorGraphLegacy: meshOut.vorGraph,
+      
+        // Keep water model here for convenience (still also in ctx.state.waterModel)
         waterModel: meshOut.waterModel,
       };
-
-      // Keep waterModel fresh
+      
       ctx.state.waterModel = meshOut.waterModel;
     },
   },
@@ -398,13 +404,13 @@ export const PIPELINE_STAGES = [
       if (!routingMesh) throw new Error("[EMCG] Stage 140 requires ctx.state.routingMesh (Stage 70 output).");
       if (!anchors) throw new Error("[EMCG] Stage 140 requires ctx.state.anchors (Stage 60 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 140 requires ctx.state.fortGeometryWarped (Stage 120 output).");
-      if (!routingMesh.vorGraph) throw new Error("[EMCG] Stage 140 missing routingMesh.vorGraph.");
+      if (!routingMesh.graph) throw new Error("[EMCG] Stage 140 missing routingMesh.graph.");
       if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
       if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
 
       const primaryOut = runPrimaryRoadsStage({
         ctx,
-        vorGraph: routingMesh.vorGraph,
+        graph: routingMesh.graph,
         waterModel: ctx.state.waterModel,
         anchors,
         waterKind: ctx.params.waterKind,
@@ -546,7 +552,7 @@ export const PIPELINE_STAGES = [
 
       const roadsOut = runRoadGraphAndBlocksStage({
         ctx,
-        vorGraph: routingMesh.vorGraph,
+        graph: routingMesh.graph,
         waterModel: routingMesh.waterModel,
         anchors,
         waterKind: env.waterKind,
@@ -602,7 +608,7 @@ export const PIPELINE_STAGES = [
         cy: env.cy,
         fortHulls: wards.fortHulls,
 
-        vorGraph: routingMesh.vorGraph,
+        vorGraph: routingMesh.graph,
         waterModel: routingMesh.waterModel,
 
         primaryRoads: primaryRoads ?? null,
