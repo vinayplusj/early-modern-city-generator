@@ -24,6 +24,7 @@ import { runMarketStage } from "../stages/160_market.js";
 import { runRoadGraphAndBlocksStage } from "../stages/170_road_graph_and_blocks.js";
 import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
+import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
 
 export const PIPELINE_STAGES = [
   {
@@ -191,15 +192,12 @@ export const PIPELINE_STAGES = [
       });
       
       ctx.state.routingMesh = {
-        // CityMesh-first topology
         cityMesh: meshOut.cityMesh,
         graph: meshOut.graph,
-      
-        // Keep legacy for now (optional). Remove once all consumers are migrated.
-        vorGraphLegacy: meshOut.vorGraph,
-      
-        // Keep water model here for convenience (still also in ctx.state.waterModel)
         waterModel: meshOut.waterModel,
+      
+        // Option 1 hook for Milestone 5 exterior roads and biome fills
+        boundaryBinding: meshOut.boundaryBinding,
       };
       
       ctx.state.waterModel = meshOut.waterModel;
@@ -359,6 +357,19 @@ export const PIPELINE_STAGES = [
       // Keep anchors canonical updated
       ctx.state.anchors.gates = fortGeom.gatesWarped;
       ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
+      const rm = ctx.state.routingMesh;
+      if (!rm || !rm.cityMesh || !rm.boundaryBinding) {
+        throw new Error("[EMCG] Stage 120 requires routingMesh.cityMesh and routingMesh.boundaryBinding (Stage 70 output).");
+      }
+      if (!Array.isArray(S.routingMesh.gatePortals)) {
+        throw new Error("[EMCG] Missing ctx.state.routingMesh.gatePortals (Stage 120 output).");
+      }
+      
+      rm.gatePortals = buildGatePortals({
+        cityMesh: rm.cityMesh,
+        boundaryBinding: rm.boundaryBinding,
+        gates: fortGeom.gatesWarped,
+      });
     },
   },
 
