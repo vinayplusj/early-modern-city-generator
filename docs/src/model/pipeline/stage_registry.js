@@ -361,15 +361,18 @@ export const PIPELINE_STAGES = [
       if (!rm || !rm.cityMesh || !rm.boundaryBinding) {
         throw new Error("[EMCG] Stage 120 requires routingMesh.cityMesh and routingMesh.boundaryBinding (Stage 70 output).");
       }
-      if (!Array.isArray(S.routingMesh.gatePortals)) {
-        throw new Error("[EMCG] Missing ctx.state.routingMesh.gatePortals (Stage 120 output).");
-      }
       
       rm.gatePortals = buildGatePortals({
         cityMesh: rm.cityMesh,
         boundaryBinding: rm.boundaryBinding,
         gates: fortGeom.gatesWarped,
       });
+      if (!Array.isArray(rm.gatePortals)) {
+        throw new Error("[EMCG] Stage 120 produced invalid gatePortals (expected array).");
+      }
+      if (rm.gatePortals.length !== fortGeom.gatesWarped.length) {
+        throw new Error("[EMCG] Stage 120 gatePortals length mismatch with gatesWarped.");
+      }
     },
   },
 
