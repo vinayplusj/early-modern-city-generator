@@ -7,8 +7,42 @@ import {
   sortAdjacencyDeterministic,
 } from "./util.js";
 
+function buildNodeIndexById(nodes) {
+  const m = new Map();
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!n || !Number.isInteger(n.id)) continue;
+    if (!m.has(n.id)) m.set(n.id, i);
+  }
+  return m;
+}
+
+function buildEdgeIndexById(edges) {
+  const m = new Map();
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    if (!e || !Number.isInteger(e.id)) continue;
+    if (!m.has(e.id)) m.set(e.id, i);
+  }
+  return m;
+}
+
+function getById(arr, id, indexById) {
+  // Fast path when id equals index
+  const direct = arr[id];
+  if (direct && direct.id === id) return direct;
+
+  const idx = indexById.get(id);
+  if (idx == null) return null;
+  return arr[idx] || null;
+}
+
 /**
  * Snap a point to the nearest graph node. Optionally split an edge if no node is close.
+ *
+ * Contract:
+ * - This function may mutate graph.nodes/graph.edges/graph.adj when splitEdges is true.
+ * - Therefore, do not pass an immutable view object.
  */
 export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = false }) {
   if (!isFinitePoint(point)) return null;
@@ -21,11 +55,15 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
 
   const { nodes, edges, adj } = graph;
 
-  // 1) Nearest node
+  const nodeIndexById = buildNodeIndexById(nodes);
+  const edgeIndexById = buildEdgeIndexById(edges);
+
+  // 1) Nearest node (deterministic tie-break by smaller node id)
   let bestNode = null;
   let bestD = Infinity;
 
   for (const n of nodes) {
+    if (!n) continue;
     const d = Math.hypot(n.x - point.x, n.y - point.y);
     if (d < bestD - 1e-12) {
       bestD = d;
@@ -44,8 +82,10 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
   let bestProj = null;
 
   for (const e of edges) {
-    const a = nodes[e.a];
-    const b = nodes[e.b];
+    if (!e || e.disabled) continue;
+
+    const a = getById(nodes, e.a, nodeIndexById);
+    const b = getById(nodes, e.b, nodeIndexById);
     if (!a || !b) continue;
 
     const ax = a.x, ay = a.y;
@@ -80,13 +120,14 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
   if (bestEdgeId == null || !bestProj) return bestNode;
   if (bestEdgeDist > maxSnapDist * 2.5) return bestNode;
 
-  // Create the new node (merged by eps quantization)
+  // Create the new node (merged by eps quantisation)
   const newNodeId = (function addNodeAt(p) {
-    const eps = graph.eps;
+    const eps = isFiniteNumber(graph.eps) ? graph.eps : 1e-3;
     const key = quantKey(p.x, p.y, eps);
 
     let reuse = null;
     for (const n of nodes) {
+      if (!n) continue;
       if (quantKey(n.x, n.y, eps) === key) {
         reuse = n.id;
         break;
@@ -94,34 +135,47 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
     }
     if (reuse != null) return reuse;
 
-    const id = nodes.length;
+    // New node id: choose next integer >= nodes.length but also > max existing id
+    let maxId = -1;
+    for (const n of nodes) {
+      if (!n || !Number.isInteger(n.id)) continue;
+      if (n.id > maxId) maxId = n.id;
+    }
+    const id = Math.max(nodes.length, maxId + 1);
+
     nodes.push({ id, x: p.x, y: p.y });
     while (adj.length < id + 1) adj.push([]);
     return id;
   })(bestProj);
 
-  const edge = edges[bestEdgeId];
+  const edge = getById(edges, bestEdgeId, edgeIndexById);
   if (!edge) return newNodeId;
   if (newNodeId === edge.a || newNodeId === edge.b) return newNodeId;
 
   if (!edge.disabled) {
     edge.disabled = true;
-    adj[edge.a] = adj[edge.a].filter((x) => x.edgeId !== edge.id);
-    adj[edge.b] = adj[edge.b].filter((x) => x.edgeId !== edge.id);
+    if (adj[edge.a]) adj[edge.a] = adj[edge.a].filter((x) => x.edgeId !== edge.id);
+    if (adj[edge.b]) adj[edge.b] = adj[edge.b].filter((x) => x.edgeId !== edge.id);
   }
 
   function addEdgeUndirected(lo, hi, parentFlags) {
     const a = Math.min(lo, hi);
     const b = Math.max(lo, hi);
 
-    const na = nodes[a];
-    const nb = nodes[b];
+    const na = getById(nodes, a, nodeIndexById);
+    const nb = getById(nodes, b, nodeIndexById);
     if (!na || !nb) return;
 
     const length = Math.hypot(nb.x - na.x, nb.y - na.y);
     if (!isFiniteNumber(length) || length <= 0) return;
 
-    const id = edges.length;
+    let maxEdgeId = -1;
+    for (const e of edges) {
+      if (!e || !Number.isInteger(e.id)) continue;
+      if (e.id > maxEdgeId) maxEdgeId = e.id;
+    }
+    const id = Math.max(edges.length, maxEdgeId + 1);
+
     edges.push({
       id,
       a,
@@ -131,6 +185,8 @@ export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = 
     });
 
     while (adj.length < Math.max(a, b) + 1) adj.push([]);
+    if (!adj[a]) adj[a] = [];
+    if (!adj[b]) adj[b] = [];
     adj[a].push({ to: b, edgeId: id });
     adj[b].push({ to: a, edgeId: id });
   }
