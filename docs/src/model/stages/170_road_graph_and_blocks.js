@@ -4,9 +4,10 @@
 // Milestone 4.7 migration: accept `graph` (CityMesh-derived GraphView) instead of `vorGraph`.
 // Behaviour unchanged; we alias `vorGraph = graph` for legacy helper compatibility.
 
-import { runSecondaryRoadsLegacyStage } from "../roads/secondary_legacy.js";
-import { buildRoadGraph } from "../roads/road_graph.js";
-import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
+import { buildRoadGraph } from "../../../roads/graph.js";
+import { extractBlocksFromRoadGraph } from "../../../roads/blocks.js";
+
+import { generateSecondaryRoads } from "../generate_helpers/roads_stage.js";
 
 export function runRoadGraphAndBlocksStage({
   ctx,
@@ -25,7 +26,7 @@ export function runRoadGraphAndBlocksStage({
   districts,
   wardsWithRoles,
 }) {
-  // Legacy alias: many helpers still use the name `vorGraph`.
+  // Legacy alias: existing helpers still use the name `vorGraph`.
   const vorGraph = graph;
 
   if (!vorGraph) throw new Error("[EMCG] Stage 170 requires graph.");
@@ -34,23 +35,17 @@ export function runRoadGraphAndBlocksStage({
   }
 
   // 1) Secondary roads (legacy v0)
-  const secondaryRoadsLegacy = runSecondaryRoadsLegacyStage({
-    ctx,
-    graph: vorGraph,
-    waterModel,
-    anchors,
-    waterKind,
+  // roads_stage.js export: generateSecondaryRoads(rng, gates, ring1, ring2)
+  const secondaryRoadsLegacy = generateSecondaryRoads(
     rng,
-    primaryRoads,
-    gatesWarped,
+    Array.isArray(gatesWarped) ? gatesWarped : [],
     ring,
-    ring2,
-    squareCentre,
-    citCentre,
-    newTown,
-    districts,
-    wardsWithRoles,
-  });
+    ring2
+  );
+
+  if (secondaryRoadsLegacy != null && !Array.isArray(secondaryRoadsLegacy)) {
+    throw new Error("[EMCG] Stage 170 produced invalid secondaryRoadsLegacy (expected array or null).");
+  }
 
   // 2) Build a normalised road graph (planarisation and snapping happen inside)
   const roadGraph = buildRoadGraph({
@@ -59,7 +54,7 @@ export function runRoadGraphAndBlocksStage({
     waterModel,
     anchors,
     primaryRoads,
-    secondaryRoadsLegacy,
+    secondaryRoadsLegacy: secondaryRoadsLegacy ?? [],
   });
 
   // 3) Extract blocks as faces of the planar road graph
@@ -70,11 +65,11 @@ export function runRoadGraphAndBlocksStage({
     waterModel,
   });
 
-  // 4) Polylines for render (if your renderer expects them)
+  // 4) Polylines for render (if the renderer expects them)
   const polylines = roadGraph?.polylines ?? null;
 
   return {
-    secondaryRoadsLegacy,
+    secondaryRoadsLegacy: secondaryRoadsLegacy ?? [],
     roadGraph,
     blocks,
     polylines,
