@@ -4,8 +4,8 @@
 // Milestone 4.7 migration: accept `graph` (CityMesh-derived GraphView) instead of `vorGraph`.
 // Behaviour unchanged; we alias `vorGraph = graph` for legacy helper compatibility.
 
-import { buildRoadGraph } from "../../../roads/graph.js";
-import { extractBlocksFromRoadGraph } from "../../../roads/blocks.js";
+import { buildRoadGraph } from "../../roads/graph.js";
+import { extractBlocksFromRoadGraph } from "../../roads/blocks.js";
 
 import { generateSecondaryRoads } from "../generate_helpers/roads_stage.js";
 
