@@ -23,6 +23,7 @@ import { runOutworksStage } from "../stages/150_outworks.js";
 import { runMarketStage } from "../stages/160_market.js";
 import { runRoadGraphAndBlocksStage } from "../stages/170_road_graph_and_blocks.js";
 import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
+import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
 
 export const PIPELINE_STAGES = [
   {
@@ -204,7 +205,17 @@ export const PIPELINE_STAGES = [
       ctx.state.waterModel = meshOut.waterModel;
     },
   },
-
+  
+  {
+    id: 75,
+    name: "cityMeshGraphAudit",
+    run(env) {
+      // Debug-only audit: throws on invariant failures when enabled.
+      // Enable via ctx.params.meshAuditEnabled === true, or reuse ctx.params.warpDebugEnabled.
+      runCityMeshGraphAuditStage(env);
+    },
+  },
+  
   {
     id: 80,
     name: "innerRings",
