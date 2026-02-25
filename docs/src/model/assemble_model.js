@@ -35,6 +35,10 @@ export function assembleModel({
   mesh,
   vorGraph,
 
+  // 4.7 hooks (outer boundary binding + gate portals)
+  boundaryBinding,
+  gatePortals,
+
   // Anchors
   centre,
   baseR,
@@ -129,6 +133,10 @@ export function assembleModel({
     mesh: (mesh && typeof mesh === "object")
       ? { ...mesh, vorGraph: mesh.vorGraph ?? vorGraph ?? null }
       : { vorGraph: vorGraph ?? null },
+
+    // 4.7 hooks
+    boundaryBinding: boundaryBinding ?? null,
+    gatePortals: Array.isArray(gatePortals) ? gatePortals : null,
 
     // Anchors
     centre,
