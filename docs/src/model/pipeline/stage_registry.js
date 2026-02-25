@@ -542,6 +542,7 @@ export const PIPELINE_STAGES = [
       const rings = ctx.state.rings;
 
       if (!routingMesh) throw new Error("[EMCG] Stage 170 requires ctx.state.routingMesh (Stage 70 output).");
+      if (!routingMesh.graph) throw new Error("[EMCG] Stage 170 missing routingMesh.graph.");
       if (!anchors) throw new Error("[EMCG] Stage 170 requires ctx.state.anchors (Stage 60 output).");
       if (!primaryRoads) throw new Error("[EMCG] Stage 170 requires ctx.state.primaryRoads (Stage 140 output).");
       if (!districts) throw new Error("[EMCG] Stage 170 requires ctx.state.districts (Stage 90 output).");
@@ -609,7 +610,7 @@ export const PIPELINE_STAGES = [
         fortHulls: wards.fortHulls,
 
         vorGraph: routingMesh.graph,
-        waterModel: routingMesh.waterModel,
+        waterModel: ctx.state.waterModel,
 
         primaryRoads: primaryRoads ?? null,
 
