@@ -124,7 +124,10 @@ export function runPipeline(ctx) {
   if (!S.primaryRoads || !Array.isArray(S.primaryRoads) || S.primaryRoads.length === 0) {
     throw new Error("[EMCG] Missing ctx.state.primaryRoads (Stage 140 output).");
   }
-
+  if (!S.routingMesh.boundaryBinding) {
+    throw new Error("[EMCG] Missing ctx.state.routingMesh.boundaryBinding (Stage 70 output).");
+  }
+  
   const fort = S.fortifications;
   const fortGeom = S.fortGeometryWarped;
   const warp = S.warp;
@@ -193,7 +196,9 @@ export function runPipeline(ctx) {
     wardRoleIndices: S.wards?.wardRoleIndices ?? null,
     vorGraph: S.routingMesh.graph,
     mesh: S.routingMesh,
-
+    boundaryBinding: S.routingMesh.boundaryBinding ?? null,
+    gatePortals: S.routingMesh.gatePortals ?? null,
+    
     // Anchors
     citadel: S.citadel ?? null,
     avenue,
