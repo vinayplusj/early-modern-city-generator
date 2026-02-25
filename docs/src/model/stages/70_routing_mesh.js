@@ -8,7 +8,7 @@ import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph.js";
 import { buildWaterOnMesh } from "../water_on_mesh.js";
 import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
-
+import { bindOuterBoundaryToCityMesh } from "../mesh/city_mesh/bind_outer_boundary.js";
 import { buildCityMeshFromVorGraph } from "../mesh/city_mesh/build_city_mesh_from_vor_graph.js";
 import { assertCityMesh } from "../mesh/city_mesh/invariants.js";
 import { makeGraphViewFromCityMesh } from "../mesh/city_mesh/city_mesh_graph_view.js";
@@ -104,10 +104,10 @@ export function runRoutingMeshStage({
   // Graph view: same shape as legacy vorGraph consumers expect.
   // Note: This view is mutable (snapPointToGraph may split edges).
   const graph = makeGraphViewFromCityMesh(cityMesh, { eps: VOR_EPS });
-
+  const boundaryBinding = bindOuterBoundaryToCityMesh({ cityMesh, outerBoundary });
   // Persist routing mesh on ctx for debugging / legacy inspection.
   // This is now the graph view (CityMesh-derived).
   writeMeshToCtx(ctx, graph, waterModel);
 
-  return { vorGraph, waterModel, cityMesh, graph };
+  return { vorGraph, waterModel, cityMesh, graph, boundaryBinding };
 }
