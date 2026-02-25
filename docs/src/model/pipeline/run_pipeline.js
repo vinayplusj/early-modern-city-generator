@@ -193,7 +193,6 @@ export function runPipeline(ctx) {
     wardRoleIndices: S.wards?.wardRoleIndices ?? null,
     vorGraph: S.routingMesh.graph,
     mesh: S.routingMesh,
-    mesh: S.routingMesh,
 
     // Anchors
     citadel: S.citadel ?? null,
