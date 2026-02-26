@@ -226,7 +226,7 @@ export function render(ctx, model) {
         ctx.strokeStyle = "rgba(255,0,255,0.50)";
         ctx.lineWidth = 2.0;
       } else if (isRing1) {
-        ctx.strokeStyle = "rgba(0,0,0,0.90)";
+        ctx.strokeStyle = "rgba(0,0,0,0.00)"; // Debug: Hide them
         ctx.lineWidth = 2.5;
       }
 
