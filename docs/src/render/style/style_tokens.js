@@ -80,6 +80,14 @@ export function makeStyleTokens({ baseR, exportScale = 1 }) {
       width: hairline,
       alpha: alpha.wardLines,
     },
+  
+    // Ring1 wards: do not draw ward strokes/fills (roads still render normally).
+    // Rendering code must honour this by skipping ward boundary rendering when ward.id is in fortHulls.ring1Ids.
+    ring1Wards: {
+      drawBoundaries: false,
+      drawFills: false,
+    },
+  
     walls: {
       stroke: colour.wall,
       width: thick,
@@ -135,20 +143,49 @@ export function makeStyleTokens({ baseR, exportScale = 1 }) {
           stroke: colour.inkFaint,
           alpha: alpha.outsideFill,
           width: hairline,
-          // Optional subtle second pass (very light)
+          // subtle cross bands (field structure)
           secondary: { angleDeg: 110, spacingPx: hatchWide, alpha: 0.08, width: hairline },
         },
       },
-      forest: {
+    
+      // Key names: use safe identifiers in JS. Prefer "broadleaf_forest" in code and map UI labels separately.
+      broadleaf_forest: {
         pattern: "stipple",
         stipple: {
-          stepPx: stippleStep,
+          stepPx: stippleStep, // medium density
           dotRadiusPx: clamp(0.9 * hairline, 0.6 * s, 1.4 * s),
           alpha: alpha.outsideFillStrong,
         },
-        // Optional light crosshatch overlay (subtle structure)
+        // faint canopy texture
         overlayHatch: { angleDeg: 45, spacingPx: hatchWide, alpha: 0.08, width: hairline },
       },
+    
+      coniferous_forest: {
+        pattern: "stipple",
+        stipple: {
+          // denser than broadleaf to read as darker canopy
+          stepPx: clamp(stippleStep * 0.85, 3.5 * s, 8.0 * s),
+          dotRadiusPx: clamp(1.0 * hairline, 0.7 * s, 1.6 * s),
+          alpha: clamp(alpha.outsideFillStrong + 0.03, 0.18, 0.28),
+        },
+        // a slightly steeper hatch angle to differentiate from broadleaf
+        overlayHatch: { angleDeg: 60, spacingPx: hatchWide, alpha: 0.07, width: hairline },
+      },
+    
+      grassland: {
+        pattern: "hatch",
+        hatch: {
+          // near-horizontal lines read as “windswept grass”
+          angleDeg: 5,
+          spacingPx: clamp(hatchWide * 0.85, 7 * s, 16 * s),
+          stroke: colour.inkFaint,
+          alpha: clamp(alpha.outsideFillLight + 0.03, 0.10, 0.18),
+          width: hairline,
+          // occasional cross-lines, very light, to avoid looking like farmland
+          secondary: { angleDeg: 95, spacingPx: clamp(hatchWide * 1.6, 12 * s, 28 * s), alpha: 0.04, width: hairline },
+        },
+      },
+    
       desert: {
         pattern: "hatch",
         hatch: {
@@ -157,10 +194,56 @@ export function makeStyleTokens({ baseR, exportScale = 1 }) {
           stroke: colour.inkFaint,
           alpha: alpha.outsideFillLight,
           width: hairline,
+          // faint dune direction variation
           secondary: { angleDeg: 60, spacingPx: clamp(18 * unit, 14 * s, 28 * s), alpha: 0.06, width: hairline },
         },
       },
-    },
+    
+      wetland: {
+        pattern: "hatch",
+        hatch: {
+          // diagonal reads as “reeds / marsh texture”
+          angleDeg: 35,
+          spacingPx: clamp(hatchTight * 0.9, 4.5 * s, 10 * s),
+          stroke: colour.inkFaint,
+          alpha: clamp(alpha.outsideFill + 0.03, 0.14, 0.24),
+          width: hairline,
+          // crosshatch to suggest tangled vegetation / channels
+          secondary: { angleDeg: -35, spacingPx: hatchWide, alpha: 0.07, width: hairline },
+        },
+        // optional: if you later add a water-adjacent mask, you can overlay sparse stipple there
+        // overlayStipple: { stepPx: clamp(stippleStep * 1.4, 6 * s, 14 * s), dotRadiusPx: hairline, alpha: 0.08 }
+      },
+    
+      tundra: {
+        pattern: "hatch",
+        hatch: {
+          // sparse, low-contrast texture
+          angleDeg: 0,
+          spacingPx: clamp(hatchWide * 1.1, 10 * s, 22 * s),
+          stroke: colour.inkFaint,
+          alpha: 0.09,
+          width: hairline,
+          // faint second direction to imply rough ground / permafrost cracks
+          secondary: { angleDeg: 90, spacingPx: clamp(hatchWide * 2.0, 14 * s, 32 * s), alpha: 0.04, width: hairline },
+        },
+      },
+    
+      mountain: {
+        pattern: "hatch",
+        hatch: {
+          // steeper angle reads as slope shading
+          angleDeg: 75,
+          spacingPx: clamp(hatchTight * 0.85, 4.5 * s, 10 * s),
+          stroke: colour.inkFaint,
+          alpha: clamp(alpha.outsideFillStrong, 0.16, 0.26),
+          width: hairline,
+          // secondary hatch gives “rock texture” without going full crosshatch
+          secondary: { angleDeg: 25, spacingPx: clamp(hatchWide * 0.9, 8 * s, 18 * s), alpha: 0.06, width: hairline },
+        },
+        // optional future: contour lines as separate layer, not part of biome fill
+      },
+    }
 
     // Exterior road continuations (Milestone 5): lower alpha than interior roads
     exteriorRoads: {
