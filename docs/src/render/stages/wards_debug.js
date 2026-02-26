@@ -166,15 +166,30 @@ export function drawWardsDebug(ctx, {
   wardSeeds,
   wardRoleIndices,
   anchors,
+  fortHulls,                 // NEW (optional): used to suppress Ring1 ward geometry
   hideWardIds,
-  drawWardFills = false,
+  drawWardFills = false,     // existing
+  suppressRing1WardPolys = true, // NEW (default true): no stroke/fill/edges for Ring1 wards
 }) {
   const hideIdsFlag = (hideWardIds === true);
 
   const hideSet = (hideWardIds instanceof Set)
     ? hideWardIds
     : new Set(Array.isArray(hideWardIds) ? hideWardIds : []);
+  // Ring1 wards suppression: no ward fill/stroke/edge overlay for Ring1 wards.
+  // Roads are rendered in a separate stage, so this only affects ward geometry.
+  const ring1Arr =
+    Array.isArray(fortHulls?.ring1IdsForHull) && fortHulls.ring1IdsForHull.length > 0
+      ? fortHulls.ring1IdsForHull
+      : (Array.isArray(fortHulls?.ring1Ids) ? fortHulls.ring1Ids : []);
 
+  const ring1Set = new Set(ring1Arr);
+
+  // Skip set for ward polygon strokes/fills and edge overlay.
+  const skipWardGeomSet = (suppressRing1WardPolys && ring1Set.size > 0)
+    ? new Set([...hideSet, ...ring1Set])
+    : hideSet;
+  
   const hasWards = Array.isArray(wards) && wards.length > 0;
   if (!hasWards) return;
 
@@ -184,7 +199,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.poly || w.poly.length < 3) continue;
-    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
+    if (Number.isFinite(w.id) && skipWardGeomSet.has(w.id)) continue;
 
     const st = styleForRole(w.role);
     ctx.globalAlpha = st.alphaFill;
@@ -195,7 +210,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.poly || w.poly.length < 3) continue;
-    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
+    if (Number.isFinite(w.id) && skipWardGeomSet.has(w.id)) continue;
 
     const st = styleForRole(w.role);
     ctx.globalAlpha = st.alphaStroke;
@@ -208,7 +223,7 @@ export function drawWardsDebug(ctx, {
 
   // 1b) Ward edges overlay (draw every unique edge once)
   // This makes shared borders visible even when role strokes blend into fills.
-  drawWardEdgesOverlay(ctx, wards, hideSet);
+  drawWardEdgesOverlay(ctx, wards, skipWardGeomSet);
 
   // 2) Ward seeds (draw from wards so we can skip hidden wards)
   ctx.save();
@@ -217,7 +232,7 @@ export function drawWardsDebug(ctx, {
 
   for (const w of wards) {
     if (!w || !w.seed) continue;
-    if (Number.isFinite(w.id) && hideSet.has(w.id)) continue;
+    if (Number.isFinite(w.id) && skipWardGeomSet.has(w.id)) continue;
 
     drawCircle(ctx, w.seed, 2);
     ctx.fill();
