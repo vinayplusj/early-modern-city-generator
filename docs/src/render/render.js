@@ -303,6 +303,7 @@ export function render(ctx, model) {
     wards: model?.wards || [],
     wardSeeds: model?.wardSeeds || [],
     wardRoleIndices: model?.wardRoleIndices || null,
+    fortHulls: model?.fortHulls ?? null,
     anchors: A,
     hideWardIds: false,
   });
