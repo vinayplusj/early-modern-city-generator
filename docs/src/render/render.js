@@ -30,7 +30,7 @@ function drawPolyline(ctx, poly, opts = {}) {
   if (!ctx || !Array.isArray(poly) || poly.length < 2) return;
 
   const {
-    stroke = "rgba(255,255,255,1.0)",
+    stroke = "rgba(255,255,255,0.50)",
     width = 2,
     closed = true,
   } = opts;
@@ -55,7 +55,7 @@ function drawRoadPolylines(ctx, roads, kind) {
   const isPrimary = kind === "primary";
 
   ctx.save();
-  ctx.globalAlpha = isPrimary ? 0.95 : 0.70;
+  ctx.globalAlpha = isPrimary ? 1.0 : 0.70;
   ctx.strokeStyle = isPrimary ? "#ffffff" : "#cfcfcf";
   ctx.lineWidth = isPrimary ? 2.0 : 1.0;
 
@@ -89,7 +89,7 @@ function drawPrimaryRoadsMetaDebug(ctx, model) {
   ctx.globalAlpha = 0.95;
   ctx.font = "10px sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.10)";
-  ctx.strokeStyle = "rgba(255,255,0,0.70)";
+  ctx.strokeStyle = "rgba(255,255,0,0.60)";
   ctx.lineWidth = 1.0;
 
   for (const r of meta) {
@@ -190,21 +190,6 @@ export function render(ctx, model) {
     const inner = fh?.innerHull?.outerLoop || null;
     const outer = fh?.outerHull?.outerLoop || null;
 
-    // Inner hull (core wards boundary)
-    drawPolyline(ctx, inner, {
-      stroke: "rgba(255,0,255,1.0)",
-      width: 2,
-      closed: true,
-    });
-
-    // Outer hull (core + ring1 wards boundary)
-    drawPolyline(ctx, outer, {
-      stroke: "rgba(0,255,255,1.0)",
-      width: 2,
-      closed: true,
-    });
-  }
-
   // ---- Debug: highlight core wards and ring1 wards (no window coupling) ----
   {
     const fh = model?.fortHulls ?? null;
@@ -240,7 +225,7 @@ export function render(ctx, model) {
 
       if (isCore) {
         // Core wards (inside inner hull)
-        ctx.strokeStyle = "rgba(255,0,255,0.80)";
+        ctx.strokeStyle = "rgba(255,0,255,0.50)";
         ctx.lineWidth = 2.0;
       }
 
