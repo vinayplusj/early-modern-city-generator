@@ -28,7 +28,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
 
   // Bastioned wall (final composite)
   if (wall && wall.length >= 3) {
-    const wallStroke = warp?.wall?.drawComposite?.stroke ?? "#d9d9d9";
+    const wallStroke = warp?.wall?.drawComposite?.stroke ?? "#0F0";
     const wallWidth = warp?.wall?.drawComposite?.width ?? 3;
 
     ctx.strokeStyle = wallStroke;
