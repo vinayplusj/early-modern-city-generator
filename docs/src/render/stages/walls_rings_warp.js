@@ -26,17 +26,6 @@ export function drawWallsAndRingsAndWarp(ctx, {
     ctx.restore();
   }
 
-  // Bastioned wall (final composite)
-  if (wall && wall.length >= 3) {
-    const wallStroke = warp?.wall?.drawComposite?.stroke ?? "#0F0";
-    const wallWidth = warp?.wall?.drawComposite?.width ?? 3;
-
-    ctx.strokeStyle = wallStroke;
-    ctx.lineWidth = wallWidth;
-    drawPoly(ctx, wall, true);
-    ctx.stroke();
-  }
-
   // Bastions (polygons) - debug geometry kept, rendering disabled
   const showBastionPolys = false;
   if (showBastionPolys && Array.isArray(bastionPolys)) {
@@ -144,6 +133,19 @@ export function drawWallsAndRingsAndWarp(ctx, {
     ctx.strokeStyle = "#bdbdbd";
     ctx.lineWidth = 1.25;
     drawPoly(ctx, ring2, true);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Bastioned wall (final composite)
+  if (wall && wall.length >= 3) {
+    const wallStroke = warp?.wall?.drawComposite?.stroke ?? "rgba(0,255,0,0.90)";
+    const wallWidth = warp?.wall?.drawComposite?.width ?? 3;
+  
+    ctx.save();
+    ctx.strokeStyle = wallStroke;
+    ctx.lineWidth = wallWidth;
+    drawPoly(ctx, wall, true);
     ctx.stroke();
     ctx.restore();
   }
