@@ -62,7 +62,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
   
     ctx.save();
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.20;
   
     // Inner hull loops: faint, selected loop stronger
     if (Array.isArray(innerLoops)) {
@@ -96,7 +96,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
     ctx.lineWidth = 2;
   
     ctx.globalAlpha = 0.6;
-    ctx.strokeStyle = "#ffffff";
+    ctx.strokeStyle = "#EEE";
     ctx.setLineDash([6, 4]);
     drawPoly(ctx, ww.wallOriginal, true);
     ctx.stroke();
@@ -113,7 +113,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
   const hasWarpCurtain = !!(wallCurtain && wallCurtain.length >= 3);
   
   if (wallBase && wallBase.length >= 3 && !hasWarpCurtain) {
-    ctx.strokeStyle = "#9a9a9a";
+    ctx.strokeStyle = "#999";
     ctx.lineWidth = 1.5;
     drawPoly(ctx, wallBase, true);
     ctx.stroke();
@@ -121,7 +121,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
 
   // Rings
   if (ring && ring.length >= 3) {
-    ctx.strokeStyle = "#bdbdbd";
+    ctx.strokeStyle = "#BBB";
     ctx.lineWidth = 2;
     drawPoly(ctx, ring, true);
     ctx.stroke();
@@ -129,8 +129,8 @@ export function drawWallsAndRingsAndWarp(ctx, {
 
   if (ring2 && ring2.length >= 3) {
     ctx.save();
-    ctx.globalAlpha = 0.65;
-    ctx.strokeStyle = "#bdbdbd";
+    ctx.globalAlpha = 0.60;
+    ctx.strokeStyle = "#BBB";
     ctx.lineWidth = 1.25;
     drawPoly(ctx, ring2, true);
     ctx.stroke();
