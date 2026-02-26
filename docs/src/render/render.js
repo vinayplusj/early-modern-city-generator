@@ -88,7 +88,7 @@ function drawPrimaryRoadsMetaDebug(ctx, model) {
   ctx.save();
   ctx.globalAlpha = 0.95;
   ctx.font = "10px sans-serif";
-  ctx.fillStyle = "rgba(255,255,0,0.90)";
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
   ctx.strokeStyle = "rgba(255,255,0,0.70)";
   ctx.lineWidth = 1.0;
 
@@ -240,12 +240,10 @@ export function render(ctx, model) {
 
       if (isCore) {
         // Core wards (inside inner hull)
-        ctx.fillStyle = "rgba(255,0,255,0.10)";
         ctx.strokeStyle = "rgba(255,0,255,0.80)";
         ctx.lineWidth = 2.0;
       } else {
         // Ring1 wards (between inner and outer hull)
-        ctx.fillStyle = "rgba(0,255,255,0.10)";
         ctx.strokeStyle = "rgba(0,255,255,0.80)";
         ctx.lineWidth = 2.5;
       }
