@@ -242,10 +242,6 @@ export function render(ctx, model) {
         // Core wards (inside inner hull)
         ctx.strokeStyle = "rgba(255,0,255,0.80)";
         ctx.lineWidth = 2.0;
-      } else {
-        // Ring1 wards (between inner and outer hull)
-        ctx.strokeStyle = "rgba(0,255,255,0.80)";
-        ctx.lineWidth = 2.5;
       }
 
       ctx.beginPath();
