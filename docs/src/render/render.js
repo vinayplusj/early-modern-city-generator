@@ -184,7 +184,6 @@ export function render(ctx, model) {
   });
 
   // ---- Debug: ward-derived fort hulls (from model.fortHulls) ----
-  {
     const fh = model?.fortHulls ?? null;
 
     const inner = fh?.innerHull?.outerLoop || null;
@@ -224,9 +223,11 @@ export function render(ctx, model) {
       ctx.save();
 
       if (isCore) {
-        // Core wards (inside inner hull)
         ctx.strokeStyle = "rgba(255,0,255,0.50)";
         ctx.lineWidth = 2.0;
+      } else if (isRing1) {
+        ctx.strokeStyle = "rgba(0,0,0,0.90)";
+        ctx.lineWidth = 2.5;
       }
 
       ctx.beginPath();
