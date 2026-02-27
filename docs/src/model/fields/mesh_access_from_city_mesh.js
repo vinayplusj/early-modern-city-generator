@@ -261,7 +261,25 @@ export function makeMeshAccessFromCityMesh(cityMesh) {
       };
     }
   }
+  // --- Optional vertex coordinate lookup for deterministic source selection (fields) ---
+  // Required by field_sources.pickNearestVertexId(...) to resolve plaza sources.
+  if (vertsArr && vertexXY) {
+    meshAccess.vertexXY = function vertexXYFn(vIdRaw) {
+      const vId = toIntId(vIdRaw, "vertex");
 
+      // If vertices have explicit ids, map id -> array index.
+      // Otherwise treat vId as the array index.
+      const idx = vertIdToIndex ? vertIdToIndex.get(vId) : vId;
+
+      assert(Number.isInteger(idx), `meshAccess.vertexXY: cannot map vertex id ${vId} to an index.`);
+      assert(idx >= 0 && idx < vertexXY.length, `meshAccess.vertexXY: index out of range for vId ${vId} (idx=${idx}).`);
+
+      const xy = vertexXY[idx];
+      assert(xy && Number.isFinite(xy.x) && Number.isFinite(xy.y), `meshAccess.vertexXY: missing/invalid coords for vId ${vId}.`);
+      return xy;
+    };
+  }
+  
   // =========================
   // 4.8: Neighbour traversal
   // =========================
