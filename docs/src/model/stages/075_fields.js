@@ -8,9 +8,18 @@
 // - Compute wall/water fields only when their sources are explicitly available.
 // - Optionally derive face fields via deterministic boundary reduction.
 //
+// Determinism guarantees:
+// - All source vertex id sets are normalised (int-cast, sorted ascending, de-duplicated).
+// - Field specs are added in a stable order.
+// - Output metadata records both source sets and failures to resolve optional sources (no silent drops).
+//
+// Bounded ranges:
+// - FieldRegistry computes (min,max) per field and provides get01() for stable [0,1] normalisation.
+// - This stage publishes those bounds in ctx.state.fieldsMeta for downstream consumers and audits.
+//
 // Outputs:
 // - ctx.state.fields (FieldRegistry)
-// - ctx.state.fieldsMeta (debug metadata)
+// - ctx.state.fieldsMeta (object; includes FieldRegistry.meta() plus stage-level provenance)
 
 import { computeAllFields } from "../fields/compute_fields.js";
 import { makeMeshAccessFromCityMesh } from "../fields/mesh_access_from_city_mesh.js";
@@ -44,6 +53,38 @@ function toIntId(id, label) {
   throw new Error(`Unsupported ${label} id type: ${typeof id}`);
 }
 
+function normaliseSourceIds(ids, label) {
+  assert(Array.isArray(ids), `${label} sources must be an array.`);
+  const arr = new Array(ids.length);
+  for (let i = 0; i < ids.length; i++) arr[i] = toIntId(ids[i], label);
+  // Sort + de-dupe to remove any accidental order sensitivity.
+  arr.sort((a, b) => a - b);
+  const out = [];
+  let prev = null;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (prev === null || v !== prev) out.push(v);
+    prev = v;
+  }
+  return out;
+}
+
+function formatErr(e) {
+  if (!e) return "Unknown error";
+  const msg = (e && e.message) ? e.message : String(e);
+  return msg;
+}
+
+function resolveOptionalSources({ label, resolveFn }) {
+  try {
+    const ids = resolveFn();
+    if (!ids || ids.length === 0) return { ids: null, error: `${label} sources resolved to an empty set.` };
+    return { ids: normaliseSourceIds(ids, label), error: null };
+  } catch (e) {
+    return { ids: null, error: formatErr(e) };
+  }
+}
+
 /**
  * Resolve a deterministic plaza source vertex id.
  *
@@ -55,7 +96,9 @@ function resolvePlazaSources({ ctx, meshAccess }) {
 
   // Preferred path (requires vertexXY + iterVertexIds)
   if (typeof meshAccess.vertexXY === "function" && typeof meshAccess.iterVertexIds === "function" && anchors && anchors.plaza) {
-    return getPlazaSourceVertexIds({ meshAccess, anchors });
+    const ids = getPlazaSourceVertexIds({ meshAccess, anchors });
+    assert(ids && ids.length > 0, "Plaza sources resolved to an empty set.");
+    return normaliseSourceIds(ids, "plaza");
   }
 
   // Fallback path: accept an explicit plaza vertex id if your pipeline already computes it.
@@ -68,7 +111,7 @@ function resolvePlazaSources({ ctx, meshAccess }) {
   ].filter((v) => v != null);
 
   if (candidates.length > 0) {
-    return [toIntId(candidates[0], "vertex")];
+    return normaliseSourceIds([candidates[0]], "plaza");
   }
 
   throw new Error(
@@ -95,35 +138,45 @@ export function runFieldsStage(env) {
   const cityMesh = routingMesh.cityMesh;
   const meshAccess = makeMeshAccessFromCityMesh(cityMesh);
 
+  const stageMeta = {
+    stage: "075_fields",
+    version: 1,
+    sources: { plaza: null, wall: null, water: null },
+    sourceErrors: { wall: null, water: null },
+    derived: [],
+    computeSpecNames: [],
+  };
+
   // ------------------------------------------------------------
   // 1) Resolve source vertex sets (plaza required, others optional)
   // ------------------------------------------------------------
 
   const plazaSources = resolvePlazaSources({ ctx, meshAccess });
+  stageMeta.sources.plaza = plazaSources;
 
-  // Wall and water are optional for now. They become required once you expose bindings.
-  let wallSources = null;
-  let waterSources = null;
+  const wallRes = resolveOptionalSources({
+    label: "wall",
+    resolveFn: () =>
+      getWallSourceVertexIds({
+        meshAccess,
+        // Optional caller-provided list if you already have it in state:
+        wallVertexIds: ctx.state.wallSourceVertexIds || (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds),
+      }),
+  });
+  stageMeta.sources.wall = wallRes.ids;
+  stageMeta.sourceErrors.wall = wallRes.error;
 
-  try {
-    wallSources = getWallSourceVertexIds({
-      meshAccess,
-      // Optional caller-provided list if you already have it in state:
-      wallVertexIds: ctx.state.wallSourceVertexIds || (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds),
-    });
-  } catch (e) {
-    wallSources = null;
-  }
-
-  try {
-    waterSources = getWaterSourceVertexIds({
-      meshAccess,
-      // Optional caller-provided list if you already have it in state:
-      waterVertexIds: ctx.state.waterSourceVertexIds || (ctx.state.waterModel && ctx.state.waterModel.waterSourceVertexIds),
-    });
-  } catch (e) {
-    waterSources = null;
-  }
+  const waterRes = resolveOptionalSources({
+    label: "water",
+    resolveFn: () =>
+      getWaterSourceVertexIds({
+        meshAccess,
+        // Optional caller-provided list if you already have it in state:
+        waterVertexIds: ctx.state.waterSourceVertexIds || (ctx.state.waterModel && ctx.state.waterModel.waterSourceVertexIds),
+      }),
+  });
+  stageMeta.sources.water = waterRes.ids;
+  stageMeta.sourceErrors.water = waterRes.error;
 
   // ---------------------------------------------
   // 2) Build compute specs (deterministic ordering)
@@ -132,8 +185,10 @@ export function runFieldsStage(env) {
   const computeSpecs = [];
   computeSpecs.push(makeDistanceToPlazaVertexSpec(plazaSources));
 
-  if (wallSources && wallSources.length > 0) computeSpecs.push(makeDistanceToWallVertexSpec(wallSources));
-  if (waterSources && waterSources.length > 0) computeSpecs.push(makeDistanceToWaterVertexSpec(waterSources));
+  if (wallRes.ids && wallRes.ids.length > 0) computeSpecs.push(makeDistanceToWallVertexSpec(wallRes.ids));
+  if (waterRes.ids && waterRes.ids.length > 0) computeSpecs.push(makeDistanceToWaterVertexSpec(waterRes.ids));
+
+  stageMeta.computeSpecNames = computeSpecs.map((s) => String(s && s.name));
 
   // ---------------------------------------
   // 3) Compute vertex fields into the registry
@@ -175,6 +230,7 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+      stageMeta.derived.push("distance_to_plaza_face");
     }
 
     // wall face field if available
@@ -196,6 +252,7 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+      stageMeta.derived.push("distance_to_wall_face");
     }
 
     // water face field if available
@@ -217,14 +274,21 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+      stageMeta.derived.push("distance_to_water_face");
     }
   }
 
   // ----------------
   // 5) Publish output
   // ----------------
+  fields.assertValid();
+
   ctx.state.fields = fields;
-  ctx.state.fieldsMeta = fields.meta();
+  ctx.state.fieldsMeta = {
+    schema: "fields_meta_v1",
+    stage: stageMeta,
+    fields: fields.meta(),
+  };
 }
 
 export default runFieldsStage;
