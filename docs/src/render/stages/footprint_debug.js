@@ -2,12 +2,38 @@
 
 import { drawPoly } from "../helpers/draw.js";
 
+function hasPoly(p) {
+  return Array.isArray(p) && p.length >= 3;
+}
+
+function clipToPoly(ctx, poly) {
+  ctx.save();
+  ctx.beginPath();
+  drawPoly(ctx, poly, true);
+  ctx.clip();
+}
+
+/**
+ * Draws footprint fill + debug overlays.
+ *
+ * IMPORTANT:
+ * - If outerBoundary exists, it is the draw-truth for the city envelope.
+ * - Fill and clip should use the SAME polygon that we later stroke,
+ *   otherwise you get visible slivers near the edge.
+ */
 export function drawFootprintAndDebugOverlays(ctx, { footprint, outerBoundary, districts, blocks }) {
-  // Footprint fill
-  if (footprint && footprint.length >= 3) {
+  const boundaryForDraw = hasPoly(outerBoundary) ? outerBoundary : (hasPoly(footprint) ? footprint : null);
+
+  // Footprint / boundary fill (use boundaryForDraw so fill matches the stroke)
+  if (boundaryForDraw) {
     ctx.fillStyle = "#f3e7d0";
-    drawPoly(ctx, footprint, true);
+    drawPoly(ctx, boundaryForDraw, true);
     ctx.fill();
+  }
+
+  // Clip all debug overlays to the same boundary to avoid edge artefacts
+  if (boundaryForDraw) {
+    clipToPoly(ctx, boundaryForDraw);
   }
 
   // Districts (debug)
@@ -53,11 +79,8 @@ export function drawFootprintAndDebugOverlays(ctx, { footprint, outerBoundary, d
     for (const b of blocks) {
       if (!b || !b.polygon || b.polygon.length < 3) continue;
 
-      if (!b.districtId) {
-        ctx.fillStyle = "#ff00ff";
-      } else {
-        ctx.fillStyle = palette[hashIdToIndex(b.districtId, palette.length)];
-      }
+      if (!b.districtId) ctx.fillStyle = "#ff00ff";
+      else ctx.fillStyle = palette[hashIdToIndex(b.districtId, palette.length)];
 
       drawPoly(ctx, b.polygon, true);
       ctx.fill();
@@ -69,11 +92,8 @@ export function drawFootprintAndDebugOverlays(ctx, { footprint, outerBoundary, d
     for (const b of blocks) {
       if (!b || !b.polygon || b.polygon.length < 3) continue;
 
-      if (!b.districtId) {
-        ctx.strokeStyle = "#ff00ff";
-      } else {
-        ctx.strokeStyle = palette[hashIdToIndex(b.districtId, palette.length)];
-      }
+      if (!b.districtId) ctx.strokeStyle = "#ff00ff";
+      else ctx.strokeStyle = palette[hashIdToIndex(b.districtId, palette.length)];
 
       drawPoly(ctx, b.polygon, true);
       ctx.stroke();
@@ -82,8 +102,13 @@ export function drawFootprintAndDebugOverlays(ctx, { footprint, outerBoundary, d
     ctx.restore();
   }
 
-  // Outer boundary (convex hull) stroke
-  if (outerBoundary && outerBoundary.length >= 3) {
+  // Undo clip if we applied it
+  if (boundaryForDraw) {
+    ctx.restore();
+  }
+
+  // Outer boundary stroke (draw last)
+  if (hasPoly(outerBoundary)) {
     ctx.strokeStyle = "#2b2b2b";
     ctx.lineWidth = 2;
     drawPoly(ctx, outerBoundary, true);
