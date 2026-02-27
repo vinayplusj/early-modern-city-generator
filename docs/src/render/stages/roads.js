@@ -39,7 +39,7 @@ export function drawRoadPolylines(ctx, { roads, kind }) {
   const isPrimary = kind === "primary";
 
   drawPolylineList(ctx, roads, {
-    strokeStyle: isPrimary ? "#ffffff" : "#cfcfcf",
+    strokeStyle: isPrimary ? "#c9b07b" : "#c9b07b",
     lineWidth: isPrimary ? 2.0 : 1.0,
     globalAlpha: isPrimary ? 0.95 : 0.70,
   });
@@ -57,7 +57,7 @@ export function drawRoadGraph(ctx, { roadGraph }) {
   // Secondary first
   ctx.save();
   ctx.globalAlpha = 0.70;
-  ctx.strokeStyle = "#cfcfcf";
+  ctx.strokeStyle = "#c9b07b";
 
   for (const e of roadGraph.edges) {
     if (!e || e.kind !== "secondary") continue;
@@ -77,7 +77,7 @@ export function drawRoadGraph(ctx, { roadGraph }) {
   // Primary on top
   ctx.save();
   ctx.globalAlpha = 0.95;
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = "#c9b07b";
 
   for (const e of roadGraph.edges) {
     if (!e || e.kind !== "primary") continue;
