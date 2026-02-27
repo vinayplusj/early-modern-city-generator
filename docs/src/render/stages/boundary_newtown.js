@@ -7,7 +7,7 @@ export function drawBoundaryAndNewTown(ctx, { outerBoundary, newTown }) {
   // This stage handles the New Town polygon + streets + main avenue.
 
   if (newTown && newTown.poly && newTown.poly.length >= 3) {
-    ctx.fillStyle = "#f3e7d0";
+    ctx.fillStyle = "#333333";
     drawPoly(ctx, newTown.poly, true);
     ctx.fill();
 
