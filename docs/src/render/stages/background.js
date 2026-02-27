@@ -9,7 +9,7 @@ export function drawBackground(ctx) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1.0;
   ctx.clearRect(0, 0, cw, ch);
-  ctx.fillStyle = "#0f0f0f";
+  ctx.fillStyle = "#f3e7d0";
   ctx.fillRect(0, 0, cw, ch);
   ctx.restore();
 }
