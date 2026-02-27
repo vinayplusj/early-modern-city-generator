@@ -173,7 +173,10 @@ export function dijkstraVertexDistances(args) {
   }
 
   const maxDistance = args.maxDistance == null ? Infinity : Number(args.maxDistance);
-  assert(Number.isFinite(maxDistance) && maxDistance >= 0, `Invalid maxDistance: ${args.maxDistance}`);
+  assert(
+    (Number.isFinite(maxDistance) || maxDistance === Infinity) && maxDistance >= 0,
+    `Invalid maxDistance: ${args.maxDistance}`
+  );
 
   // Main loop
   while (heap.size > 0) {
