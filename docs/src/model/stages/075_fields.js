@@ -203,14 +203,38 @@ export function runFieldsStage(env) {
     params: ctx.params,
     computeSpecs,
   });
-
+  
   // ------------------------------------------------------
   // 4) (Optional) Derive face fields by boundary reduction
   // ------------------------------------------------------
-  // We do this in-stage (not inside compute_fields.js) to avoid changing compute_fields.js.
-
-  // Derive face fields only if meshAccess.faceBoundaryVertexIds is available.
+  //
+  // IMPORTANT:
+  // Some CityMesh variants do not provide a DCEL-style per-face boundary pointer.
+  // Our meshAccess.faceBoundaryVertexIds(faceId) helper may throw in those cases.
+  // Face fields are useful, but they are not required to proceed with Milestone 4.8,
+  // so we only derive them if we can prove the helper works without throwing.
+  
+  let canDeriveFaceFields = false;
   if (typeof meshAccess.faceBoundaryVertexIds === "function") {
+    try {
+      // Probe exactly one face id in a deterministic way.
+      // If this throws, we disable face derivation entirely.
+      if (typeof meshAccess.iterFaceIds === "function") {
+        const it = meshAccess.iterFaceIds();
+        const first = it.next();
+        if (!first.done) {
+          const faceId = first.value;
+          const b = meshAccess.faceBoundaryVertexIds(faceId);
+          if (Array.isArray(b) && b.length > 0) canDeriveFaceFields = true;
+        }
+      }
+    } catch (e) {
+      canDeriveFaceFields = false;
+      stageMeta.derivedFaceFieldsDisabledReason = formatErr(e);
+    }
+  }
+  
+  if (canDeriveFaceFields) {
     // plaza face field always
     {
       const rec = fields.get("distance_to_plaza_vertex");
@@ -232,7 +256,7 @@ export function runFieldsStage(env) {
       );
       stageMeta.derived.push("distance_to_plaza_face");
     }
-
+  
     // wall face field if available
     if (fields.has("distance_to_wall_vertex")) {
       const rec = fields.get("distance_to_wall_vertex");
@@ -254,7 +278,7 @@ export function runFieldsStage(env) {
       );
       stageMeta.derived.push("distance_to_wall_face");
     }
-
+  
     // water face field if available
     if (fields.has("distance_to_water_vertex")) {
       const rec = fields.get("distance_to_water_vertex");
@@ -276,6 +300,9 @@ export function runFieldsStage(env) {
       );
       stageMeta.derived.push("distance_to_water_face");
     }
+  } else {
+    // Record for debugging without failing the run.
+    stageMeta.derivedFaceFieldsSkipped = true;
   }
 
   // ----------------
