@@ -16,7 +16,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
   const showCurtainWall = false;
   if (showCurtainWall && wallCurtain && wallCurtain.length >= 3) {
     const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#6e8190";
-    const curtainWidth = warp?.wall?.drawCurtain?.width ?? 3;
+    const curtainWidth = warp?.wall?.drawCurtain?.width ?? 2;
   
     ctx.save();
     ctx.strokeStyle = curtainStroke;
