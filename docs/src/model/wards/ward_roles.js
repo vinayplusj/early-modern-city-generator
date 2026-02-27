@@ -64,6 +64,8 @@ import { assignOutsideRolesByBands } from "./ward_role_outside.js";
 import { normaliseParams, setRole } from "./ward_role_params.js";
 import { selectCoreWards } from "./ward_role_select.js";
 import { buildFortHulls } from "./ward_role_build_hulls.js";
+import { pickNearestVertexId } from "../fields/field_sources.js";
+import { makeVertexIdToIndex } from "../fields/field_api.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -81,6 +83,18 @@ function getFaceFieldValue(fields, meshAccess, fieldName, faceId) {
   assert(Number.isInteger(faceId) && faceId >= 0 && faceId < rec.values.length, `Face id ${faceId} out of range for field "${fieldName}".`);
   return rec.values[faceId];
 }
+function getVertexFieldValueAtPoint(fields, meshAccess, fieldName, p, vertexIdToIndex) {
+  assert(meshAccess && typeof meshAccess.iterVertexIds === "function", "Vertex field sampling requires meshAccess.iterVertexIds().");
+  assert(meshAccess && typeof meshAccess.vertexXY === "function", "Vertex field sampling requires meshAccess.vertexXY(vId).");
+  assert(p && Number.isFinite(p.x) && Number.isFinite(p.y), "Vertex field sampling requires p={x,y} with finite numbers.");
+
+  const rec = fields.get(fieldName);
+  const vId = pickNearestVertexId(meshAccess, p);
+  const idx = vertexIdToIndex(vId);
+
+  assert(Number.isInteger(idx) && idx >= 0 && idx < rec.values.length, `vertexIdToIndex(${vId}) out of range for field "${fieldName}".`);
+  return rec.values[idx];
+}
 
 export function assignWardRoles({ wards, centre, params, fields, meshAccess }) {
   const p = normaliseParams(params);
@@ -94,19 +108,43 @@ export function assignWardRoles({ wards, centre, params, fields, meshAccess }) {
   const useFieldsForCoreOrdering = !!p.useFieldsForCoreOrdering;
   const coreOrderingFieldName = p.coreOrderingFieldName || "distance_to_plaza_face";
 
-  if (useFieldsForCoreOrdering) {
-    assert(fields && typeof fields.get === "function", "useFieldsForCoreOrdering=true requires a FieldRegistry in args.fields.");
-    assert(fields.has(coreOrderingFieldName), `Missing required field "${coreOrderingFieldName}" for core ordering.`);
-
-    for (let i = 0; i < wardsCopy.length; i++) {
-      const w = wardsCopy[i];
-      // Preserve legacy value for debugging.
-      w.distToCentreLegacy = w.distToCentre;
-      // Ward id is treated as face id (dense) unless meshAccess.faceIdToIndex exists.
-      w.distToCentre = getFaceFieldValue(fields, meshAccess, coreOrderingFieldName, w.id);
-      assert(Number.isFinite(w.distToCentre), `Non-finite field value for ward id ${w.id} using field "${coreOrderingFieldName}".`);
-    }
-  }
+ if (useFieldsForCoreOrdering) {
+   assert(fields && typeof fields.get === "function", "useFieldsForCoreOrdering=true requires a FieldRegistry in args.fields.");
+ 
+   // Prefer face field when present; otherwise fall back to vertex field sampled at ward.seed.
+   let fieldNameUsed = coreOrderingFieldName;
+   let mode = "face";
+ 
+   if (!fields.has(fieldNameUsed)) {
+     // Common, safe fallback: face field not available yet in this geometry variant.
+     if (fieldNameUsed === "distance_to_plaza_face" && fields.has("distance_to_plaza_vertex")) {
+       fieldNameUsed = "distance_to_plaza_vertex";
+       mode = "vertex_at_seed";
+     } else {
+       throw new Error(`Missing required field "${coreOrderingFieldName}" for core ordering, and no supported fallback is available.`);
+     }
+   }
+ 
+   const vertexIdToIndex = (mode === "vertex_at_seed") ? makeVertexIdToIndex(meshAccess) : null;
+ 
+   for (let i = 0; i < wardsCopy.length; i++) {
+     const w = wardsCopy[i];
+     w.distToCentreLegacy = w.distToCentre;
+ 
+     if (mode === "face") {
+       // Ward id is treated as face id (dense) unless meshAccess.faceIdToIndex exists.
+       w.distToCentre = getFaceFieldValue(fields, meshAccess, fieldNameUsed, w.id);
+     } else {
+       // Deterministic vertex sampling at ward seed.
+       w.distToCentre = getVertexFieldValueAtPoint(fields, meshAccess, fieldNameUsed, w.seed, vertexIdToIndex);
+     }
+ 
+     assert(Number.isFinite(w.distToCentre), `Non-finite field value for ward id ${w.id} using field "${fieldNameUsed}" (${mode}).`);
+   }
+ 
+   // Optional debug breadcrumb for audits (non-breaking; ignored by other code).
+   wardsCopy._coreOrderingField = { requested: coreOrderingFieldName, used: fieldNameUsed, mode };
+ }
 
   const {
     order,
