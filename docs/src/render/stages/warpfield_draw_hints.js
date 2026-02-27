@@ -27,7 +27,7 @@ export function applyWarpfieldDrawHints({ warpWall, warpOutworks }) {
 
     // Final composite wall (bastioned outline)
     warpWall.drawComposite = {
-      stroke: "#d9d9d9", // normal wall grey (pick what you want)
+      stroke: "#6e8190", // normal wall grey (pick what you want)
       width: 3,
     };
   }
@@ -35,7 +35,7 @@ export function applyWarpfieldDrawHints({ warpWall, warpOutworks }) {
   // Outworks (bastions, ravelins, etc.): light orange
   if (warpOutworks) {
     warpOutworks.draw = {
-      stroke: "#ffcc80", // light orange
+      stroke: "#b5aea1", // light orange
       width: 2,
     };
   }
