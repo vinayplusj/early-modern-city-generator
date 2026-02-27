@@ -3,16 +3,16 @@
 
 import { drawCircle, drawPoly } from "../helpers/draw.js";
 
-// Palette chosen to remain readable over the dark footprint fill.
+// Palette chosen to remain readable over the footprint fill.
 const ROLE_STYLES = {
   plaza: { fill: "#ffffff", stroke: "#ffffff", alphaFill: 0.10, alphaStroke: 0.40 },
-  citadel: { fill: "#ffdd55", stroke: "#ffdd55", alphaFill: 0.10, alphaStroke: 0.45 },
+  citadel: { fill: "#b5aea1", stroke: "#ffdd55", alphaFill: 0.10, alphaStroke: 0.45 },
   inner: { fill: "#7dffb2", stroke: "#7dffb2", alphaFill: 0.06, alphaStroke: 0.30 },
   new_town: { fill: "#5ddcff", stroke: "#5ddcff", alphaFill: 0.06, alphaStroke: 0.30 },
   slums: { fill: "#ff7d7d", stroke: "#ff7d7d", alphaFill: 0.06, alphaStroke: 0.30 },
   farms: { fill: "#ffd36b", stroke: "#ffd36b", alphaFill: 0.06, alphaStroke: 0.30 },
   plains: { fill: "#d7d7d7", stroke: "#d7d7d7", alphaFill: 0.05, alphaStroke: 0.25 },
-  woods: { fill: "#c08bff", stroke: "#c08bff", alphaFill: 0.05, alphaStroke: 0.25 },
+  woods: { fill: "#6f9150", stroke: "#c08bff", alphaFill: 0.05, alphaStroke: 0.25 },
   default: { fill: "#ffffff", stroke: "#ffffff", alphaFill: 0.04, alphaStroke: 0.18 },
 };
 
