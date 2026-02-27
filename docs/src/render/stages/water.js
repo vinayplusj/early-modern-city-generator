@@ -20,7 +20,7 @@ export function drawWater(ctx, { water }) {
   const coastPoly = water?.coast?.polygon || null;
   const riverLine = water?.river?.polyline || null;
 
-  const fill = "#0b2033";
+  const fill = "#5d8fc6";
   const stroke = "#6fb7ff";
 
   if (water.kind === "coast") {
