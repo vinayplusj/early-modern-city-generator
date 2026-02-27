@@ -9,7 +9,7 @@ export function drawCitadel(ctx, { citadel, anchors }) {
   drawPoly(ctx, citadel, true);
   ctx.fill();
 
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = "#b5aea1";
   ctx.lineWidth = 2;
   drawPoly(ctx, citadel, true);
   ctx.stroke();
