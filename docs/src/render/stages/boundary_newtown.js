@@ -15,7 +15,7 @@ export function drawBoundaryAndNewTown(ctx, { outerBoundary, newTown }) {
     if (newTown.streets && newTown.streets.length) {
       ctx.save();
       ctx.globalAlpha = 0.75;
-      ctx.strokeStyle = "#8f8f8f";
+      ctx.strokeStyle = "#f3e7d0";
       ctx.lineWidth = 1.5;
       for (const s of newTown.streets) {
         if (!s || s.length < 2) continue;
