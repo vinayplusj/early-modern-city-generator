@@ -15,7 +15,7 @@ export function drawWallsAndRingsAndWarp(ctx, {
   // Curtain wall (warped) - debug geometry kept, rendering disabled
   const showCurtainWall = false;
   if (showCurtainWall && wallCurtain && wallCurtain.length >= 3) {
-    const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#00ff00";
+    const curtainStroke = warp?.wall?.drawCurtain?.stroke ?? "#6e8190";
     const curtainWidth = warp?.wall?.drawCurtain?.width ?? 3;
   
     ctx.save();
