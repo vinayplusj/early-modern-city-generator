@@ -261,24 +261,6 @@ export function makeMeshAccessFromCityMesh(cityMesh) {
       };
     }
   }
-  // --- Optional vertex coordinate lookup for deterministic source selection (fields) ---
-  // Required by field_sources.pickNearestVertexId(...) to resolve plaza sources.
-  if (vertsArr && vertexXY) {
-    meshAccess.vertexXY = function vertexXYFn(vIdRaw) {
-      const vId = toIntId(vIdRaw, "vertex");
-
-      // If vertices have explicit ids, map id -> array index.
-      // Otherwise treat vId as the array index.
-      const idx = vertIdToIndex ? vertIdToIndex.get(vId) : vId;
-
-      assert(Number.isInteger(idx), `meshAccess.vertexXY: cannot map vertex id ${vId} to an index.`);
-      assert(idx >= 0 && idx < vertexXY.length, `meshAccess.vertexXY: index out of range for vId ${vId} (idx=${idx}).`);
-
-      const xy = vertexXY[idx];
-      assert(xy && Number.isFinite(xy.x) && Number.isFinite(xy.y), `meshAccess.vertexXY: missing/invalid coords for vId ${vId}.`);
-      return xy;
-    };
-  }
   
   // =========================
   // 4.8: Neighbour traversal
@@ -314,7 +296,27 @@ export function makeMeshAccessFromCityMesh(cityMesh) {
       vertexXY[i] = xy;
     }
   }
-
+  
+  // --- Required by field_sources.pickNearestVertexId(...) ---
+  if (vertsArr && vertexXY) {
+    const vertexXYArr = vertexXY;
+  
+    meshAccess.vertexXY = function vertexXYFn(vIdRaw) {
+      const vId = toIntId(vIdRaw, "vertex");
+  
+      // If vertices have explicit ids, map id -> array index.
+      // Otherwise treat vId as the array index.
+      const idx = vertIdToIndex ? vertIdToIndex.get(vId) : vId;
+  
+      assert(Number.isInteger(idx), `meshAccess.vertexXY: cannot map vertex id ${vId} to an index.`);
+      assert(idx >= 0 && idx < vertexXYArr.length, `meshAccess.vertexXY: index out of range for vId ${vId} (idx=${idx}).`);
+  
+      const xy = vertexXYArr[idx];
+      assert(xy && Number.isFinite(xy.x) && Number.isFinite(xy.y), `meshAccess.vertexXY: missing/invalid coords for vId ${vId}.`);
+      return xy;
+    };
+  }
+  
   function requireHalfEdges() {
     assert(halfEdgesArr && halfEdgesById, "CityMesh halfEdges are required for neighbour traversal, but could not be inferred (expected cityMesh.halfEdges or cityMesh._halfEdges).");
   }
