@@ -5,7 +5,7 @@ import { drawPoly } from "../helpers/draw.js";
 export function drawFootprintAndDebugOverlays(ctx, { footprint, outerBoundary, districts, blocks }) {
   // Footprint fill
   if (footprint && footprint.length >= 3) {
-    ctx.fillStyle = "#151515";
+    ctx.fillStyle = "#f3e7d0";
     drawPoly(ctx, footprint, true);
     ctx.fill();
   }
