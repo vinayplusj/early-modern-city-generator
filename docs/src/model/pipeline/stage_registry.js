@@ -24,6 +24,7 @@ import { runMarketStage } from "../stages/160_market.js";
 import { runRoadGraphAndBlocksStage } from "../stages/170_road_graph_and_blocks.js";
 import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
+import { runFieldsStage } from "../stages/075_fields.js";
 import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
 
 export const PIPELINE_STAGES = [
@@ -211,6 +212,14 @@ export const PIPELINE_STAGES = [
       // Debug-only audit: throws on invariant failures when enabled.
       // Enable via ctx.params.meshAuditEnabled === true, or reuse ctx.params.warpDebugEnabled.
       runCityMeshGraphAuditStage(env);
+    },
+  },
+  
+  {
+    id: 76,
+    name: "fields",
+    run(env) {
+      runFieldsStage(env);
     },
   },
   
