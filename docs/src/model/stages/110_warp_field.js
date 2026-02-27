@@ -67,7 +67,7 @@ export function runWarpFieldStage({
   );
   
   // Vertex density for the curtain wall polyline (separate from field samples).
-  const curtainVertexN = Math.max(24, 3 * bastionN);
+  const curtainVertexN = Math.max(48, 6 * bastionN);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
@@ -117,7 +117,7 @@ export function runWarpFieldStage({
 
   applyWarpfieldDrawHints({ warpWall, warpOutworks });
 
-  const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2;
+  const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 10;
   const tMid = Number.isFinite(ctx?.params?.warpFort?.tMid) ? ctx.params.warpFort.tMid : 0.3;
   const midMargin = Number.isFinite(ctx?.params?.warpFort?.midMargin) ? ctx.params.warpFort.midMargin : 0;
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
