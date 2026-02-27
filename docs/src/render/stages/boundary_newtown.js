@@ -7,7 +7,7 @@ export function drawBoundaryAndNewTown(ctx, { outerBoundary, newTown }) {
   // This stage handles the New Town polygon + streets + main avenue.
 
   if (newTown && newTown.poly && newTown.poly.length >= 3) {
-    ctx.fillStyle = "#131313";
+    ctx.fillStyle = "#f3e7d0";
     drawPoly(ctx, newTown.poly, true);
     ctx.fill();
 
@@ -15,7 +15,7 @@ export function drawBoundaryAndNewTown(ctx, { outerBoundary, newTown }) {
     if (newTown.streets && newTown.streets.length) {
       ctx.save();
       ctx.globalAlpha = 0.75;
-      ctx.strokeStyle = "#f3e7d0";
+      ctx.strokeStyle = "#c9b07b";
       ctx.lineWidth = 1.5;
       for (const s of newTown.streets) {
         if (!s || s.length < 2) continue;
@@ -31,7 +31,7 @@ export function drawBoundaryAndNewTown(ctx, { outerBoundary, newTown }) {
     if (newTown.mainAve && newTown.mainAve.length >= 2) {
       ctx.save();
       ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = "#c9b07b";
       strokePolyline(ctx, newTown.mainAve, 2.0);
       ctx.restore();
     }
