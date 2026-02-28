@@ -22,7 +22,7 @@ function assert(cond, msg) {
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
-
+// Note: max interior angle is enforced only at movable vertices (S0, T, S1), not at base corners (B0, B1).
 const MIN_INTERIOR_ANGLE_DEG = 30;
 const MAX_INTERIOR_ANGLE_DEG = 150;
 const MIN_INTERIOR_ANGLE_RAD = (MIN_INTERIOR_ANGLE_DEG * Math.PI) / 180;
@@ -136,15 +136,31 @@ function interiorAngleAt(poly, i) {
 function findAngleViolations(poly, minRad, maxRad) {
   const n = poly.length;
   const v = [];
+
+  // Small hysteresis to avoid repairs triggered by floating-point noise near thresholds.
+  const EPS = (1.0 * Math.PI) / 180; // 1 degree
+
   for (let i = 0; i < n; i++) {
     const ang = interiorAngleAt(poly, i);
+
     if (!Number.isFinite(ang)) {
       v.push({ vIdx: i, kind: "angle_nan", angle: ang, severity: Infinity });
       continue;
     }
-    if (ang < minRad) v.push({ vIdx: i, kind: "too_small", angle: ang, severity: (minRad - ang) });
-    else if (ang > maxRad) v.push({ vIdx: i, kind: "too_large", angle: ang, severity: (ang - maxRad) });
+
+    // Enforce minimum at ALL vertices (including base corners).
+    if (ang < (minRad - EPS)) {
+      v.push({ vIdx: i, kind: "too_small", angle: ang, severity: (minRad - ang) });
+      continue;
+    }
+
+    // Enforce maximum ONLY at movable vertices: S0 (1), T (2), S1 (3).
+    // Do NOT enforce max at B0 (0) or B1 (4).
+    if ((i === 1 || i === 2 || i === 3) && ang > (maxRad + EPS)) {
+      v.push({ vIdx: i, kind: "too_large", angle: ang, severity: (ang - maxRad) });
+    }
   }
+
   return v;
 }
 
