@@ -28,7 +28,7 @@ export function applyWarpfieldDrawHints({ warpWall, warpOutworks }) {
     // Final composite wall (bastioned outline)
     warpWall.drawComposite = {
       stroke: "#6e8190", // normal wall grey (pick what you want)
-      width: 20,
+      width: 10,
     };
   }
 
