@@ -63,11 +63,11 @@ export function runWarpFieldStage({
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
     72,
-    3 * bastionN
+    6 * bastionN
   );
   
   // Vertex density for the curtain wall polyline (separate from field samples).
-  const curtainVertexN = Math.max(48, 6 * bastionN);
+  const curtainVertexN = Math.max(48, 6 * N);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
@@ -270,7 +270,7 @@ export function runWarpFieldStage({
       let clampedSafe = clamped;
 
       if (outerHullLoop) {
-        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 2;
+        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
         clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
       }
       
@@ -297,7 +297,7 @@ export function runWarpFieldStage({
       ? ctx.params.warpFort.bastionConvexIters
       : 18;
 
-    const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 2;
+    const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
 
     const convexStats = [];
     bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
