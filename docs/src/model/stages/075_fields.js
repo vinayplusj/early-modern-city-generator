@@ -153,16 +153,35 @@ export function runFieldsStage(env) {
 
   const plazaSources = resolvePlazaSources({ ctx, meshAccess });
   stageMeta.sources.plaza = plazaSources;
+  const wallPolylineForFields =
+    (ctx.state.warp && ctx.state.warp.wallCurtainForDraw) ||
+    (ctx.state.warp && ctx.state.warp.wallForDraw) ||
+    (ctx.state.fortGeometryWarped && ctx.state.fortGeometryWarped.wallCurtainForDraw) ||
+    (ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw) ||
+    (ctx.state.fortifications && ctx.state.fortifications.wallCurtain) ||
+    (ctx.state.fortifications && ctx.state.fortifications.wall) ||
+    null;
 
+  const wallSampleStepForFields =
+    (ctx.params && ctx.params.fields && ctx.params.fields.wallSampleStep) || 20;
   const wallRes = resolveOptionalSources({
     label: "wall",
     resolveFn: () =>
       getWallSourceVertexIds({
         meshAccess,
-        // Optional caller-provided list if you already have it in state:
-        wallVertexIds: ctx.state.wallSourceVertexIds || (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds),
+
+        // If already bound upstream, this still wins.
+        wallVertexIds:
+          ctx.state.wallSourceVertexIds ||
+          (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds),
+
+        // New deterministic fallback: polyline -> sampled points -> nearest vertices.
+        wallPolyline: wallPolylineForFields,
+        wallSampleStep: wallSampleStepForFields,
       }),
   });
+  stageMeta.sources.wallPolylineUsed = !!wallPolylineForFields;
+  stageMeta.sources.wallSampleStep = wallSampleStepForFields;
   stageMeta.sources.wall = wallRes.ids;
   stageMeta.sourceErrors.wall = wallRes.error;
 
