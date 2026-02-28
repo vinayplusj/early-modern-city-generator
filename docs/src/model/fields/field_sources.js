@@ -89,6 +89,52 @@ export function pickNearestVertexId(meshAccess, p) {
   return bestId;
 }
 
+function samplePolylineDeterministic(polyline, step) {
+  assert(Array.isArray(polyline) && polyline.length >= 2, "samplePolylineDeterministic requires polyline length >= 2.");
+  assert(Number.isFinite(step) && step > 0, "samplePolylineDeterministic requires finite step > 0.");
+
+  const pts = [];
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    if (!isFiniteXY(a) || !isFiniteXY(b)) continue;
+
+    // Always include segment start.
+    pts.push({ x: a.x, y: a.y });
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy);
+    if (!Number.isFinite(L) || L <= 0) continue;
+
+    // Insert interior points at distances: step, 2*step, ...
+    const n = Math.floor(L / step);
+    for (let k = 1; k <= n; k++) {
+      const d = k * step;
+      if (d >= L) break;
+      const t = d / L;
+      pts.push({ x: a.x + dx * t, y: a.y + dy * t });
+    }
+  }
+
+  // Always include last point.
+  const last = polyline[polyline.length - 1];
+  if (isFiniteXY(last)) pts.push({ x: last.x, y: last.y });
+
+  return pts;
+}
+
+function polylineToNearestVertexIds(meshAccess, polyline, step) {
+  const pts = samplePolylineDeterministic(polyline, step);
+  assert(pts.length > 0, "Polyline sampling produced no points.");
+
+  const ids = new Array(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    ids[i] = pickNearestVertexId(meshAccess, pts[i]);
+  }
+  return dedupeSortIntIds(ids, "vertex");
+}
+
 /**
  * Compute plaza source vertices from anchors.
  *
@@ -129,8 +175,12 @@ export function getWallSourceVertexIds(args) {
 
   if (typeof ma.wallSourceVertexIds === "function") {
     ids = ma.wallSourceVertexIds();
-  } else if (Array.isArray(args.wallVertexIds)) {
+  } else if (Array.isArray(args.wallVertexIds) && args.wallVertexIds.length > 0) {
     ids = args.wallVertexIds;
+  } else if (Array.isArray(args.wallPolyline) && args.wallPolyline.length >= 2) {
+    const step = (args.wallSampleStep == null) ? 20 : Number(args.wallSampleStep);
+    assert(Number.isFinite(step) && step > 0, "Invalid wallSampleStep.");
+    ids = polylineToNearestVertexIds(ma, args.wallPolyline, step);
   }
 
   assert(Array.isArray(ids) && ids.length > 0, "Wall sources are not available. Provide meshAccess.wallSourceVertexIds() or pass wallVertexIds explicitly.");
