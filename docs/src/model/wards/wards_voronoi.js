@@ -214,7 +214,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 /* ------------------------- Parameters and helpers ------------------------- */
 
 function normaliseParams(params) {
-  const seedCount = clampInt(params?.seedCount ?? 24, 3, 400);
+  const seedCount = clampInt(params?.seedCount ?? 34, 3, 400);
 
   return {
     seedCount,
