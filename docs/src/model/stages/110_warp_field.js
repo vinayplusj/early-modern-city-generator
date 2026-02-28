@@ -311,7 +311,7 @@ export function runWarpFieldStage({
   if (outerHullLoop && Array.isArray(bastionPolysWarpedSafe)) {
     const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters)
       ? ctx.params.warpFort.bastionConvexIters
-      : 18;
+      : 121;
 
     const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
 
