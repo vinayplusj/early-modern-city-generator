@@ -2,20 +2,32 @@
 //
 // Stage 50: Wards (Voronoi) + deterministic roles.
 // Extracted from generate.js without functional changes.
+//
+// Change (2026-02-27):
+// Bias seed density so central wards are smaller and outer wards are larger.
+// Voronoi cell area is driven by seed density.
+// - Increase spiral seed count (more interior seeds).
+// - Reduce boundary seed count (fewer boundary-adjacent seeds).
+// - Increase boundary inset (move boundary seeds inward), which reduces "edge crowding".
 
 import { buildWardsVoronoi } from "../wards/wards_voronoi.js";
 import { assignWardRoles } from "../wards/ward_roles.js";
 
 const DEFAULT_WARDS_PARAMS = Object.freeze({
-  seedCount: 36,            // spiral seeds (core density)
+  // Spiral seeds (core density).
+  // Increased to make inner wards smaller (higher interior seed density).
+  seedCount: 48,
+
   spiralScale: 0,           // filled at runtime from baseR
   jitterRadius: 0,          // filled at runtime from baseR
   jitterAngle: 0.25,
   bboxPadding: 0,           // filled at runtime from baseR
   clipToFootprint: true,
 
-  // boundary ring to create more “rings” and reduce skew
+  // Boundary ring seeds.
+  // Reduced so boundary wards become larger (lower edge seed density).
   boundarySeedCount: 12,
+
   boundaryInset: 0,         // filled at runtime from baseR
 });
 
@@ -32,6 +44,7 @@ function computeDynamicInnerCount(seed) {
   // Final range: 3, 4, 5
   return 3 + rem;
 }
+
 export function runWardsStage({
   ctx,
   baseR,
@@ -41,10 +54,19 @@ export function runWardsStage({
 }) {
   const WARDS_PARAMS = {
     ...DEFAULT_WARDS_PARAMS,
-    spiralScale: baseR * 0.14,
+
+    // Slightly tighter spiral spacing helps keep more seeds closer to centre.
+    // This supports smaller inner wards without increasing boundary crowding.
+    spiralScale: baseR * 0.12,
+
+    // Keep jitter modest so the density gradient stays stable.
     jitterRadius: baseR * 0.03,
+
     bboxPadding: baseR * 1.2,
-    boundaryInset: Math.max(4, baseR * 0.015),
+
+    // Increase inset so boundary ring seeds do not hug the boundary.
+    // This makes outermost wards larger and reduces "thin slivers" at the edge.
+    boundaryInset: Math.max(6, baseR * 0.04),
   };
 
   const { wardSeeds, wards } = buildWardsVoronoi({
@@ -53,6 +75,7 @@ export function runWardsStage({
     footprintPoly: outerBoundary,
     params: WARDS_PARAMS,
   });
+
   const innerCount = computeDynamicInnerCount(ctx.seed);
 
   const {
