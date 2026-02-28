@@ -44,7 +44,7 @@ function getById(arr, id, indexById) {
  * - This function may mutate graph.nodes/graph.edges/graph.adj when splitEdges is true.
  * - Therefore, do not pass an immutable view object.
  */
-export function snapPointToGraph({ point, graph, maxSnapDist = 40, splitEdges = false }) {
+export function snapPointToGraph({ point, graph, maxSnapDist = 80, splitEdges = false }) {
   if (!isFinitePoint(point)) return null;
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || !Array.isArray(graph.adj)) {
     throw new Error("snapPointToGraph: invalid graph");
