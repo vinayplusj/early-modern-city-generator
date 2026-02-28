@@ -63,7 +63,7 @@ export function runWarpFieldStage({
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
     18,
-    2 * bastionN
+    3 * bastionN
   );
   
   // Vertex density for the curtain wall polyline (separate from field samples).
