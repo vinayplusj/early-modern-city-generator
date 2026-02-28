@@ -59,6 +59,14 @@ export function runWarpFieldStage({
   // Use actual warped bastion count (not ctx.params.bastions).
   const bastionN = Array.isArray(bastionsForWarp) ? bastionsForWarp.length : 0;
   
+  // Extra inset (map units) to keep warped bastions further inside the outer hull.
+  // Deterministic: purely parameter-driven.
+  // Default chosen to be visibly effective without crushing geometry.
+  const bastionOuterInset =
+    (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.bastionOuterInset))
+      ? Math.max(0, ctx.params.warpFort.bastionOuterInset)
+      : 10;  
+  
   // Requirement: curtain warp field samples = max(existing, 72, 3 * bastions).
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
@@ -270,7 +278,8 @@ export function runWarpFieldStage({
       let clampedSafe = clamped;
 
       if (outerHullLoop) {
-        const m = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
+        const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
+        const m = baseM + bastionOuterInset;
         clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
       }
       
@@ -281,13 +290,20 @@ export function runWarpFieldStage({
 
   // ---------------------------------------------------------------------------
 
+  const warpOutworksForBastions = warpOutworks
+    ? {
+        ...warpOutworks,
+        clampMaxMargin: (Number.isFinite(warpOutworks.clampMaxMargin) ? warpOutworks.clampMaxMargin : 0) + bastionOuterInset,
+      }
+    : warpOutworks;
+  
   bastionPolysWarpedSafe = shrinkOutworksToFit({
     bastionPolysWarpedSafe,
     centre,
     wallCurtainForDraw,
     curtainMinField,
     outerHullLoop,
-    warpOutworks,
+    warpOutworks: warpOutworksForBastions,
   });
   // ---------------- Strict convexity repair (post-warp, post-shrink) ----------------
   // Enforce: all turns match expectedSign AND no near-collinear turns.
