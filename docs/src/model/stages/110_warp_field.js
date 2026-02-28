@@ -65,7 +65,7 @@ export function runWarpFieldStage({
   const bastionOuterInset =
     (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.bastionOuterInset))
       ? Math.max(0, ctx.params.warpFort.bastionOuterInset)
-      : 8;  
+      : 4;  
   
   // Requirement: curtain warp field samples = max(existing, 72, 3 * bastions).
   const curtainSamples = Math.max(
