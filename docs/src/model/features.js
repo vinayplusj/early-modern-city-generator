@@ -32,7 +32,7 @@ import { polyIntersectsPoly } from "../geom/intersections.js";
 
 
 // ---------- Footprint ----------
-export function generateFootprint(rng, cx, cy, baseR, pointCount = 40) {
+export function generateFootprint(rng, cx, cy, baseR, pointCount = 80) {
   const pts = [];
   const wobble = baseR * 0.22;
   const phase = rng() * Math.PI * 2;
