@@ -218,7 +218,7 @@ function normaliseParams(params) {
 
   return {
     seedCount,
-    spiralScale: numberOr(params?.spiralScale, 48),
+    spiralScale: numberOr(params?.spiralScale, 24),
     jitterRadius: numberOr(params?.jitterRadius, 10),
     jitterAngle: numberOr(params?.jitterAngle, 0.25),
     bboxPadding: numberOr(params?.bboxPadding, 250),
