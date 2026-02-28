@@ -62,12 +62,12 @@ export function runWarpFieldStage({
   // Requirement: curtain warp field samples = max(existing, 72, 3 * bastions).
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
-    72,
-    6 * bastionN
+    18,
+    2 * bastionN
   );
   
   // Vertex density for the curtain wall polyline (separate from field samples).
-  const curtainVertexN = Math.max(48, 6 * bastionN);
+  const curtainVertexN = Math.max(12, 2 * bastionN);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
