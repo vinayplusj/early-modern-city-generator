@@ -7,7 +7,7 @@ import { buildWardsVoronoi } from "../wards/wards_voronoi.js";
 import { assignWardRoles } from "../wards/ward_roles.js";
 
 const DEFAULT_WARDS_PARAMS = Object.freeze({
-  seedCount: 24,            // spiral seeds (core density)
+  seedCount: 36,            // spiral seeds (core density)
   spiralScale: 0,           // filled at runtime from baseR
   jitterRadius: 0,          // filled at runtime from baseR
   jitterAngle: 0.25,
@@ -15,7 +15,7 @@ const DEFAULT_WARDS_PARAMS = Object.freeze({
   clipToFootprint: true,
 
   // boundary ring to create more “rings” and reduce skew
-  boundarySeedCount: 16,
+  boundarySeedCount: 12,
   boundaryInset: 0,         // filled at runtime from baseR
 });
 
