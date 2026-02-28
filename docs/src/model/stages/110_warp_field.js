@@ -74,8 +74,20 @@ export function runWarpFieldStage({
     3 * bastionN
   );
   
-  // Vertex density for the curtain wall polyline (separate from field samples).
-  const curtainVertexN = Math.max(90, 12 * bastionN);
+  // Curtain vertex count controls how many points the wall warp operates on.
+  // Lower N => fewer points in wallBaseDense => fewer points after warp/clamps.
+  // Defaults chosen to reduce point count while staying visually stable.
+  const curtainVertexFactor =
+    (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.curtainVertexFactor))
+      ? ctx.params.warpFort.curtainVertexFactor
+      : 6; 
+  
+  const curtainVertexMin =
+    (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.curtainVertexMin))
+      ? ctx.params.warpFort.curtainVertexMin
+      : 60; 
+  
+  const curtainVertexN = Math.max(curtainVertexMin, Math.round(curtainVertexFactor * bastionN));
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
@@ -143,7 +155,10 @@ export function runWarpFieldStage({
 
   // Curtain wall (pre-bastion) for clamp + debug.
   // This is the FINAL curtain polyline that downstream attachments should follow.
-  const wallCurtainForDraw = wallWarpedSafe || wallWarped || wallBaseDense;
+  const wallCurtainForDrawRaw = wallWarpedSafe || wallWarped || wallBaseDense;
+  const wallCurtainForDraw = (Array.isArray(wallCurtainForDrawRaw) && wallCurtainForDrawRaw.length >= 3)
+    ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
+    : wallCurtainForDrawRaw;
   // -------------------------------------------------------------------------
   // Make warpWall.wallWarped equal the final curtain used for draw + downstream.
   // Preserve the original (pre-final) as wallWarpedRaw for debugging.
