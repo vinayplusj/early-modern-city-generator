@@ -67,7 +67,7 @@ export function runWarpFieldStage({
   );
   
   // Vertex density for the curtain wall polyline (separate from field samples).
-  const curtainVertexN = Math.max(72, 12 * bastionN);
+  const curtainVertexN = Math.max(90, 12 * bastionN);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
