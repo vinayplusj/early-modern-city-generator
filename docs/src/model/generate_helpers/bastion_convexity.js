@@ -161,7 +161,7 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
   // Tuning knobs (deterministic):
   // epsCross scales with geometry size; use bastion base length as reference.
   const bastionBaseLen = dist(poly5[0], poly5[4]);
-  const epsCross = Math.max(1e-4, (bastionBaseLen * bastionBaseLen) * 1e-2);
+  const epsCross = Math.max(1e-3, (bastionBaseLen * bastionBaseLen) * 1e-1);
   const epsArea = Math.max(1e-6, (bastionBaseLen * bastionBaseLen) * 1e-5);
 
   let cur = clampBastionMovablesInsideOuter(poly5, centrePt, outerPoly, margin);
