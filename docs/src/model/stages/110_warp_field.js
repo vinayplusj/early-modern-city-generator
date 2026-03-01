@@ -3,7 +3,14 @@
 //
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
 
-import { buildFortWarp, clampPolylineRadial, resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
+import {
+  buildFortWarp,
+  clampPolylineRadial,
+  resampleClosedPolyline,
+  sampleClosedPolylineByArcLength,
+  computeCurtainClearanceProfile,
+  pickClearanceMaximaWithSpacing,
+} from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
@@ -66,11 +73,13 @@ export function runWarpFieldStage({
   const polyN0 = Array.isArray(bastionPolys) ? bastionPolys.length : 0;
   const n0 = Math.min(bastionN0, polyN0);
   const bastionN = (targetN != null) ? Math.min(n0, targetN) : n0;
-  const bastionsForWarpUsed =
-    (targetN != null && Array.isArray(bastionsForWarp)) ? bastionsForWarp.slice(0, bastionN) : bastionsForWarp;
+  const bastionsForWarpUsed = Array.isArray(bastionsForWarp)
+    ? bastionsForWarp.slice(0, bastionN)
+    : bastionsForWarp;
   
-  const bastionPolysUsed =
-    (targetN != null && Array.isArray(bastionPolys)) ? bastionPolys.slice(0, bastionN) : bastionPolys;  
+  const bastionPolysUsed = Array.isArray(bastionPolys)
+    ? bastionPolys.slice(0, bastionN)
+    : bastionPolys;
   // Extra inset (map units) to keep warped bastions further inside the outer hull.
   // Deterministic: purely parameter-driven.
   // Default chosen to be visibly effective without crushing geometry.
@@ -182,6 +191,65 @@ export function runWarpFieldStage({
   const wallCurtainForDraw = (Array.isArray(wallCurtainForDrawRaw) && wallCurtainForDrawRaw.length >= 3)
     ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
     : wallCurtainForDrawRaw;
+  // ---------------- Bastion placement candidates (clearance maxima) ----------------
+  // Compute once per run. Deterministic. Used later for soft reinsertion.
+  let bastionPlacement = null;
+  
+  if (outerHullLoop && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) {
+    const centrePt = { x: cx, y: cy };
+  
+    // Sampling step in map units. Lower => more accurate but more expensive.
+    const sampleStep =
+      Number.isFinite(ctx?.params?.warpFort?.placementSampleStep)
+        ? Math.max(2, ctx.params.warpFort.placementSampleStep)
+        : 10;
+  
+    const { pts: curtainPtsS, s: sArr, totalLen } =
+      sampleClosedPolylineByArcLength(wallCurtainForDraw, sampleStep);
+  
+    // Clearance measured outward from curtain toward outer hull.
+    const outwardMode = ctx?.params?.warpFort?.placementOutwardMode || "normal";
+    const { clearance } = computeCurtainClearanceProfile({
+      curtainPts: curtainPtsS,
+      centre: centrePt,
+      outerHullLoop,
+      outwardMode,
+    });
+  
+    // Determine target count and spacing.
+    const soft = ctx?.params?.bastionSoft || null;
+    const budget = Number.isFinite(soft?.reinsertBudget) ? Math.max(0, soft.reinsertBudget | 0) : 0;
+  
+    // Minimum spacing along the curtain perimeter (map units).
+    // Defaults: ~ one bastion per (perimeter/targetN) but with a conservative lower bound.
+    const minSpacing =
+      Number.isFinite(ctx?.params?.warpFort?.placementMinSpacing)
+        ? Math.max(0, ctx.params.warpFort.placementMinSpacing)
+        : (targetN > 0 ? Math.max(20, 0.65 * (totalLen / targetN)) : 0);
+  
+    // Pick enough candidates to support reinsertion: targetN + budget + small cushion.
+    const want = Math.max(0, targetN + budget + 3);
+  
+    const maxima = pickClearanceMaximaWithSpacing({
+      s: sArr,
+      clearance,
+      targetN: want,
+      minSpacing,
+      neighbourhood: 2,
+      totalLen,
+    });
+  
+    bastionPlacement = {
+      sampleStep,
+      totalLen,
+      outwardMode,
+      minSpacing,
+      want,
+      maxima, // array of { i, s, c }
+    };
+  
+    if (warpOutworks) warpOutworks.bastionPlacement = bastionPlacement;
+  }
   // -------------------------------------------------------------------------
   // Make warpWall.wallWarped equal the final curtain used for draw + downstream.
   // Preserve the original (pre-final) as wallWarpedRaw for debugging.
@@ -366,6 +434,17 @@ export function runWarpFieldStage({
 
     // Keep stats on warpOutworks for debugging and later audits.
     warpOutworks.bastionConvex = convexStats;
+    // Debug: record final count and whether we have enough placement candidates.
+    if (warpOutworks && warpOutworks.bastionPlacement) {
+      const soft = ctx?.params?.bastionSoft || null;
+      const targetN = Number.isFinite(soft?.targetN) ? soft.targetN : null;
+    
+      warpOutworks.bastionPlacement.final = {
+        targetN,
+        finalCount: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe.length : 0,
+        candidates: warpOutworks.bastionPlacement.maxima ? warpOutworks.bastionPlacement.maxima.length : 0,
+      };
+    }
   }
 
 
@@ -420,6 +499,14 @@ export function runWarpFieldStage({
       debugEnabled: true,
 });
 
+  }
+
+    if (warpDebugEnabled && bastionPlacement) {
+    console.log("[bastionPlacement]", {
+      want: bastionPlacement.want,
+      minSpacing: bastionPlacement.minSpacing,
+      top3: bastionPlacement.maxima.slice(0, 3),
+    });
   }
   // ---------------------------------------------------------------------------
   // Final composite wall for rendering:
