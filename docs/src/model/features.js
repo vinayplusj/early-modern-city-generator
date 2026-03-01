@@ -58,84 +58,29 @@ export function generateFootprint(rng, cx, cy, baseR, pointCount = 80) {
 }
 
 // ---------- Bastioned wall ----------
-export function generateBastionedWall(rng, cx, cy, wallR, bastionCount, opts = {}) {
+export function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
+  // Bastions are now created in Stage 110 from clearance maxima slots on the warped curtain.
+  // This function only generates a curtain candidate (base/wall) for upstream stages.
+
   const base = [];
+  const pointCount = Math.max(48, Math.round(18 + 6 * Math.sqrt(Math.max(1, bastionCount || 0))));
+
   const rotation = rng() * Math.PI * 2;
-  const skewMax = Number.isFinite(opts.skewMax) ? Math.max(0, Math.min(0.35, opts.skewMax)) : 0.12;
-  // Optional: allow slightly asymmetric base endpoints around each bastion centre.
-  // 0.12 means up to 12% of the segment length shifts from one side to the other.
-  
-  const phase = Number.isFinite(opts.phase) ? opts.phase : 0;
-  // Deterministic phase offset (radians) if you ever want to rotate the whole pattern.
-  for (let i = 0; i < bastionCount; i++) {
-    const ang = rotation + (i / bastionCount) * Math.PI * 2;
-    const r = wallR * (0.96 + rng() * 0.08);
+  const wobble = wallR * 0.05; // mild irregularity for variety; deterministic from rng seed
+
+  for (let i = 0; i < pointCount; i++) {
+    const t = i / pointCount;
+    const ang = rotation + t * Math.PI * 2;
+
+    // Keep small radial variation but do not create bastions here.
+    const r = wallR + wobble * (rng() - 0.5);
     base.push(polar(cx, cy, ang, r));
   }
 
-  // Thinner bastions as bastionCount rises.
-  // At 5 bastions -> about 0.30
-  // At 16 bastions -> about 0.12 (noticeably thinner)
-  const t = clamp((bastionCount - 5) / 11, 0, 1);
-  const shoulderFactor = lerp(0.30, 0.10, t);
-  
-  const bastionLen = wallR * 2.0 * shoulderFactor;
-  const shoulder = wallR * 0.80 * shoulderFactor;
-  
-  // Keep faces from getting too wide at high counts
-  const cheekAlongFrac = lerp(0.80, 0.60, t);
-  const cheekOutFrac = lerp(0.60, 0.40, t);
-  
-  const bastions = [];
+  // For now, wall == base (pre-warp curtain). Stage 110 will produce the real bastioned wall.
+  const wall = base;
 
-  function pushOutToMinRadial(p, curr, out, minOut) {
-    const r = (p.x - curr.x) * out.x + (p.y - curr.y) * out.y;
-    if (r >= minOut) return p;
-    const delta = minOut - r;
-    return { x: p.x + out.x * delta, y: p.y + out.y * delta };
-  }
-
-  for (let i = 0; i < base.length; i++) {
-    const prev = base[(i - 1 + base.length) % base.length];
-    const curr = base[i];
-    const next = base[(i + 1) % base.length];
-
-    const uIn = normalize({ x: curr.x - prev.x, y: curr.y - prev.y });
-    const uOut = normalize({ x: next.x - curr.x, y: next.y - curr.y });
-    const out = normalize({ x: curr.x - cx, y: curr.y - cy });
-
-    const s1 = { x: curr.x - uIn.x * shoulder, y: curr.y - uIn.y * shoulder };
-    const s2 = { x: curr.x + uOut.x * shoulder, y: curr.y + uOut.y * shoulder };
-
-    const L = bastionLen * (0.90 + rng() * 0.25);
-    const cheekAlong = L * cheekAlongFrac;
-
-    const tip = { x: curr.x + out.x * L, y: curr.y + out.y * L };
-    const cheekOut = L * cheekOutFrac;
-
-    const leftFace0 = {
-      x: curr.x + out.x * cheekOut - uIn.x * cheekAlong,
-      y: curr.y + out.y * cheekOut - uIn.y * cheekAlong,
-    };
-
-    const rightFace0 = {
-      x: curr.x + out.x * cheekOut + uOut.x * cheekAlong,
-      y: curr.y + out.y * cheekOut + uOut.y * cheekAlong,
-    };
-
-    const minOut = wallR * 0.02;
-    const leftFace = pushOutToMinRadial(leftFace0, curr, out, minOut);
-    const rightFace = pushOutToMinRadial(rightFace0, curr, out, minOut);
-
-    bastions.push({
-      i,
-      pts: [s1, leftFace, tip, rightFace, s2],
-      shoulders: [s1, s2],
-    });
-  }
-
-  const wall = bastions.flatMap(b => b.pts);
-  return { base, wall, bastions };
+  return { base, wall, bastions: [] };
 }
 
 // ---------- Gates ----------
