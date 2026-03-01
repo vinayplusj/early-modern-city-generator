@@ -55,10 +55,22 @@ export function runWarpFieldStage({
 
   // Keep behaviour: generator stores warp config on ctx.params.warpFort.
   ctx.params.warpFort = warpFortParams;
+  const bastionSoft = (ctx.params && ctx.params.bastionSoft) ? ctx.params.bastionSoft : null;
+  const targetN = bastionSoft && Number.isFinite(bastionSoft.targetN) ? Math.max(0, bastionSoft.targetN | 0) : null;
   
   // Use actual warped bastion count (not ctx.params.bastions).
-  const bastionN = Array.isArray(bastionsForWarp) ? bastionsForWarp.length : 0;
+  const bastionN0 = Array.isArray(bastionsForWarp) ? bastionsForWarp.length : 0;
+
+  // If we have a targetN policy, we can cap/trim the input bastion set deterministically.
+  // This is a no-op if targetN is null.
+  const polyN0 = Array.isArray(bastionPolys) ? bastionPolys.length : 0;
+  const n0 = Math.min(bastionN0, polyN0);
+  const bastionN = (targetN != null) ? Math.min(n0, targetN) : n0;
+  const bastionsForWarpUsed =
+    (targetN != null && Array.isArray(bastionsForWarp)) ? bastionsForWarp.slice(0, bastionN) : bastionsForWarp;
   
+  const bastionPolysUsed =
+    (targetN != null && Array.isArray(bastionPolys)) ? bastionPolys.slice(0, bastionN) : bastionPolys;  
   // Extra inset (map units) to keep warped bastions further inside the outer hull.
   // Deterministic: purely parameter-driven.
   // Default chosen to be visibly effective without crushing geometry.
@@ -67,7 +79,7 @@ export function runWarpFieldStage({
       ? Math.max(0, ctx.params.warpFort.bastionOuterInset)
       : 4;  
   
-  // Requirement: curtain warp field samples = max(existing, 72, 3 * bastions).
+  // Requirement: curtain warp field samples = max(existing, 18, 3 * bastions).
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
     18,
@@ -114,7 +126,7 @@ export function runWarpFieldStage({
     clampMinMargin: 2,
     clampMaxMargin: 2,
     districts: null,
-    bastions: bastionsForWarp,
+    bastions: bastionsForWarpUsed,
     params: curtainParams,
   });
 
@@ -131,10 +143,21 @@ export function runWarpFieldStage({
     clampMinMargin: 2,
     clampMaxMargin: 2,
     districts,
-    bastions: bastionsForWarp,
+    bastions: bastionsForWarpUsed,
     params: ctx.params.warpFort,
   });
+  const reinsertBudget = bastionSoft && Number.isFinite(bastionSoft.reinsertBudget) ? Math.max(0, bastionSoft.reinsertBudget | 0) : 0;
+  const minFinalRatio = bastionSoft && Number.isFinite(bastionSoft.minFinalRatio) ? Math.max(0, Math.min(1, bastionSoft.minFinalRatio)) : 1.0;
 
+    if (warpOutworks) {
+      warpOutworks.bastionSoft = {
+        targetN,
+        reinsertBudget,
+        minFinalRatio,
+        inputCount: bastionN0,
+        usedCount: bastionN,
+      };
+    }  
   applyWarpfieldDrawHints({ warpWall, warpOutworks });
 
   const innerMargin = Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 10;
@@ -255,14 +278,14 @@ export function runWarpFieldStage({
       : null;
 
   // Apply outworks warp to bastion polygons (two-target system).
-  let bastionPolysWarpedSafe = bastionPolys;
-
-  if (warpOutworks?.field && Array.isArray(bastionPolys)) {
+  let bastionPolysWarpedSafe = bastionPolysUsed;
+  
+  if (warpOutworks?.field && Array.isArray(bastionPolysUsed)) {
     const centrePt = { x: cx, y: cy };
 
     const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params);
 
-    bastionPolysWarpedSafe = bastionPolys.map((poly) => {
+    bastionPolysWarpedSafe = bastionPolysUsed.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
 
       // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
@@ -336,7 +359,6 @@ export function runWarpFieldStage({
         convexStats.push({ idx, ok: false, iters: 0, note: "skip_non5" });
         return poly;
       }
-
       const res = repairBastionStrictConvex(poly, centre, outerHullLoop, margin, K);
       convexStats.push({ idx, ok: res.ok, iters: res.iters, note: res.note });
       return res.poly;
@@ -345,6 +367,7 @@ export function runWarpFieldStage({
     // Keep stats on warpOutworks for debugging and later audits.
     warpOutworks.bastionConvex = convexStats;
   }
+
 
  // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
