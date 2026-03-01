@@ -58,10 +58,15 @@ export function generateFootprint(rng, cx, cy, baseR, pointCount = 80) {
 }
 
 // ---------- Bastioned wall ----------
-export function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
+export function generateBastionedWall(rng, cx, cy, wallR, bastionCount, opts = {}) {
   const base = [];
   const rotation = rng() * Math.PI * 2;
-
+  const skewMax = Number.isFinite(opts.skewMax) ? Math.max(0, Math.min(0.35, opts.skewMax)) : 0.12;
+  // Optional: allow slightly asymmetric base endpoints around each bastion centre.
+  // 0.12 means up to 12% of the segment length shifts from one side to the other.
+  
+  const phase = Number.isFinite(opts.phase) ? opts.phase : 0;
+  // Deterministic phase offset (radians) if you ever want to rotate the whole pattern.
   for (let i = 0; i < bastionCount; i++) {
     const ang = rotation + (i / bastionCount) * Math.PI * 2;
     const r = wallR * (0.96 + rng() * 0.08);
