@@ -8,7 +8,7 @@
 // - Optional radial clamping against an inner and/or outer hull.
 
 import { buildWarpField, warpPolylineRadial } from "./warp_apply.js";
-import { dist } from "../../geom/primitives.js";
+import { dist, dist2, add, sub, mul, perp, normalize } from "../../geom/primitives.js";
 
 function clampNumber(x, lo, hi) {
   if (!Number.isFinite(x)) return x;
@@ -27,7 +27,66 @@ function wrapAngle(t) {
   if (a < 0) a += twoPi;
   return a;
 }
+export function sampleClosedPolylineByArcLength(poly, step) {
+  if (!Array.isArray(poly) || poly.length < 3) return { pts: [], s: [], totalLen: 0 };
+  const ds = Number(step);
+  if (!Number.isFinite(ds) || ds <= 0) throw new Error("sampleClosedPolylineByArcLength: invalid step");
 
+  // Total length
+  let total = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    total += dist(a, b);
+  }
+  if (!Number.isFinite(total) || total <= 1e-9) return { pts: [], s: [], totalLen: 0 };
+
+  const pts = [];
+  const sArr = [];
+
+  let s0 = 0;
+  let nextS = 0;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const L = dist(a, b);
+    if (!Number.isFinite(L) || L <= 1e-9) continue;
+
+    while (nextS <= s0 + L + 1e-9) {
+      const t = (nextS - s0) / L;
+      pts.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      sArr.push(nextS);
+      nextS += ds;
+    }
+    s0 += L;
+  }
+
+  if (pts.length === 0) {
+    pts.push({ x: poly[0].x, y: poly[0].y });
+    sArr.push(0);
+  }
+
+  return { pts, s: sArr, totalLen: total };
+}
+export function nearestClosedPolylineTangent(poly, p) {
+  if (!Array.isArray(poly) || poly.length < 3 || !p) return { x: 0, y: 0 };
+
+  let bestI = 0;
+  let bestD = Infinity;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const m = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+    const d = dist2(p, m);
+    if (d < bestD) { bestD = d; bestI = i; } // tie-break by smaller i
+  }
+
+  const a = poly[bestI];
+  const b = poly[(bestI + 1) % poly.length];
+  return normalize(sub(b, a));
+}
 // Sample an array defined on a uniform theta grid.
 function sampleOnRing(thetas, values, theta) {
   if (!Array.isArray(thetas) || !Array.isArray(values)) return null;
@@ -48,6 +107,114 @@ function sampleOnRing(thetas, values, theta) {
   if (!Number.isFinite(v0)) return v1;
   if (!Number.isFinite(v1)) return v0;
   return lerp(v0, v1, u);
+}
+function rayHitT(P, dir, A, B) {
+  // Solve P + t*dir = A + u*(B-A), with t>=0, u in [0,1]
+  const vx = B.x - A.x;
+  const vy = B.y - A.y;
+
+  const det = dir.x * (-vy) - dir.y * (-vx);
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+
+  const ax = A.x - P.x;
+  const ay = A.y - P.y;
+
+  const t = (ax * (-vy) - ay * (-vx)) / det;
+  const u = (dir.x * ay - dir.y * ax) / det;
+
+  if (t < 0) return null;
+  if (u < 0 || u > 1) return null;
+  return t;
+}
+
+export function clearanceToHullAlongRay(P, dirRaw, outerHullLoop) {
+  if (!Array.isArray(outerHullLoop) || outerHullLoop.length < 3) return { ok: false, dist: Infinity, hit: null };
+  const dir = normalize(dirRaw);
+  if (!Number.isFinite(dir.x) || !Number.isFinite(dir.y) || (Math.abs(dir.x) + Math.abs(dir.y)) < 1e-12) {
+    return { ok: false, dist: Infinity, hit: null };
+  }
+
+  let bestT = Infinity;
+  for (let i = 0; i < outerHullLoop.length; i++) {
+    const A = outerHullLoop[i];
+    const B = outerHullLoop[(i + 1) % outerHullLoop.length];
+    const t = rayHitT(P, dir, A, B);
+    if (t != null && t < bestT) bestT = t;
+  }
+
+  if (!Number.isFinite(bestT) || bestT === Infinity) return { ok: false, dist: Infinity, hit: null };
+  return { ok: true, dist: bestT, hit: add(P, mul(dir, bestT)) };
+}
+export function computeCurtainClearanceProfile({ curtainPts, centre, outerHullLoop, outwardMode = "normal" }) {
+  const n = Array.isArray(curtainPts) ? curtainPts.length : 0;
+  const clearance = new Array(n);
+  const outward = new Array(n);
+
+  for (let i = 0; i < n; i++) {
+    const P = curtainPts[i];
+
+    let dir;
+    if (outwardMode === "radial") {
+      dir = normalize(sub(P, centre));
+    } else {
+      const tan = nearestClosedPolylineTangent(curtainPts, P);
+      let nrm = normalize(perp(tan));
+
+      // orient away from centre
+      const toC = sub(P, centre);
+      if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = mul(nrm, -1);
+
+      dir = (Math.abs(nrm.x) + Math.abs(nrm.y) > 1e-12) ? nrm : normalize(toC);
+    }
+
+    outward[i] = dir;
+    const hit = clearanceToHullAlongRay(P, dir, outerHullLoop);
+    clearance[i] = hit.ok ? hit.dist : Infinity;
+  }
+
+  return { clearance, outward };
+}
+export function pickClearanceMaximaWithSpacing({ s, clearance, targetN, minSpacing, neighbourhood = 2, totalLen }) {
+  const n = Math.min(s.length, clearance.length);
+  if (n === 0 || !Number.isFinite(targetN) || targetN <= 0) return [];
+
+  const cand = [];
+  for (let i = 0; i < n; i++) {
+    const c0 = clearance[i];
+    if (!Number.isFinite(c0)) continue;
+
+    let isMax = true;
+    for (let k = 1; k <= neighbourhood; k++) {
+      const j1 = (i - k + n) % n;
+      const j2 = (i + k) % n;
+      if (Number.isFinite(clearance[j1]) && clearance[j1] > c0) isMax = false;
+      if (Number.isFinite(clearance[j2]) && clearance[j2] > c0) isMax = false;
+      if (!isMax) break;
+    }
+    if (isMax) cand.push({ i, s: s[i], c: c0 });
+  }
+
+  cand.sort((a, b) => (b.c - a.c) || (a.s - b.s) || (a.i - b.i));
+
+  const chosen = [];
+  const minD = Math.max(0, Number(minSpacing) || 0);
+  const L = Number.isFinite(totalLen) ? totalLen : (s[n - 1] || 0);
+
+  function circDist(aS, bS) {
+    const d = Math.abs(aS - bS);
+    return Math.min(d, Math.max(0, L - d));
+  }
+
+  for (const c of cand) {
+    if (chosen.length >= targetN) break;
+    let ok = true;
+    for (const p of chosen) {
+      if (circDist(c.s, p.s) < minD) { ok = false; break; }
+    }
+    if (ok) chosen.push(c);
+  }
+
+  return chosen;
 }
 function isValidWarpField(field) {
   if (!field) return false;
