@@ -10,6 +10,7 @@ import {
   sampleClosedPolylineByArcLength,
   computeCurtainClearanceProfile,
   pickClearanceMaximaWithSpacing,
+  nearestClosedPolylineTangent,
 } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
@@ -240,6 +241,9 @@ export function runWarpFieldStage({
     });
   
     bastionPlacement = {
+      curtainPtsS,
+      sArr,
+      clearance,
       sampleStep,
       totalLen,
       outwardMode,
@@ -344,7 +348,84 @@ export function runWarpFieldStage({
           params: { ...warpOutworks.params, debug: false },
         })
       : null;
-
+  function bastionCentroid(poly) {
+    let sx = 0, sy = 0, n = 0;
+    for (const p of poly) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      sx += p.x; sy += p.y; n++;
+    }
+    return (n > 0) ? { x: sx / n, y: sy / n } : { x: cx, y: cy };
+  }
+  
+  function nearestSampleIndex(pts, p) {
+    // Deterministic: first minimum wins.
+    let bestI = 0;
+    let bestD2 = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const q = pts[i];
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; bestI = i; }
+    }
+    return bestI;
+  }
+  
+  function circDist(aS, bS, L) {
+    const d = Math.abs(aS - bS);
+    return Math.min(d, Math.max(0, L - d));
+  }
+  
+  function nearestMaximaIndex(maxima, s0, L) {
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < maxima.length; i++) {
+      const d = circDist(maxima[i].s, s0, L);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  
+  function unit(v) {
+    const L = Math.hypot(v.x, v.y);
+    if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
+    return { x: v.x / L, y: v.y / L };
+  }
+  
+  // Deterministic “make a bastion” anchored at a sampled curtain point.
+  // Produces a 5-point polygon in the order expected by repairBastionStrictConvex:
+  // [B0, S0, T, S1, B1]
+  function makePentBastionAtSampleIndex(k, placement, wallCurtainForDraw, centrePt) {
+    const P = placement.curtainPtsS[k];
+  
+    // Tangent from the final curtain polyline.
+    const toC = { x: P.x - centrePt.x, y: P.y - centrePt.y };
+    const tan = { x: -toC.y, y: toC.x }; // perpendicular to radial, deterministic fallback
+    const tHat = unit(tan);
+  
+    // Outward normal, oriented away from centre.
+    let nrm = unit({ x: -tHat.y, y: tHat.x });
+    const toC = { x: P.x - centrePt.x, y: P.y - centrePt.y };
+    if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
+  
+    // Size heuristics (deterministic). Tuned to your placement spacing.
+    const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
+    const shoulderIn = 0.55 * baseHalf;
+  
+    // Use local clearance as a bound for tip length.
+    const c = placement.clearance ? placement.clearance[k] : Infinity;
+    const tipLen = Math.max(12, Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing));
+  
+    const B0 = { x: P.x - tHat.x * baseHalf, y: P.y - tHat.y * baseHalf };
+    const B1 = { x: P.x + tHat.x * baseHalf, y: P.y + tHat.y * baseHalf };
+  
+    const S0 = { x: P.x - tHat.x * shoulderIn + nrm.x * (0.25 * tipLen), y: P.y - tHat.y * shoulderIn + nrm.y * (0.25 * tipLen) };
+    const S1 = { x: P.x + tHat.x * shoulderIn + nrm.x * (0.25 * tipLen), y: P.y + tHat.y * shoulderIn + nrm.y * (0.25 * tipLen) };
+  
+    const T = { x: P.x + nrm.x * tipLen, y: P.y + nrm.y * tipLen };
+  
+    return [B0, S0, T, S1, B1];
+  }
   // Apply outworks warp to bastion polygons (two-target system).
   let bastionPolysWarpedSafe = bastionPolysUsed;
   
@@ -434,6 +515,127 @@ export function runWarpFieldStage({
 
     // Keep stats on warpOutworks for debugging and later audits.
     warpOutworks.bastionConvex = convexStats;
+    // ---------------- Sliding repair (before delete/reinsert) ----------------
+    // If a bastion is still failing convexity/angle after repair, try sliding its anchor
+    // to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
+    if (
+      warpOutworks?.bastionPlacement?.maxima?.length &&
+      warpOutworks.bastionPlacement.curtainPtsS?.length &&
+      warpOutworks.bastionPlacement.sArr?.length &&
+      warpOutworks.bastionPlacement.clearance?.length &&
+      warpOutworks?.field &&
+      outerHullLoop &&
+      Array.isArray(wallCurtainForDraw)
+    ) {
+      const placement = warpOutworks.bastionPlacement;
+      const maxima = placement.maxima;
+      const L = placement.totalLen;
+      const centrePt = { x: cx, y: cy };
+    
+      // Deterministic sliding budget per failing bastion.
+      const slideTries = Number.isFinite(ctx?.params?.warpFort?.slideMaxTries)
+        ? Math.max(1, ctx.params.warpFort.slideMaxTries | 0)
+        : 3;
+    
+      // Track maxima used by successful slides to avoid stacking two repairs onto one slot.
+      const usedMax = new Set();
+    
+      // Use convexStats as the failure signal (extend later to include visibility).
+      const failed = convexStats.filter(s => !s.ok).map(s => s.idx).sort((a, b) => a - b);
+    
+      // Local helper to re-run the same warp/clamp/hull/repair pipeline on a candidate poly.
+      const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
+      const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters) ? ctx.params.warpFort.bastionConvexIters : 121;
+    
+      function warpClampRepairOne(poly5) {
+        const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params);
+    
+        const warpedByCurtain = hasCurtainWarp
+          ? warpPolylineRadial(poly5, centrePt, warpWall.field, warpWall.params)
+          : poly5;
+    
+        const warpedByOutworks = warpPolylineRadial(warpedByCurtain, centrePt, warpOutworks.field, warpOutworks.params);
+    
+        const clamped = clampPolylineRadial(
+          warpedByOutworks,
+          centrePt,
+          curtainMinField,
+          null,
+          2,
+          warpOutworks.clampMaxMargin
+        );
+    
+        let clampedSafe = clamped;
+        if (outerHullLoop) {
+          const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
+          const m = baseM + bastionOuterInset;
+          clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
+        }
+    
+        const res = repairBastionStrictConvex(clampedSafe, centrePt, outerHullLoop, margin, K);
+        return { ok: res.ok, poly: res.poly };
+      }
+    
+      for (const idx of failed) {
+        const cur = bastionPolysWarpedSafe[idx];
+        if (!Array.isArray(cur) || cur.length !== 5) continue;
+    
+        // Project current bastion to a nearby s value on the sampled curtain.
+        const c = bastionCentroid(cur);
+        const k0 = nearestSampleIndex(placement.curtainPtsS, c);
+        const s0 = placement.sArr[k0] || 0;
+    
+        // Find nearest maxima and try around it deterministically.
+        const j0 = nearestMaximaIndex(maxima, s0, L);
+    
+        const candJs = [j0];
+        for (let k = 1; k <= slideTries; k++) {
+          candJs.push((j0 - k + maxima.length) % maxima.length);
+          candJs.push((j0 + k) % maxima.length);
+        }
+    
+        let repaired = false;
+    
+        for (const j of candJs) {
+          if (usedMax.has(j)) continue;
+          const m = maxima[j];
+          const kSample = m.i;
+    
+          if (kSample < 0 || kSample >= placement.curtainPtsS.length) continue;
+    
+          const candPoly = makePentBastionAtSampleIndex(kSample, placement, wallCurtainForDraw, centrePt);
+          const out = warpClampRepairOne(candPoly);
+    
+          if (out.ok) {
+            bastionPolysWarpedSafe[idx] = out.poly;
+            usedMax.add(j);
+            repaired = true;
+            break;
+          }
+        }
+    
+        if (!repaired && warpDebugEnabled) {
+          console.log("[slideRepair] could not repair bastion", { idx });
+        }
+      }
+    
+      // Optional (recommended): refresh convex stats after sliding so your audit matches final geometry.
+      // Keep it deterministic by re-running the repair check only.
+      if (warpOutworks?.bastionConvex && Array.isArray(warpOutworks.bastionConvex)) {
+        const refreshed = [];
+        for (let i = 0; i < bastionPolysWarpedSafe.length; i++) {
+          const poly = bastionPolysWarpedSafe[i];
+          if (!Array.isArray(poly) || poly.length !== 5) {
+            refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_non5" });
+            continue;
+          }
+          const res = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
+          refreshed.push({ idx: i, ok: res.ok, iters: res.iters, note: "post_slide_check" });
+          bastionPolysWarpedSafe[i] = res.poly;
+        }
+        warpOutworks.bastionConvex = refreshed;
+      }
+    }
     // Debug: record final count and whether we have enough placement candidates.
     if (warpOutworks && warpOutworks.bastionPlacement) {
       const soft = ctx?.params?.bastionSoft || null;
