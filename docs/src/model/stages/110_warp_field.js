@@ -68,18 +68,19 @@ export function runWarpFieldStage({
   
   // Use actual warped bastion count (not ctx.params.bastions).
   const bastionN0 = Array.isArray(bastionsForWarp) ? bastionsForWarp.length : 0;
-
-  // If we have a targetN policy, we can cap/trim the input bastion set deterministically.
-  // This is a no-op if targetN is null.
   const polyN0 = Array.isArray(bastionPolys) ? bastionPolys.length : 0;
-  const n0 = Math.min(bastionN0, polyN0);
-  const bastionN = (targetN != null) ? Math.min(n0, targetN) : n0;
+  
+  // Desired count is driven by targetN (density), even if upstream provides zero bastions.
+  const bastionNDesired =
+    (targetN != null) ? Math.max(0, targetN | 0) : Math.min(bastionN0, polyN0);
+  
+  // We still keep “used” slices from upstream if they exist, but they are no longer the source of truth.
   const bastionsForWarpUsed = Array.isArray(bastionsForWarp)
-    ? bastionsForWarp.slice(0, bastionN)
+    ? bastionsForWarp.slice(0, bastionNDesired)
     : bastionsForWarp;
   
   const bastionPolysUsed = Array.isArray(bastionPolys)
-    ? bastionPolys.slice(0, bastionN)
+    ? bastionPolys.slice(0, bastionNDesired)
     : bastionPolys;
   // Extra inset (map units) to keep warped bastions further inside the outer hull.
   // Deterministic: purely parameter-driven.
@@ -93,7 +94,7 @@ export function runWarpFieldStage({
   const curtainSamples = Math.max(
     ctx.params.warpFort?.samples ?? 0,
     18,
-    3 * bastionN
+    3 * bastionNDesired
   );
   
   // Curtain vertex count controls how many points the wall warp operates on.
@@ -109,7 +110,7 @@ export function runWarpFieldStage({
       ? ctx.params.warpFort.curtainVertexMin
       : 60; 
   
-  const curtainVertexN = Math.max(curtainVertexMin, Math.round(curtainVertexFactor * bastionN));
+  const curtainVertexN = Math.max(curtainVertexMin, Math.round(curtainVertexFactor * bastionNDesired));
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
@@ -165,7 +166,7 @@ export function runWarpFieldStage({
         reinsertBudget,
         minFinalRatio,
         inputCount: bastionN0,
-        usedCount: bastionN,
+        usedCount: bastionNDesired,
       };
     }  
   applyWarpfieldDrawHints({ warpWall, warpOutworks });
@@ -253,6 +254,73 @@ export function runWarpFieldStage({
     };
   
     if (warpOutworks) warpOutworks.bastionPlacement = bastionPlacement;
+    // ---------------- Initial bastions from maxima slots (new method) ----------------
+    // We build bastion polygons directly on the FINAL curtain (wallCurtainForDraw).
+    // Because these polygons are already on the warped curtain, we must NOT apply the curtain warp to them again.
+    
+    let bastionsBuiltFromMaxima = false;
+    
+    function unit(v) {
+      const L = Math.hypot(v.x, v.y);
+      if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
+      return { x: v.x / L, y: v.y / L };
+    }
+    function add(p, v, s) { return { x: p.x + v.x * s, y: p.y + v.y * s }; }
+    
+    function tangentFromSamples(samples, k) {
+      const n = samples.length;
+      const a = samples[(k - 1 + n) % n];
+      const b = samples[(k + 1) % n];
+      return unit({ x: b.x - a.x, y: b.y - a.y });
+    }
+    
+    function makePentBastionAtSampleIndex(k, placement) {
+      const P = placement.curtainPtsS[k];
+      const tan = tangentFromSamples(placement.curtainPtsS, k);
+      let nrm = unit({ x: -tan.y, y: tan.x });
+    
+      // orient outward (away from centre)
+      const toC = { x: P.x - cx, y: P.y - cy };
+      if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
+    
+      // Size controls: tie to minSpacing and local clearance
+      const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
+      const shoulderIn = 0.55 * baseHalf;
+    
+      const c = placement.clearance?.[k];
+      const tipLen = Math.max(
+        12,
+        Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing)
+      );
+    
+      const B0 = add(P, tan, -baseHalf);
+      const B1 = add(P, tan, +baseHalf);
+    
+      const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
+      const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
+    
+      const T = add(P, nrm, tipLen);
+    
+      // Order expected by repairBastionStrictConvex: [B0, S0, T, S1, B1]
+      return [B0, S0, T, S1, B1];
+    }
+    
+    // Replace upstream bastion polys if we have maxima.
+    if (bastionPlacement?.maxima?.length && bastionNDesired > 0) {
+      const maximaTop = bastionPlacement.maxima.slice(0, bastionNDesired);
+    
+      // Build new bastion polygons directly from maxima sample indices.
+      const built = maximaTop
+        .map(m => m.i)
+        .filter(k => Number.isFinite(k) && k >= 0 && k < bastionPlacement.curtainPtsS.length)
+        .map(k => makePentBastionAtSampleIndex(k, bastionPlacement));
+    
+      if (built.length) {
+        bastionPolysUsed.length = 0;               // in case it was an array reference
+        for (const poly of built) bastionPolysUsed.push(poly);
+        bastionsBuiltFromMaxima = true;
+      }
+    }
   }
   // -------------------------------------------------------------------------
   // Make warpWall.wallWarped equal the final curtain used for draw + downstream.
@@ -431,15 +499,15 @@ export function runWarpFieldStage({
   if (warpOutworks?.field && Array.isArray(bastionPolysUsed)) {
     const centrePt = { x: cx, y: cy };
 
-    const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params);
-
-    bastionPolysWarpedSafe = bastionPolysUsed.map((poly) => {
+  const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
+  
+  bastionPolysWarpedSafe = bastionPolysUsed.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
 
-      // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
-      const warpedByCurtain = hasCurtainWarp
-        ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
-        : poly;
+    // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
+  const warpedByCurtain = hasCurtainWarp
+    ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
+    : poly;
 
       // 2) Then warp by the outworks field (outer hull shaping).
       const warpedByOutworks = warpPolylineRadial(
