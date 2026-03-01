@@ -21,7 +21,11 @@
     <span class="label">Seed:</span>
     <input id="seed" type="number" min="1" step="1" value="1331" />
     <span class="label">Bastions:</span>
-    <input id="bastions" type="number" min="5" max="14" step="1" value="8" />
+    <select id="bastionDensity">
+      <option value="low">Low</option>
+      <option value="medium" selected>Medium</option>
+      <option value="high">High</option>
+    </select>
     <span class="label">Gates:</span>
     <input id="gates" type="number" min="2" max="6" step="1" value="3" />
     <span class="label">Water:</span>
