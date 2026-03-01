@@ -64,7 +64,7 @@ function logBuildOnce(seed, width, height, site) {
   console.info("[EMCG] First run params:", { seed, width, height, site });
 }
 
-export function generate(seed, bastionCount, gateCount, width, height, site = {}) {
+export function generate(seed, bastionDensity, bastionTargetN, gateCount, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
 
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
@@ -75,9 +75,29 @@ export function generate(seed, bastionCount, gateCount, width, height, site = {}
     w: width,
     h: height,
     site: { water: waterKind, hasDock },
-    params: { bastions: bastionCount, gates: gateCount },
+    params: {
+      bastions: bastionTargetN,      // keep existing stages working
+      gates: gateCount,
+      bastionDensity,               // new, for audits/debug
+      bastionSoft: null,            // filled below
+    },
   });
+  // Soft constraint policy for future delete+reinsert logic.
+  // Stage 110 can treat these as preferences, not invariants.
+  const soft = (() => {
+    const d = String(bastionDensity || "medium");
+    const targetN = Math.max(1, bastionTargetN | 0);
   
+    // Budget: how many delete+reinsert attempts we allow before accepting fewer bastions.
+    const reinsertBudget = (d === "high") ? 12 : (d === "low" ? 4 : 8);
+  
+    // Minimum acceptable final count ratio.
+    const minFinalRatio = (d === "high") ? 0.75 : (d === "low" ? 0.80 : 0.75);
+  
+    return { targetN, reinsertBudget, minFinalRatio };
+  })();
+  
+  ctx.params.bastionSoft = soft;  
   // Provide warp parameters to stages via ctx.params (read by Stage 20 / Stage 110).
   ctx.params.warpFortParams = WARP_FORT;
   ctx.params.warpDebugEnabled = WARP_FORT.debug;
