@@ -405,7 +405,6 @@ export function runWarpFieldStage({
   
     // Outward normal, oriented away from centre.
     let nrm = unit({ x: -tHat.y, y: tHat.x });
-    const toC = { x: P.x - centrePt.x, y: P.y - centrePt.y };
     if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
   
     // Size heuristics (deterministic). Tuned to your placement spacing.
