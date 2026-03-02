@@ -525,10 +525,7 @@ export function runWarpFieldStage({
         2,
         warpOutworks.clampMaxMargin
       );
-      if (B0 && B1 && clamped.length === 5) {
-        clamped[0] = B0;
-        clamped[4] = B1;
-      }
+
       // Hard invariant: outworks must remain inside the outer hull polygon.
       // Deterministic “shrink-to-fit” along centre rays.
       let clampedSafe = clamped;
@@ -537,10 +534,6 @@ export function runWarpFieldStage({
         const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
         const m = baseM + bastionOuterInset;
         clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
-        if (B0 && B1 && clampedSafe.length === 5) {
-          clampedSafe[0] = B0;
-          clampedSafe[4] = B1;
-        }
       }
       
       return clampedSafe;
@@ -597,13 +590,10 @@ export function runWarpFieldStage({
         return poly;
       }
       const res = repairBastionStrictConvex(poly, centre, outerHullLoop, margin, K);
-      
+            
       if (!res.ok) {
-        // Deterministic fallback: triangle uses base endpoints and tip from the 5-point layout.
-        // res.poly is still ordered as [B0, S0, T, S1, B1] (or reversed earlier by ensureWinding).
-        const tri = [res.poly[0], res.poly[2], res.poly[4]];
-        convexStats.push({ idx, ok: true, iters: res.iters, note: "fallback_triangle" });
-        return tri;
+        convexStats.push({ idx, ok: false, iters: res.iters, note: res.note });
+        return res.poly; // keep 5 points for sliding
       }
       
       convexStats.push({ idx, ok: true, iters: res.iters, note: res.note });
@@ -639,7 +629,7 @@ export function runWarpFieldStage({
     
       // Use convexStats as the failure signal (extend later to include visibility).
       const failed = convexStats
-        .filter(s => s.note === "fallback_triangle")
+        .filter(s => !s.ok)
         .map(s => s.idx)
         .sort((a, b) => a - b);
     
@@ -648,8 +638,6 @@ export function runWarpFieldStage({
       const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters) ? ctx.params.warpFort.bastionConvexIters : 121;
     
       function warpClampRepairOne(poly5) {
-        const B0 = poly5[0];
-        const B1 = poly5[4];
         const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
         
         const warpedByCurtain = hasCurtainWarp
@@ -668,16 +656,13 @@ export function runWarpFieldStage({
           2,
           warpOutworks.clampMaxMargin
         );
-        clamped[0] = B0;
-        clamped[4] = B1;
         
         let clampedSafe = clamped;
         if (outerHullLoop) {
           const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
           const m = baseM + bastionOuterInset;
           clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
-          clampedSafe[0] = B0;
-          clampedSafe[4] = B1;
+
         }
     
         let poly2 = ensureWinding(clampedSafe, wantCCW);
