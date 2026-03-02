@@ -5,6 +5,7 @@
 
 import { offsetRadial } from "../../geom/offset.js";
 import { snapGatesToWall } from "../generate_helpers/snap.js";
+import { resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
 
 /**
  * @param {object} args
@@ -68,10 +69,8 @@ export function runWarpDependentFortGeometryStage({
       ? resampleClosedPolyline(wallForMoatworksRaw, moatN)
       : wallForMoatworksRaw;
   
-  const ditchOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth);
-  const ditchInner = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
-const glacisOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth + glacisWidth);
-  const ditchInner = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
+  const ditchOuter  = offsetRadial(wallForMoatworks, cx, cy, ditchWidth);
+  const ditchInner  = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
   const glacisOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth + glacisWidth);
   
   // Rings are also fort geometry; keep them consistent with the visible wall trace.
