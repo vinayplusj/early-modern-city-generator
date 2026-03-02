@@ -234,8 +234,8 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
   }
 
   const bastionBaseLen = dist(poly5[0], poly5[4]);
-  const epsCross = Math.max(1e-3, (bastionBaseLen * bastionBaseLen) * 1e-1);
-  const epsArea = Math.max(1e-6, (bastionBaseLen * bastionBaseLen) * 1e-5);
+  const epsCross = Math.max(1e-3, (bastionBaseLen * bastionBaseLen) * 1e-4);
+  const epsArea = Math.max(1e-6, (bastionBaseLen * bastionBaseLen) * 1e-6);
 
   let cur = clampBastionMovablesInsideOuter(poly5, centrePt, outerPoly, margin);
 
