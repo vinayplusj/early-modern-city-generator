@@ -195,6 +195,52 @@ export function runWarpFieldStage({
   const wallCurtainForDraw = (Array.isArray(wallCurtainForDrawRaw) && wallCurtainForDrawRaw.length >= 3)
     ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
     : wallCurtainForDrawRaw;
+  function unit(v) {
+    const L = Math.hypot(v.x, v.y);
+    if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
+    return { x: v.x / L, y: v.y / L };
+  }
+  function add(p, v, s) { return { x: p.x + v.x * s, y: p.y + v.y * s }; }
+  
+  // Tangent derived from sampled curtain points (matches maxima indices deterministically).
+  function tangentFromSamples(samples, k) {
+    const n = samples.length;
+    const a = samples[(k - 1 + n) % n];
+    const b = samples[(k + 1) % n];
+    return unit({ x: b.x - a.x, y: b.y - a.y });
+  }
+  
+  // Build a 5-point bastion anchored on the sampled curtain at index k.
+  // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).
+  function makePentBastionAtSampleIndex(k, placement) {
+    const P = placement.curtainPtsS[k];
+  
+    const tan = tangentFromSamples(placement.curtainPtsS, k);
+    let nrm = unit({ x: -tan.y, y: tan.x });
+  
+    // orient outward (away from centre)
+    const toC = { x: P.x - cx, y: P.y - cy };
+    if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
+  
+    const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
+    const shoulderIn = 0.55 * baseHalf;
+  
+    const c = placement.clearance?.[k];
+    const tipLen = Math.max(
+      12,
+      Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing)
+    );
+  
+    const B0 = add(P, tan, -baseHalf);
+    const B1 = add(P, tan, +baseHalf);
+  
+    const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
+    const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
+  
+    const T = add(P, nrm, tipLen);
+  
+    return [B0, S0, T, S1, B1];
+  }
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
@@ -272,37 +318,6 @@ export function runWarpFieldStage({
       const a = samples[(k - 1 + n) % n];
       const b = samples[(k + 1) % n];
       return unit({ x: b.x - a.x, y: b.y - a.y });
-    }
-    
-    function makePentBastionAtSampleIndex(k, placement) {
-      const P = placement.curtainPtsS[k];
-      const tan = tangentFromSamples(placement.curtainPtsS, k);
-      let nrm = unit({ x: -tan.y, y: tan.x });
-    
-      // orient outward (away from centre)
-      const toC = { x: P.x - cx, y: P.y - cy };
-      if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
-    
-      // Size controls: tie to minSpacing and local clearance
-      const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
-      const shoulderIn = 0.55 * baseHalf;
-    
-      const c = placement.clearance?.[k];
-      const tipLen = Math.max(
-        12,
-        Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing)
-      );
-    
-      const B0 = add(P, tan, -baseHalf);
-      const B1 = add(P, tan, +baseHalf);
-    
-      const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
-      const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-    
-      const T = add(P, nrm, tipLen);
-    
-      // Order expected by repairBastionStrictConvex: [B0, S0, T, S1, B1]
-      return [B0, S0, T, S1, B1];
     }
     
     // Replace upstream bastion polys if we have maxima.
