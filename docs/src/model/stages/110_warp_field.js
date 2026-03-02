@@ -240,8 +240,17 @@ export function runWarpFieldStage({
     function build(baseHalf, tipLen) {
       const shoulderIn = 0.55 * baseHalf;
   
-      const B0 = add(P, tan, -baseHalf);
-      const B1 = add(P, tan, +baseHalf);
+      const pts = placement.curtainPtsS;
+      const n = pts.length;
+      
+      // sampleStep exists on placement (you set it when building bastionPlacement)
+      const step = Number.isFinite(placement.sampleStep) ? placement.sampleStep : 10;
+      
+      // Convert baseHalf (map units) to a sample index offset
+      const d = Math.max(1, Math.round(baseHalf / step));
+      
+      const B0 = pts[(k - d + n) % n];
+      const B1 = pts[(k + d) % n];
   
       const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
       const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
@@ -514,7 +523,8 @@ export function runWarpFieldStage({
         2,
         warpOutworks.clampMaxMargin
       );
-
+      clamped[0] = B0;
+      clamped[4] = B1;
       // Hard invariant: outworks must remain inside the outer hull polygon.
       // Deterministic “shrink-to-fit” along centre rays.
       let clampedSafe = clamped;
@@ -523,6 +533,8 @@ export function runWarpFieldStage({
         const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
         const m = baseM + bastionOuterInset;
         clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
+        clampedSafe[0] = B0;
+        clampedSafe[4] = B1;
       }
       
       return clampedSafe;
@@ -561,10 +573,18 @@ export function runWarpFieldStage({
 
     const convexStats = [];
     bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
-      if (!Array.isArray(poly) || poly.length !== 5) {
-        convexStats.push({ idx, ok: false, iters: 0, note: "skip_non5" });
-        return poly;
-      }
+    if (!Array.isArray(poly) || poly.length < 3) {
+      refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_invalid" });
+      continue;
+    }
+    if (poly.length === 3) {
+      refreshed.push({ idx: i, ok: true, iters: 0, note: "fallback_triangle" });
+      continue;
+    }
+    if (poly.length !== 5) {
+      refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_non5" });
+      continue;
+    }
       poly = ensureWinding(poly, wantCCW);
       if (Math.abs(polySignedArea(poly)) < 1e-3) {
         convexStats.push({ idx, ok: false, iters: 0, note: "degenerate_area" });
@@ -622,6 +642,8 @@ export function runWarpFieldStage({
       const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters) ? ctx.params.warpFort.bastionConvexIters : 121;
     
       function warpClampRepairOne(poly5) {
+        const B0 = poly5[0];
+        const B1 = poly5[4];
         const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
         
         const warpedByCurtain = hasCurtainWarp
@@ -640,12 +662,16 @@ export function runWarpFieldStage({
           2,
           warpOutworks.clampMaxMargin
         );
-    
+        clamped[0] = B0;
+        clamped[4] = B1;
+        
         let clampedSafe = clamped;
         if (outerHullLoop) {
           const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
           const m = baseM + bastionOuterInset;
           clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
+          clampedSafe[0] = B0;
+          clampedSafe[4] = B1;
         }
     
         let poly2 = ensureWinding(clampedSafe, wantCCW);
