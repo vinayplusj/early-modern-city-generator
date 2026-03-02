@@ -42,19 +42,32 @@ export function runWarpDependentFortGeometryStage({
   let ditchWidth = fortR * 0.035;
   let glacisWidth = fortR * 0.08;
   ctx.params.minWallClear = ditchWidth * 1.25;
-  
-  // wallWarped is now the already-warped-and-clamped CURTAIN wall from Stage 110.
-  // Do not warp wallBase again here.
-  const wallBaseForDraw = (Array.isArray(wallWarped) && wallWarped.length >= 3)
+
+  // Curtain wall (pre-bastion) is wallWarped.
+  // Composite wall (with bastions) is ctx.state.warp.wallForDraw when Stage 110 built it.
+  const wallCurtainForDraw = (Array.isArray(wallWarped) && wallWarped.length >= 3)
     ? wallWarped
     : wallBase;
-
-  const ditchOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth);
-  const ditchInner = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth * 0.35);
-  const glacisOuter = offsetRadial(wallBaseForDraw, cx, cy, ditchWidth + glacisWidth);
-
-  const ring = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.06);
-  const ring2 = offsetRadial(wallBaseForDraw, cx, cy, -fortR * 0.13);
+  
+  const wallCompositeForDraw =
+    (ctx?.state?.warp?.wallForDraw && Array.isArray(ctx.state.warp.wallForDraw) && ctx.state.warp.wallForDraw.length >= 3)
+      ? ctx.state.warp.wallForDraw
+      : null;
+  
+  // Strategy A: ditches adapt to bastions => build moatworks off the composite wall when available.
+  const wallForMoatworks = wallCompositeForDraw || wallCurtainForDraw;
+  
+  const ditchOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth);
+  const ditchInner = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
+  const glacisOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth + glacisWidth);
+  
+  // Rings are also fort geometry; keep them consistent with the visible wall trace.
+  // If this causes artefacts, switch these two back to wallCurtainForDraw.
+  const ring = offsetRadial(wallForMoatworks, cx, cy, -fortR * 0.06);
+  const ring2 = offsetRadial(wallForMoatworks, cx, cy, -fortR * 0.13);
+  
+  // Preserve for return payload naming
+  const wallBaseForDraw = wallCurtainForDraw;
 
   // Gate snapping must follow the wall that will be rendered as the "final" trace.
   // Prefer the Stage 110 composite wall (warp.wallForDraw). Fall back to the warped curtain wall.
