@@ -55,9 +55,10 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   ctx.params.roadHardAvoidWater = true;
   ctx.params.roadHardAvoidCitadel = false;
 
-  let ditchOuter = offsetRadial(wallBase, cx, cy, ditchWidth);
-  let ditchInner = offsetRadial(wallBase, cx, cy, ditchWidth * 0.35);
-  let glacisOuter = offsetRadial(wallBase, cx, cy, ditchWidth + glacisWidth);
+  // Remove or disable moatworks here. Stage 120 will build final moatworks.
+  let ditchOuter = null;
+  let ditchInner = null;
+  let glacisOuter = null;
 
   const centre = centroid(footprint);
 
