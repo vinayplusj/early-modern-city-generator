@@ -179,6 +179,7 @@ export function runWarpFieldStage({
   let wallWarpedSafe = wallWarped;
   const centre = { x: cx, y: cy };
   let bastionsBuiltFromMaxima = false;
+  if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = bastionsBuiltFromMaxima;
   wallWarpedSafe = clampCurtainPostConditions({
     wallWarped: wallWarpedSafe,
     centre,
@@ -329,7 +330,15 @@ export function runWarpFieldStage({
         .map(m => m.i)
         .filter(k => Number.isFinite(k) && k >= 0 && k < bastionPlacement.curtainPtsS.length)
         .map(k => makePentBastionAtSampleIndex(k, bastionPlacement));
-    
+
+      if (built.length > 0) {
+        bastionPolysUsed.length = 0;
+        for (const poly of built) bastionPolysUsed.push(poly);
+      
+        bastionsBuiltFromMaxima = true; // must be the function-scope variable
+        if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = true;
+        if (warpOutworks) warpOutworks.bastionsBuiltCount = built.length;
+      }
       if (built.length) {
         bastionPolysUsed.length = 0;               // in case it was an array reference
         for (const poly of built) bastionPolysUsed.push(poly);
@@ -491,15 +500,12 @@ export function runWarpFieldStage({
     ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
     : poly;
 
-      // 2) Then warp by the outworks field (outer hull shaping).
-      const warpedByOutworks = warpPolylineRadial(
-        warpedByCurtain,
-        centrePt,
-        warpOutworks.field,
-        warpOutworks.params
-      );
+    // 2) Then warp by the outworks field (outer hull shaping).
+    const warpedByOutworks = bastionsBuiltFromMaxima
+      ? warpedByCurtain // do not shear maxima-built geometry on first pass
+      : warpPolylineRadial(warpedByCurtain, centrePt, warpOutworks.field, warpOutworks.params);
 
-      // 3) Clamp into the allowed radial band.
+    // 3) Clamp into the allowed radial band.
       const clamped = clampPolylineRadial(
         warpedByOutworks,
         centrePt,
@@ -533,14 +539,16 @@ export function runWarpFieldStage({
       }
     : warpOutworks;
   
-  bastionPolysWarpedSafe = shrinkOutworksToFit({
-    bastionPolysWarpedSafe,
-    centre,
-    wallCurtainForDraw,
-    curtainMinField,
-    outerHullLoop,
-    warpOutworks: warpOutworksForBastions,
-  });
+  if (!bastionsBuiltFromMaxima) {
+    bastionPolysWarpedSafe = shrinkOutworksToFit({
+      bastionPolysWarpedSafe,
+      centre,
+      wallCurtainForDraw,
+      curtainMinField,
+      outerHullLoop,
+      warpOutworks: warpOutworksForBastions,
+    });
+  }
   // ---------------- Strict convexity repair (post-warp, post-shrink) ----------------
   // Enforce: all turns match expectedSign AND no near-collinear turns.
   // Only affects 5-point bastions: [B0, S0, T, S1, B1].
