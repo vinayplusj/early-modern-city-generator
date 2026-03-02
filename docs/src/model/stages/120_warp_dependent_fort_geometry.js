@@ -55,9 +55,22 @@ export function runWarpDependentFortGeometryStage({
       : null;
   
   // Strategy A: ditches adapt to bastions => build moatworks off the composite wall when available.
-  const wallForMoatworks = wallCompositeForDraw || wallCurtainForDraw;
+  const wallForMoatworksRaw = wallCompositeForDraw || wallCurtainForDraw;
+  
+  // Densify to avoid chord “shortcuts” across tight curvature at bastion shoulders/tips.
+  const moatN =
+    Number.isFinite(ctx?.params?.warpFort?.moatVertexN)
+      ? Math.max(120, ctx.params.warpFort.moatVertexN | 0)
+      : 360;
+  
+  const wallForMoatworks =
+    (Array.isArray(wallForMoatworksRaw) && wallForMoatworksRaw.length >= 3)
+      ? resampleClosedPolyline(wallForMoatworksRaw, moatN)
+      : wallForMoatworksRaw;
   
   const ditchOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth);
+  const ditchInner = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
+const glacisOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth + glacisWidth);
   const ditchInner = offsetRadial(wallForMoatworks, cx, cy, ditchWidth * 0.35);
   const glacisOuter = offsetRadial(wallForMoatworks, cx, cy, ditchWidth + glacisWidth);
   
