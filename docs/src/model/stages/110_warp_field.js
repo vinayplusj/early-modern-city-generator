@@ -10,7 +10,6 @@ import {
   sampleClosedPolylineByArcLength,
   computeCurtainClearanceProfile,
   pickClearanceMaximaWithSpacing,
-  nearestClosedPolylineTangent,
 } from "../generate_helpers/warp_stage.js";
 import { warpPolylineRadial, buildWarpField } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
@@ -469,12 +468,6 @@ export function runWarpFieldStage({
     return best;
   }
   
-  function unit(v) {
-    const L = Math.hypot(v.x, v.y);
-    if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
-    return { x: v.x / L, y: v.y / L };
-  }
-  
   // Apply outworks warp to bastion polygons (two-target system).
   let bastionPolysWarpedSafe = bastionPolysUsed;
   
@@ -562,7 +555,16 @@ export function runWarpFieldStage({
         return poly;
       }
       const res = repairBastionStrictConvex(poly, centre, outerHullLoop, margin, K);
-      convexStats.push({ idx, ok: res.ok, iters: res.iters, note: res.note });
+      
+      if (!res.ok) {
+        // Deterministic fallback: triangle uses base endpoints and tip from the 5-point layout.
+        // res.poly is still ordered as [B0, S0, T, S1, B1] (or reversed earlier by ensureWinding).
+        const tri = [res.poly[0], res.poly[2], res.poly[4]];
+        convexStats.push({ idx, ok: true, iters: res.iters, note: "fallback_triangle" });
+        return tri;
+      }
+      
+      convexStats.push({ idx, ok: true, iters: res.iters, note: res.note });
       return res.poly;
     });
 
@@ -594,7 +596,10 @@ export function runWarpFieldStage({
       const usedMax = new Set();
     
       // Use convexStats as the failure signal (extend later to include visibility).
-      const failed = convexStats.filter(s => !s.ok).map(s => s.idx).sort((a, b) => a - b);
+      const failed = convexStats
+        .filter(s => s.note === "fallback_triangle")
+        .map(s => s.idx)
+        .sort((a, b) => a - b);
     
       // Local helper to re-run the same warp/clamp/hull/repair pipeline on a candidate poly.
       const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
@@ -602,12 +607,14 @@ export function runWarpFieldStage({
     
       function warpClampRepairOne(poly5) {
         const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
-    
+        
         const warpedByCurtain = hasCurtainWarp
           ? warpPolylineRadial(poly5, centrePt, warpWall.field, warpWall.params)
           : poly5;
-    
-        const warpedByOutworks = warpPolylineRadial(warpedByCurtain, centrePt, warpOutworks.field, warpOutworks.params);
+        
+        const warpedByOutworks = bastionsBuiltFromMaxima
+          ? warpedByCurtain
+          : warpPolylineRadial(warpedByCurtain, centrePt, warpOutworks.field, warpOutworks.params);
     
         const clamped = clampPolylineRadial(
           warpedByOutworks,
@@ -625,13 +632,15 @@ export function runWarpFieldStage({
           clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
         }
     
-        const res = repairBastionStrictConvex(clampedSafe, centrePt, outerHullLoop, margin, K);
+        let poly2 = ensureWinding(clampedSafe, wantCCW);
+        if (Math.abs(polySignedArea(poly2)) < 1e-3) return { ok: false, poly: poly2 };
+        const res = repairBastionStrictConvex(poly2, centrePt, outerHullLoop, margin, K);
         return { ok: res.ok, poly: res.poly };
       }
     
       for (const idx of failed) {
         const cur = bastionPolysWarpedSafe[idx];
-        if (!Array.isArray(cur) || cur.length !== 5) continue;
+        if (!Array.isArray(cur) || cur.length < 3) continue;
     
         // Project current bastion to a nearby s value on the sampled curtain.
         const c = bastionCentroid(cur);
@@ -656,7 +665,7 @@ export function runWarpFieldStage({
     
           if (kSample < 0 || kSample >= placement.curtainPtsS.length) continue;
     
-          const candPoly = makePentBastionAtSampleIndex(kSample, placement, wallCurtainForDraw, centrePt);
+          const candPoly = makePentBastionAtSampleIndex(kSample, placement);
           const out = warpClampRepairOne(candPoly);
     
           if (out.ok) {
@@ -678,13 +687,38 @@ export function runWarpFieldStage({
         const refreshed = [];
         for (let i = 0; i < bastionPolysWarpedSafe.length; i++) {
           const poly = bastionPolysWarpedSafe[i];
-          if (!Array.isArray(poly) || poly.length !== 5) {
+          if (!Array.isArray(poly) || poly.length < 3) {
+            refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_invalid" });
+            continue;
+          }
+          if (poly.length === 3) {
+            // Already a fallback triangle; keep it as a valid end state.
+            refreshed.push({ idx: i, ok: true, iters: 0, note: "fallback_triangle" });
+            continue;
+          }
+          if (poly.length !== 5) {
             refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_non5" });
             continue;
           }
-          const res = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
-          refreshed.push({ idx: i, ok: res.ok, iters: res.iters, note: "post_slide_check" });
-          bastionPolysWarpedSafe[i] = res.poly;
+        let poly2 = ensureWinding(poly, wantCCW);
+        
+        if (Math.abs(polySignedArea(poly2)) < 1e-3) {
+          refreshed.push({ idx: i, ok: false, iters: 0, note: "degenerate_area" });
+          bastionPolysWarpedSafe[i] = poly2;
+          continue;
+        }
+        
+        const res = repairBastionStrictConvex(poly2, centrePt, outerHullLoop, margin, K);
+        
+        if (!res.ok) {
+          const tri = [res.poly[0], res.poly[2], res.poly[4]];
+          refreshed.push({ idx: i, ok: true, iters: res.iters, note: "fallback_triangle" });
+          bastionPolysWarpedSafe[i] = tri;
+          continue;
+        }
+        
+        refreshed.push({ idx: i, ok: true, iters: res.iters, note: "post_slide_check" });
+        bastionPolysWarpedSafe[i] = res.poly;
         }
         warpOutworks.bastionConvex = refreshed;
       }
