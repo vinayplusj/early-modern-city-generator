@@ -227,31 +227,47 @@ export function runWarpFieldStage({
   // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).
   function makePentBastionAtSampleIndex(k, placement) {
     const P = placement.curtainPtsS[k];
-    
-    // Radial frame (matches clampPolylineInsidePolyAlongRays)
     const out = unit({ x: P.x - cx, y: P.y - cy });
-    const tan = unit({ x: -out.y, y: out.x }); // perpendicular to radial
-    const nrm = out; // outward is radial
-    
-    const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
-    const shoulderIn = 0.55 * baseHalf;
-    
+    const tan = unit({ x: -out.y, y: out.x });
+    const nrm = out;
+  
     const c = placement.clearance?.[k];
-    const tipLen = Math.max(
-      12,
-      Math.min(Number.isFinite(c) ? 0.75 * c : 40, 0.60 * placement.minSpacing)
-    );
-    
-    const B0 = add(P, tan, -baseHalf);
-    const B1 = add(P, tan, +baseHalf);
-    
-    const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
-    const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-    
-    const T = add(P, nrm, tipLen);
-    
-    const poly = [B0, S0, T, S1, B1];
-    return ensureWinding(poly, wantCCW);
+    const minSpacing = placement.minSpacing;
+  
+    const baseHalf0 = Math.max(6, 0.20 * minSpacing);
+    const tipLen0 = Math.max(10, Math.min(Number.isFinite(c) ? 0.70 * c : 40, 0.55 * minSpacing));
+  
+    function build(baseHalf, tipLen) {
+      const shoulderIn = 0.55 * baseHalf;
+  
+      const B0 = add(P, tan, -baseHalf);
+      const B1 = add(P, tan, +baseHalf);
+  
+      const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
+      const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
+  
+      const T = add(P, nrm, tipLen);
+  
+      return ensureWinding([B0, S0, T, S1, B1], wantCCW);
+    }
+  
+    // Deterministic max-fit search (shrinks only)
+    const tipScales = [1.00, 0.85, 0.72, 0.60];
+    const baseScales = [1.00, 0.85, 0.72];
+  
+    for (const ts of tipScales) {
+      for (const bs of baseScales) {
+        const poly = build(baseHalf0 * bs, tipLen0 * ts);
+  
+        if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
+  
+        const res = repairBastionStrictConvex(poly, centre, outerHullLoop, /*margin*/ 10, /*K*/ 121);
+        if (res.ok) return res.poly;
+      }
+    }
+  
+    // If nothing worked, return the “best effort” base candidate (will be triangle-fallback later).
+    return build(baseHalf0, tipLen0);
   }
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
