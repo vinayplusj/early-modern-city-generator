@@ -208,13 +208,6 @@ export function runWarpFieldStage({
   }
   function add(p, v, s) { return { x: p.x + v.x * s, y: p.y + v.y * s }; }
   
-  // Tangent derived from sampled curtain points (matches maxima indices deterministically).
-  function tangentFromSamples(samples, k) {
-    const n = samples.length;
-    const a = samples[(k - 1 + n) % n];
-    const b = samples[(k + 1) % n];
-    return unit({ x: b.x - a.x, y: b.y - a.y });
-  }
   function polySignedArea(poly) {
     let a = 0;
     for (let i = 0; i < poly.length; i++) {
@@ -235,31 +228,29 @@ export function runWarpFieldStage({
   // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).
   function makePentBastionAtSampleIndex(k, placement) {
     const P = placement.curtainPtsS[k];
-  
-    const tan = tangentFromSamples(placement.curtainPtsS, k);
-    let nrm = unit({ x: -tan.y, y: tan.x });
-  
-    // orient outward (away from centre)
-    const toC = { x: P.x - cx, y: P.y - cy };
-    if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
-  
+    
+    // Radial frame (matches clampPolylineInsidePolyAlongRays)
+    const out = unit({ x: P.x - cx, y: P.y - cy });
+    const tan = unit({ x: -out.y, y: out.x }); // perpendicular to radial
+    const nrm = out; // outward is radial
+    
     const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
     const shoulderIn = 0.55 * baseHalf;
-  
+    
     const c = placement.clearance?.[k];
     const tipLen = Math.max(
       12,
-      Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing)
+      Math.min(Number.isFinite(c) ? 0.75 * c : 40, 0.60 * placement.minSpacing)
     );
-  
+    
     const B0 = add(P, tan, -baseHalf);
     const B1 = add(P, tan, +baseHalf);
-  
+    
     const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
     const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-  
+    
     const T = add(P, nrm, tipLen);
-  
+    
     const poly = [B0, S0, T, S1, B1];
     return ensureWinding(poly, wantCCW);
   }
