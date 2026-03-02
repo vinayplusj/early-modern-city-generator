@@ -260,7 +260,8 @@ export function runWarpFieldStage({
   
     const T = add(P, nrm, tipLen);
   
-    return [B0, S0, T, S1, B1];
+    const poly = [B0, S0, T, S1, B1];
+    return ensureWinding(poly, wantCCW);
   }
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
@@ -324,22 +325,6 @@ export function runWarpFieldStage({
   
     if (warpOutworks) warpOutworks.bastionPlacement = bastionPlacement;
     if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = bastionsBuiltFromMaxima;
-    // ---------------- Initial bastions from maxima slots (new method) ----------------
-    // We build bastion polygons directly on the FINAL curtain (wallCurtainForDraw).
-    // Because these polygons are already on the warped curtain, we must NOT apply the curtain warp to them again.    
-    function unit(v) {
-      const L = Math.hypot(v.x, v.y);
-      if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
-      return { x: v.x / L, y: v.y / L };
-    }
-    function add(p, v, s) { return { x: p.x + v.x * s, y: p.y + v.y * s }; }
-    
-    function tangentFromSamples(samples, k) {
-      const n = samples.length;
-      const a = samples[(k - 1 + n) % n];
-      const b = samples[(k + 1) % n];
-      return unit({ x: b.x - a.x, y: b.y - a.y });
-    }
     
     // Replace upstream bastion polys if we have maxima.
     if (bastionPlacement?.maxima?.length && bastionNDesired > 0) {
@@ -358,11 +343,6 @@ export function runWarpFieldStage({
         bastionsBuiltFromMaxima = true; // must be the function-scope variable
         if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = true;
         if (warpOutworks) warpOutworks.bastionsBuiltCount = built.length;
-      }
-      if (built.length) {
-        bastionPolysUsed.length = 0;               // in case it was an array reference
-        for (const poly of built) bastionPolysUsed.push(poly);
-        bastionsBuiltFromMaxima = true;
       }
     }
   }
@@ -630,7 +610,7 @@ export function runWarpFieldStage({
       const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters) ? ctx.params.warpFort.bastionConvexIters : 121;
     
       function warpClampRepairOne(poly5) {
-        const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params);
+        const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
     
         const warpedByCurtain = hasCurtainWarp
           ? warpPolylineRadial(poly5, centrePt, warpWall.field, warpWall.params)
@@ -687,8 +667,6 @@ export function runWarpFieldStage({
     
           const candPoly = makePentBastionAtSampleIndex(kSample, placement, wallCurtainForDraw, centrePt);
           const out = warpClampRepairOne(candPoly);
-          const poly = [B0, S0, T, S1, B1];
-          return ensureWinding(poly, wantCCW);
     
           if (out.ok) {
             bastionPolysWarpedSafe[idx] = out.poly;
