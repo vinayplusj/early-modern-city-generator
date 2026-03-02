@@ -196,6 +196,11 @@ export function runWarpFieldStage({
   const wallCurtainForDraw = (Array.isArray(wallCurtainForDrawRaw) && wallCurtainForDrawRaw.length >= 3)
     ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
     : wallCurtainForDrawRaw;
+  const curtainArea = (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
+    ? polySignedArea(wallCurtainForDraw)
+    : 1;
+  
+  const wantCCW = curtainArea > 0;
   function unit(v) {
     const L = Math.hypot(v.x, v.y);
     if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
@@ -210,7 +215,22 @@ export function runWarpFieldStage({
     const b = samples[(k + 1) % n];
     return unit({ x: b.x - a.x, y: b.y - a.y });
   }
+  function polySignedArea(poly) {
+    let a = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i];
+      const q = poly[(i + 1) % poly.length];
+      a += (p.x * q.y - q.x * p.y);
+    }
+    return 0.5 * a;
+  }
   
+  function ensureWinding(poly, wantCCW) {
+    const a = polySignedArea(poly);
+    const isCCW = a > 0;
+    if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
+    return poly;
+  }
   // Build a 5-point bastion anchored on the sampled curtain at index k.
   // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).
   function makePentBastionAtSampleIndex(k, placement) {
@@ -565,6 +585,11 @@ export function runWarpFieldStage({
         convexStats.push({ idx, ok: false, iters: 0, note: "skip_non5" });
         return poly;
       }
+      poly = ensureWinding(poly, wantCCW);
+      if (Math.abs(polySignedArea(poly)) < 1e-3) {
+        convexStats.push({ idx, ok: false, iters: 0, note: "degenerate_area" });
+        return poly;
+      }
       const res = repairBastionStrictConvex(poly, centre, outerHullLoop, margin, K);
       convexStats.push({ idx, ok: res.ok, iters: res.iters, note: res.note });
       return res.poly;
@@ -662,6 +687,8 @@ export function runWarpFieldStage({
     
           const candPoly = makePentBastionAtSampleIndex(kSample, placement, wallCurtainForDraw, centrePt);
           const out = warpClampRepairOne(candPoly);
+          const poly = [B0, S0, T, S1, B1];
+          return ensureWinding(poly, wantCCW);
     
           if (out.ok) {
             bastionPolysWarpedSafe[idx] = out.poly;
