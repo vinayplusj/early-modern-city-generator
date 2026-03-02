@@ -270,8 +270,7 @@ export function runWarpFieldStage({
   
         if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
   
-        const res = repairBastionStrictConvex(poly, centre, outerHullLoop, /*margin*/ 10, /*K*/ 121);
-        if (res.ok) return res.poly;
+        return poly;
       }
     }
   
@@ -503,7 +502,10 @@ export function runWarpFieldStage({
   
   bastionPolysWarpedSafe = bastionPolysUsed.map((poly) => {
       if (!Array.isArray(poly) || poly.length < 3) return poly;
-
+      // Preserve base endpoints for 5-point bastions: [B0, S0, T, S1, B1]
+      const B0 = (poly.length === 5) ? poly[0] : null;
+      const B1 = (poly.length === 5) ? poly[4] : null;
+    
     // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
   const warpedByCurtain = hasCurtainWarp
     ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
@@ -523,8 +525,10 @@ export function runWarpFieldStage({
         2,
         warpOutworks.clampMaxMargin
       );
-      clamped[0] = B0;
-      clamped[4] = B1;
+      if (B0 && B1 && clamped.length === 5) {
+        clamped[0] = B0;
+        clamped[4] = B1;
+      }
       // Hard invariant: outworks must remain inside the outer hull polygon.
       // Deterministic “shrink-to-fit” along centre rays.
       let clampedSafe = clamped;
@@ -533,8 +537,10 @@ export function runWarpFieldStage({
         const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
         const m = baseM + bastionOuterInset;
         clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
-        clampedSafe[0] = B0;
-        clampedSafe[4] = B1;
+        if (B0 && B1 && clampedSafe.length === 5) {
+          clampedSafe[0] = B0;
+          clampedSafe[4] = B1;
+        }
       }
       
       return clampedSafe;
@@ -574,16 +580,16 @@ export function runWarpFieldStage({
     const convexStats = [];
     bastionPolysWarpedSafe = bastionPolysWarpedSafe.map((poly, idx) => {
     if (!Array.isArray(poly) || poly.length < 3) {
-      refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_invalid" });
-      continue;
+      convexStats.push({ idx, ok: false, iters: 0, note: "skip_invalid" });
+      return poly;
     }
     if (poly.length === 3) {
-      refreshed.push({ idx: i, ok: true, iters: 0, note: "fallback_triangle" });
-      continue;
+      convexStats.push({ idx, ok: true, iters: 0, note: "fallback_triangle" });
+      return poly;
     }
     if (poly.length !== 5) {
-      refreshed.push({ idx: i, ok: false, iters: 0, note: "skip_non5" });
-      continue;
+      convexStats.push({ idx, ok: false, iters: 0, note: "skip_non5" });
+      return poly;
     }
       poly = ensureWinding(poly, wantCCW);
       if (Math.abs(polySignedArea(poly)) < 1e-3) {
