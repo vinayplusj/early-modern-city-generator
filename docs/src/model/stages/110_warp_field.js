@@ -82,6 +82,7 @@ export function runWarpFieldStage({
   const bastionPolysUsed = Array.isArray(bastionPolys)
     ? bastionPolys.slice(0, bastionNDesired)
     : bastionPolys;
+  bastionsBuiltFromMaxima = true;
   // Extra inset (map units) to keep warped bastions further inside the outer hull.
   // Deterministic: purely parameter-driven.
   // Default chosen to be visibly effective without crushing geometry.
@@ -177,6 +178,7 @@ export function runWarpFieldStage({
   const wallWarped = (warpWall && warpWall.wallWarped) ? warpWall.wallWarped : null;
   let wallWarpedSafe = wallWarped;
   const centre = { x: cx, y: cy };
+  let bastionsBuiltFromMaxima = false;
   wallWarpedSafe = clampCurtainPostConditions({
     wallWarped: wallWarpedSafe,
     centre,
