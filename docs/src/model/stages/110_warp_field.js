@@ -256,12 +256,10 @@ export function runWarpFieldStage({
     };
   
     if (warpOutworks) warpOutworks.bastionPlacement = bastionPlacement;
+    if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = bastionsBuiltFromMaxima;
     // ---------------- Initial bastions from maxima slots (new method) ----------------
     // We build bastion polygons directly on the FINAL curtain (wallCurtainForDraw).
-    // Because these polygons are already on the warped curtain, we must NOT apply the curtain warp to them again.
-    
-    let bastionsBuiltFromMaxima = false;
-    
+    // Because these polygons are already on the warped curtain, we must NOT apply the curtain warp to them again.    
     function unit(v) {
       const L = Math.hypot(v.x, v.y);
       if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
@@ -462,39 +460,6 @@ export function runWarpFieldStage({
     return { x: v.x / L, y: v.y / L };
   }
   
-  // Deterministic “make a bastion” anchored at a sampled curtain point.
-  // Produces a 5-point polygon in the order expected by repairBastionStrictConvex:
-  // [B0, S0, T, S1, B1]
-  function makePentBastionAtSampleIndex(k, placement, wallCurtainForDraw, centrePt) {
-    const P = placement.curtainPtsS[k];
-  
-    // Tangent from the final curtain polyline.
-    const toC = { x: P.x - centrePt.x, y: P.y - centrePt.y };
-    const tan = { x: -toC.y, y: toC.x }; // perpendicular to radial, deterministic fallback
-    const tHat = unit(tan);
-  
-    // Outward normal, oriented away from centre.
-    let nrm = unit({ x: -tHat.y, y: tHat.x });
-    if (nrm.x * toC.x + nrm.y * toC.y < 0) nrm = { x: -nrm.x, y: -nrm.y };
-  
-    // Size heuristics (deterministic). Tuned to your placement spacing.
-    const baseHalf = Math.max(8, 0.22 * placement.minSpacing);
-    const shoulderIn = 0.55 * baseHalf;
-  
-    // Use local clearance as a bound for tip length.
-    const c = placement.clearance ? placement.clearance[k] : Infinity;
-    const tipLen = Math.max(12, Math.min(Number.isFinite(c) ? 0.60 * c : 40, 0.55 * placement.minSpacing));
-  
-    const B0 = { x: P.x - tHat.x * baseHalf, y: P.y - tHat.y * baseHalf };
-    const B1 = { x: P.x + tHat.x * baseHalf, y: P.y + tHat.y * baseHalf };
-  
-    const S0 = { x: P.x - tHat.x * shoulderIn + nrm.x * (0.25 * tipLen), y: P.y - tHat.y * shoulderIn + nrm.y * (0.25 * tipLen) };
-    const S1 = { x: P.x + tHat.x * shoulderIn + nrm.x * (0.25 * tipLen), y: P.y + tHat.y * shoulderIn + nrm.y * (0.25 * tipLen) };
-  
-    const T = { x: P.x + nrm.x * tipLen, y: P.y + nrm.y * tipLen };
-  
-    return [B0, S0, T, S1, B1];
-  }
   // Apply outworks warp to bastion polygons (two-target system).
   let bastionPolysWarpedSafe = bastionPolysUsed;
   
