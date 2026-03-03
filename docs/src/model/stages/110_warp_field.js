@@ -299,9 +299,6 @@ export function runWarpFieldStage({
 	const tipScales = [1.00, 0.85, 0.72, 0.60];
 	const widthExtraScales = [1.00, 0.85, 0.72]; // extra squeeze if needed
 	
-	// Precompute spacing cap once
-	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
-	
 	for (const ts of tipScales) {
 	  const tipLen = tipLen0 * ts;
 	
