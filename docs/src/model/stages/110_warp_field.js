@@ -21,6 +21,7 @@ import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js"
 import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
+import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
 
 /**
  * @param {object} args
@@ -200,128 +201,23 @@ export function runWarpFieldStage({
     : 1;
   
   const wantCCW = curtainArea > 0;
-  function unit(v) {
-    const L = Math.hypot(v.x, v.y);
-    if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
-    return { x: v.x / L, y: v.y / L };
-  }
-  function add(p, v, s) { return { x: p.x + v.x * s, y: p.y + v.y * s }; }
-  
-  function polySignedArea(poly) {
-    let a = 0;
-    for (let i = 0; i < poly.length; i++) {
-      const p = poly[i];
-      const q = poly[(i + 1) % poly.length];
-      a += (p.x * q.y - q.x * p.y);
-    }
-    return 0.5 * a;
-  }
-  
-  function ensureWinding(poly, wantCCW) {
-    const a = polySignedArea(poly);
-    const isCCW = a > 0;
-    if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
-    return poly;
-  }
-  // Build a 5-point bastion anchored on the sampled curtain at index k.
-  // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).	
-  function makePentBastionAtSampleIndex(k, placement) {
-    const P = placement.curtainPtsS[k];	
-    const out = unit({ x: P.x - cx, y: P.y - cy });
-    const tan = unit({ x: -out.y, y: out.x });	
-    const nrm = out;		
-    const c = placement.clearance?.[k];
-	const shoulderSpanToTip =
-	  Number.isFinite(ctx?.params?.warpFort?.bastionShoulderSpanToTip)
-	    ? Math.max(0.1, ctx.params.warpFort.bastionShoulderSpanToTip)
-	    : 0.55; // default: shoulders ~= 55% of tip length
-    // Local spacing for this maxima (fallback to global minSpacing if missing).
-    const localSpacing =
-      (placement.localSpacingByK && placement.localSpacingByK.has(k))
-        ? placement.localSpacingByK.get(k)
-        : placement.minSpacing;
-	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
-    // 1) Base size depends on local spacing only.
-    // Ensure base consumes well under half the neighbour gap to avoid overlap.
-    // 2) Tip length depends on clearance-to-outer-hull, with a fixed reserved buffer.
-    // This enforces a fixed bastion↔outerHull clearance (space for ditch + glacis).
-    const reserve = Number.isFinite(placement.bastionOuterClearance) ? placement.bastionOuterClearance : 0;
-
-    // If clearance is missing, fall back to a conservative default.
-    const tipLenFromClearance = Number.isFinite(c) ? Math.max(0, c - reserve) : 40;
-
-    // Hard safety: never let the tip reach the hull even if reserve is 0.
-    const tipLen0 = Math.max(10, Number.isFinite(c) ? Math.min(tipLenFromClearance, Math.max(0, c - 2)) : tipLenFromClearance);
-	// Shoulder half-span from tip length (ratio rule)
-	const shoulderInTarget = 0.5 * shoulderSpanToTip * tipLen0;
 	
-	// Final shoulder half-span
-	const shoulderInHardCap0 = 0.60 * tipLen0;
-	const shoulderIn0 = Math.max(6, Math.min(shoulderInTarget, shoulderInMaxFromSpacing, shoulderInHardCap0));
-	
-	// Keep B0/B1 sampling compatible with existing logic.
-	// Previously: shoulderIn = 0.55 * baseHalf  => baseHalf = shoulderIn / 0.55
-	const baseHalf0 = shoulderIn0 / 0.55;
-	  function build(baseHalf, shoulderIn, tipLen) {	
-
-      const pts = placement.curtainPtsS;
-      const n = pts.length;	
-	
-      // sampleStep exists on placement (you set it when building bastionPlacement)	
-      const step = Number.isFinite(placement.sampleStep) ? placement.sampleStep : 10;	
-	
-	// Convert baseHalf (map units) to a sample index offset	
-		let d = Math.max(1, Math.round(baseHalf / step));
-		
-		// Ensure base endpoints are not degenerate.
-		// Deterministic: increase d until B0-B1 chord exceeds a minimum or we hit a cap.
-		const minBaseChord = Math.max(2, 0.20 * shoulderIn);
-		const dMax = Math.min((n / 6) | 0, 12);
-		
-		let B0 = pts[(k - d + n) % n];
-		let B1 = pts[(k + d) % n];
-		
-		for (let tries = 0; tries < dMax; tries++) {
-		  const dx = B1.x - B0.x;
-		  const dy = B1.y - B0.y;
-		  const chord = Math.hypot(dx, dy);
-		  if (chord >= minBaseChord) break;
-		  d += 1;
-		  B0 = pts[(k - d + n) % n];
-		  B1 = pts[(k + d) % n];
-		}
-	const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
-    const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-    const T = add(P, nrm, tipLen);
-    return ensureWinding([B0, S0, T, S1, B1], wantCCW);
-	}
-	// Deterministic max-fit search (shrinks only)
-	const tipScales = [1.00, 0.85, 0.72, 0.60];
-	const widthExtraScales = [1.00, 0.85, 0.72]; // extra squeeze if needed
-	
-	for (const ts of tipScales) {
-	  const tipLen = tipLen0 * ts;
-	
-	  // Shoulder half-span derived from tip length (ratio rule), then clamped by spacing
-	  const shoulderInTarget2 = 0.5 * shoulderSpanToTip * tipLen;
-		const shoulderInHardCap = 0.60 * tipLen; // do not allow shoulders wider than 60% of tip length per side
-		const shoulderIn2 = Math.max(6, Math.min(shoulderInTarget2, shoulderInMaxFromSpacing, shoulderInHardCap));	
-	  // Keep B0/B1 sampling consistent with shoulderIn
-	  const baseHalf2 = shoulderIn2 / 0.55;
-	
-	  for (const ws of widthExtraScales) {
-	    const shoulderInTry = shoulderIn2 * ws;
-	    const baseHalfTry = shoulderInTry / 0.55;
-	
-	    const poly = build(baseHalfTry, shoulderInTry, tipLen);   // IMPORTANT: 3 args in this order
-	    if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
-	    return poly;
+	function polySignedArea(poly) {
+	  let a = 0;
+	  for (let i = 0; i < poly.length; i++) {
+	    const p = poly[i];
+	    const q = poly[(i + 1) % poly.length];
+	    a += (p.x * q.y - q.x * p.y);
 	  }
+	  return 0.5 * a;
 	}
 	
-	// Best-effort fallback (still respects ratio rule)
-	return build(baseHalf0, shoulderIn0, tipLen0);
-  }  
+	function ensureWinding(poly, wantCCW) {
+	  const a = polySignedArea(poly);
+	  const isCCW = a > 0;
+	  if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
+	  return poly;
+	}
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
@@ -424,7 +320,14 @@ export function runWarpFieldStage({
       const built = maximaTop
         .map(m => m.i)
         .filter(k => Number.isFinite(k) && k >= 0 && k < bastionPlacement.curtainPtsS.length)
-        .map(k => makePentBastionAtSampleIndex(k, bastionPlacement));
+        .map(k => buildPentBastionAtSampleIndex({
+		  k,
+		  placement: bastionPlacement,
+		  cx,
+		  cy,
+		  wantCCW,
+		  shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
+		}));
 
       if (built.length > 0) {
         bastionPolysUsed.length = 0;
@@ -777,7 +680,14 @@ export function runWarpFieldStage({
     
           if (kSample < 0 || kSample >= placement.curtainPtsS.length) continue;
     
-          const candPoly = makePentBastionAtSampleIndex(kSample, placement);
+          const candPoly = buildPentBastionAtSampleIndex({
+			  k: kSample,
+			  placement,
+			  cx,
+			  cy,
+			  wantCCW,
+			  shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
+			});
           const out = warpClampRepairOne(candPoly);
     
           if (out.ok) {
