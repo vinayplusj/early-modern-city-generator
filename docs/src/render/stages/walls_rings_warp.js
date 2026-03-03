@@ -120,28 +120,34 @@ export function drawWallsAndRingsAndWarp(ctx, {
   }
 
   // Rings
-  if (ring && ring.length >= 3) {
-    ctx.strokeStyle = "#BBB";
-    ctx.lineWidth = 2;
-    drawPoly(ctx, ring, true);
-    ctx.stroke();
-  }
+  // When a final composite wall exists, rings create a duplicate “second curve” (most visible at High bastion density).
+  // Keep rings only as a fallback when composite wall is absent.
+  const hasCompositeWall = !!(wall && wall.length >= 3);
 
-  if (ring2 && ring2.length >= 3) {
-    ctx.save();
-    ctx.globalAlpha = 0.60;
-    ctx.strokeStyle = "#BBB";
-    ctx.lineWidth = 1.25;
-    drawPoly(ctx, ring2, true);
-    ctx.stroke();
-    ctx.restore();
+  if (!hasCompositeWall) {
+    if (ring && ring.length >= 3) {
+      ctx.strokeStyle = "#BBB";
+      ctx.lineWidth = 2;
+      drawPoly(ctx, ring, true);
+      ctx.stroke();
+    }
+
+    if (ring2 && ring2.length >= 3) {
+      ctx.save();
+      ctx.globalAlpha = 0.60;
+      ctx.strokeStyle = "#BBB";
+      ctx.lineWidth = 1.25;
+      drawPoly(ctx, ring2, true);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   // Bastioned wall (final composite)
   if (wall && wall.length >= 3) {
     const wallStroke = warp?.wall?.drawComposite?.stroke ?? "rgba(0,255,0,0.90)";
     const wallWidth = warp?.wall?.drawComposite?.width ?? 3;
-  
+
     ctx.save();
     ctx.strokeStyle = wallStroke;
     ctx.lineWidth = wallWidth;
