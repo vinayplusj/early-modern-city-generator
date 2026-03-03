@@ -95,7 +95,7 @@ export function runWarpFieldStage({
 	const curtainSamples =
 	  Number.isFinite(ctx.params.warpFort?.samples)
 	    ? Math.max(18, ctx.params.warpFort.samples)
-	    : 72; // fixed stable default
+	    : 90; // fixed stable default
   
   // Curtain vertex count controls how many points the wall warp operates on.
   // Lower N => fewer points in wallBaseDense => fewer points after warp/clamps.
@@ -103,7 +103,7 @@ export function runWarpFieldStage({
   const curtainVertexFactor =
     (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.curtainVertexFactor))
       ? ctx.params.warpFort.curtainVertexFactor
-      : 6; 
+      : 12; 
   
   const curtainVertexMin =
     (ctx.params && ctx.params.warpFort && Number.isFinite(ctx.params.warpFort.curtainVertexMin))
