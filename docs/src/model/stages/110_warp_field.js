@@ -91,12 +91,11 @@ export function runWarpFieldStage({
       ? Math.max(0, ctx.params.warpFort.bastionOuterInset)
       : 4;  
   
-  // Requirement: curtain warp field samples = max(existing, 18, 3 * bastions).
-  const curtainSamples = Math.max(
-    ctx.params.warpFort?.samples ?? 0,
-    18,
-    3 * bastionNDesired
-  );
+	// Requirement: curtain warp field samples = max(existing, 18, 3 * bastions).
+	const curtainSamples =
+	  Number.isFinite(ctx.params.warpFort?.samples)
+	    ? Math.max(18, ctx.params.warpFort.samples)
+	    : 72; // fixed stable default
   
   // Curtain vertex count controls how many points the wall warp operates on.
   // Lower N => fewer points in wallBaseDense => fewer points after warp/clamps.
@@ -111,7 +110,26 @@ export function runWarpFieldStage({
       ? ctx.params.warpFort.curtainVertexMin
       : 60; 
   
-  const curtainVertexN = Math.max(curtainVertexMin, Math.round(curtainVertexFactor * bastionNDesired));
+  const basePerimeter = (() => {
+  const poly = Array.isArray(wallBase) ? wallBase : null;
+  if (!poly || poly.length < 3) return 0;
+  let L = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    L += Math.hypot(q.x - p.x, q.y - p.y);
+  }
+  return L;
+})();
+
+const targetEdgeLen =
+  Number.isFinite(ctx.params.warpFort?.curtainTargetEdgeLen)
+    ? Math.max(1, ctx.params.warpFort.curtainTargetEdgeLen)
+    : 5;
+
+const curtainVertexN = Math.max(
+  curtainVertexMin,
+  Math.round(basePerimeter / targetEdgeLen)
+);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
