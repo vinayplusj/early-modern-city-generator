@@ -224,59 +224,64 @@ export function runWarpFieldStage({
     return poly;
   }
   // Build a 5-point bastion anchored on the sampled curtain at index k.
-  // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).
-  function makePentBastionAtSampleIndex(k, placement) {
-    const P = placement.curtainPtsS[k];
+  // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).	
+  function makePentBastionAtSampleIndex(k, placement) {	
+    const P = placement.curtainPtsS[k];	
     const out = unit({ x: P.x - cx, y: P.y - cy });
-    const tan = unit({ x: -out.y, y: out.x });
-    const nrm = out;
-  
+    const tan = unit({ x: -out.y, y: out.x });	
+    const nrm = out;		
     const c = placement.clearance?.[k];
-    const minSpacing = placement.minSpacing;
-  
-    const baseHalf0 = Math.max(6, 0.20 * minSpacing);
-    const tipLen0 = Math.max(10, Math.min(Number.isFinite(c) ? 0.70 * c : 40, 0.55 * minSpacing));
-  
+
+    // Local spacing for this maxima (fallback to global minSpacing if missing).
+    const localSpacing =
+      (placement.localSpacingByK && placement.localSpacingByK.has(k))
+        ? placement.localSpacingByK.get(k)
+        : placement.minSpacing;
+
+    // 1) Base size depends on local spacing only.
+    // Ensure base consumes well under half the neighbour gap to avoid overlap.
+    const baseHalf0 = Math.max(6, 0.22 * localSpacing);
+    // 2) Tip length depends on clearance-to-outer-hull, with a fixed reserved buffer.
+    // This enforces a fixed bastion↔outerHull clearance (space for ditch + glacis).
+    const reserve = Number.isFinite(placement.bastionOuterClearance) ? placement.bastionOuterClearance : 0;
+
+    // If clearance is missing, fall back to a conservative default.
+    const tipLenFromClearance = Number.isFinite(c) ? Math.max(0, c - reserve) : 40;
+
+    // Hard safety: never let the tip reach the hull even if reserve is 0.
+    const tipLen0 = Math.max(10, Number.isFinite(c) ? Math.min(tipLenFromClearance, Math.max(0, c - 2)) : tipLenFromClearance);
     function build(baseHalf, tipLen) {
-      const shoulderIn = 0.55 * baseHalf;
-  
+      const shoulderIn = 0.55 * baseHalf;	
+
       const pts = placement.curtainPtsS;
-      const n = pts.length;
-      
-      // sampleStep exists on placement (you set it when building bastionPlacement)
-      const step = Number.isFinite(placement.sampleStep) ? placement.sampleStep : 10;
-      
-      // Convert baseHalf (map units) to a sample index offset
-      const d = Math.max(1, Math.round(baseHalf / step));
-      
-      const B0 = pts[(k - d + n) % n];
+      const n = pts.length;	
+	
+      // sampleStep exists on placement (you set it when building bastionPlacement)	
+      const step = Number.isFinite(placement.sampleStep) ? placement.sampleStep : 10;	
+	
+      // Convert baseHalf (map units) to a sample index offset	
+      const d = Math.max(1, Math.round(baseHalf / step));	
+	
+      const B0 = pts[(k - d + n) % n];	
       const B1 = pts[(k + d) % n];
-  
-      const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
+	    const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
       const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-  
       const T = add(P, nrm, tipLen);
-  
       return ensureWinding([B0, S0, T, S1, B1], wantCCW);
     }
-  
-    // Deterministic max-fit search (shrinks only)
+    // Deterministic max-fit search (shrinks only)	
     const tipScales = [1.00, 0.85, 0.72, 0.60];
     const baseScales = [1.00, 0.85, 0.72];
-  
     for (const ts of tipScales) {
       for (const bs of baseScales) {
         const poly = build(baseHalf0 * bs, tipLen0 * ts);
-  
         if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
-  
         return poly;
       }
     }
-  
-    // If nothing worked, return the “best effort” base candidate (will be triangle-fallback later).
+    // If nothing worked, return the “best effort” base candidate (will be triangle-fallback later).	
     return build(baseHalf0, tipLen0);
-  }
+  }  
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
@@ -305,7 +310,21 @@ export function runWarpFieldStage({
     // Determine target count and spacing.
     const soft = ctx?.params?.bastionSoft || null;
     const budget = Number.isFinite(soft?.reinsertBudget) ? Math.max(0, soft.reinsertBudget | 0) : 0;
+    // ---- Fixed clearance from bastion tips to outer hull ----
+    // Goal: leave enough space for moatworks (ditch + glacis) plus a margin.
+    // Stage 120 uses: ditchWidth = fortR * 0.035, glacisWidth = fortR * 0.08.
+    const fortR = Number.isFinite(ctx?.params?.warpFort?.bandOuter)
+      ? ctx.params.warpFort.bandOuter
+      : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
   
+    const ditchWidthEst  = Number.isFinite(fortR) ? fortR * 0.035 : 0;
+    const glacisWidthEst = Number.isFinite(fortR) ? fortR * 0.08  : 0;
+  
+    const bastionOuterClearance =
+      Number.isFinite(ctx?.params?.warpFort?.bastionOuterClearance)
+        ? Math.max(0, ctx.params.warpFort.bastionOuterClearance)
+        : (ditchWidthEst + glacisWidthEst) * 1.10; // fixed default + safety margin
+    
     // Minimum spacing along the curtain perimeter (map units).
     // Defaults: ~ one bastion per (perimeter/targetN) but with a conservative lower bound.
     const minSpacing =
@@ -324,7 +343,22 @@ export function runWarpFieldStage({
       neighbourhood: 2,
       totalLen,
     });
-  
+    // ---- Local spacing per maxima (arc-length to neighbours) ----
+    // We want each bastion sized independently based on its own available spacing.
+    const maximaByS = maxima.slice().sort((a, b) => a.s - b.s);
+    const localSpacingByK = new Map();
+
+    for (let j = 0; j < maximaByS.length; j++) {
+      const prev = maximaByS[(j - 1 + maximaByS.length) % maximaByS.length];
+      const cur  = maximaByS[j];
+      const next = maximaByS[(j + 1) % maximaByS.length];
+
+      const dPrev = (cur.s - prev.s + totalLen) % totalLen;
+      const dNext = (next.s - cur.s + totalLen) % totalLen;
+
+      const localSpacing = Math.min(dPrev, dNext);
+      localSpacingByK.set(cur.i, localSpacing);
+    }  
     bastionPlacement = {
       curtainPtsS,
       sArr,
@@ -332,6 +366,8 @@ export function runWarpFieldStage({
       sampleStep,
       totalLen,
       outwardMode,
+      bastionOuterClearance,
+      localSpacingByK,
       minSpacing,
       want,
       maxima, // array of { i, s, c }
@@ -605,7 +641,10 @@ export function runWarpFieldStage({
     // ---------------- Sliding repair (before delete/reinsert) ----------------
     // If a bastion is still failing convexity/angle after repair, try sliding its anchor
     // to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
+    const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair);
+    
     if (
+      enableSlideRepair &&
       warpOutworks?.bastionPlacement?.maxima?.length &&
       warpOutworks.bastionPlacement.curtainPtsS?.length &&
       warpOutworks.bastionPlacement.sArr?.length &&
