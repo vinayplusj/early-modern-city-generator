@@ -271,13 +271,13 @@ const curtainVertexN = Math.max(
       ? ctx.params.warpFort.bandOuter
       : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
   
-    const ditchWidthEst  = Number.isFinite(fortR) ? fortR * 0.035 : 0;
-    const glacisWidthEst = Number.isFinite(fortR) ? fortR * 0.08  : 0;
+    const ditchWidthEst  = Number.isFinite(fortR) ? fortR * 0.030 : 0;
+    const glacisWidthEst = Number.isFinite(fortR) ? fortR * 0.070  : 0;
   
     const bastionOuterClearance =
       Number.isFinite(ctx?.params?.warpFort?.bastionOuterClearance)
         ? Math.max(0, ctx.params.warpFort.bastionOuterClearance)
-        : (ditchWidthEst + glacisWidthEst) * 1.10; // fixed default + safety margin
+        : (ditchWidthEst + glacisWidthEst) * 1.20; // fixed default + safety margin
     
     // Minimum spacing along the curtain perimeter (map units).
     // Defaults: ~ one bastion per (perimeter/targetN) but with a conservative lower bound.
