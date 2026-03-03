@@ -3,8 +3,6 @@
 // Composite wall builder: splice bastion polygons into the curtain loop.
 // Extracted from: docs/src/model/stages/110_warp_field.js
 //
-// AUDIT (sha256 of extracted helper block, LF newlines):
-// a86d82a0075cd6c162f18c75ed2e6254055eb9dc1095aed7a450723e9022082f
 
 // ---------------- Composite wall builder (curtain + bastions) ----------------
 // Build a single outer loop by splicing final bastion polygons into the final curtain loop.
@@ -195,13 +193,32 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
   }
 
   if (accepted.length === 0) return curtainClean;
+  // ---------------- Walk start rotation (prevents double-traversal) ----------------
+  // If any accepted splice wraps (iEnd < iStart), starting the walk at 0 can cause
+  // a curtain segment to be traversed twice (visual "two loop" effect).
+  // Fix: start at the wrap splice end, then rotate accepted splice order accordingly.
+  let startIndex = 0;
 
+  const wrapSplices = accepted.filter(s => s.iEnd < s.iStart);
+  if (wrapSplices.length > 0) {
+    // Deterministic choice: smallest iEnd among wrap splices.
+    startIndex = wrapSplices.reduce((best, s) => Math.min(best, s.iEnd), wrapSplices[0].iEnd);
+  }
+
+  // Rotate splice order so we process in forward index order starting from startIndex.
+  // This avoids an extra wrap across 0 during the main walk.
+  let acceptedRot = accepted;
+  if (startIndex !== 0) {
+    const after = accepted.filter(s => s.iStart >= startIndex);
+    const before = accepted.filter(s => s.iStart < startIndex);
+    acceptedRot = after.concat(before);
+  }
   // Walk the curtain and splice in bastion chains.
   const out = [];
-  let curI = 0;
+  let curI = startIndex;
 
-  // Accepted are sorted by iStart already.
-  for (const s of accepted) {
+  // Walk from startIndex in rotated splice order.
+  for (const s of acceptedRot) {
     // Add curtain arc from curI to s.iStart (inclusive).
     const arc1 = circularArcInclusive(curtainClean, curI, s.iStart);
     for (let k = 0; k < arc1.length; k++) out.push(arc1[k]);
@@ -214,14 +231,14 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
     curI = s.iEnd;
   }
 
-  // Close the loop by adding remaining curtain arc from curI to 0 (inclusive),
+  // Close the loop by adding remaining curtain arc from curI back to startIndex (inclusive),
   // then drop the duplicate closure point through dedupeConsecutiveClosed.
-  if (curI !== 0) {
-    const arc2 = circularArcInclusive(curtainClean, curI, 0);
+  if (curI !== startIndex) {
+    const arc2 = circularArcInclusive(curtainClean, curI, startIndex);
     for (let k = 0; k < arc2.length; k++) out.push(arc2[k]);
   } else {
     // Ensure at least one full wrap.
-    out.push(curtainClean[0]);
+    out.push(curtainClean[startIndex]);
   }
 
   const finalOut = dedupeConsecutiveClosed(out, 1e-6);
