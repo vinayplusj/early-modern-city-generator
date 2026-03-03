@@ -345,6 +345,7 @@ const curtainVertexN = Math.max(
 		  cy,
 		  wantCCW,
 		  shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
+		outerHullLoop,
 		}));
 
       if (built.length > 0) {
@@ -705,7 +706,8 @@ const curtainVertexN = Math.max(
 			  cy,
 			  wantCCW,
 			  shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
-			});
+			outerHullLoop,
+		  });
           const out = warpClampRepairOne(candPoly);
     
           if (out.ok) {
