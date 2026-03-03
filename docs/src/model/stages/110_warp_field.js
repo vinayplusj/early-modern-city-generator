@@ -225,7 +225,7 @@ export function runWarpFieldStage({
   }
   // Build a 5-point bastion anchored on the sampled curtain at index k.
   // Output order: [B0, S0, T, S1, B1] (required by repairBastionStrictConvex).	
-  function makePentBastionAtSampleIndex(k, placement) {	
+  function makePentBastionAtSampleIndex(k, placement) {
     const P = placement.curtainPtsS[k];	
     const out = unit({ x: P.x - cx, y: P.y - cy });
     const tan = unit({ x: -out.y, y: out.x });	
@@ -255,11 +255,9 @@ export function runWarpFieldStage({
 	// Shoulder half-span from tip length (ratio rule)
 	const shoulderInTarget = 0.5 * shoulderSpanToTip * tipLen0;
 	
-	// Keep shoulders from exceeding local spacing (anti-overlap safety)
-	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
-	
 	// Final shoulder half-span
-	const shoulderIn0 = Math.max(6, Math.min(shoulderInTarget, shoulderInMaxFromSpacing));
+	const shoulderInHardCap0 = 0.60 * tipLen0;
+	const shoulderIn0 = Math.max(6, Math.min(shoulderInTarget, shoulderInMaxFromSpacing, shoulderInHardCap0));
 	
 	// Keep B0/B1 sampling compatible with existing logic.
 	// Previously: shoulderIn = 0.55 * baseHalf  => baseHalf = shoulderIn / 0.55
@@ -272,33 +270,53 @@ export function runWarpFieldStage({
       // sampleStep exists on placement (you set it when building bastionPlacement)	
       const step = Number.isFinite(placement.sampleStep) ? placement.sampleStep : 10;	
 	
-      // Convert baseHalf (map units) to a sample index offset	
-      const d = Math.max(1, Math.round(baseHalf / step));	
-	
-      const B0 = pts[(k - d + n) % n];	
-      const B1 = pts[(k + d) % n];
-	    const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
-      const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-      const T = add(P, nrm, tipLen);
-      return ensureWinding([B0, S0, T, S1, B1], wantCCW);
-    }
-    // Deterministic max-fit search (shrinks only)	
+	// Convert baseHalf (map units) to a sample index offset	
+		let d = Math.max(1, Math.round(baseHalf / step));
+		
+		// Ensure base endpoints are not degenerate.
+		// Deterministic: increase d until B0-B1 chord exceeds a minimum or we hit a cap.
+		const minBaseChord = Math.max(2, 0.20 * shoulderIn);
+		const dMax = Math.min((n / 6) | 0, 12);
+		
+		let B0 = pts[(k - d + n) % n];
+		let B1 = pts[(k + d) % n];
+		
+		for (let tries = 0; tries < dMax; tries++) {
+		  const dx = B1.x - B0.x;
+		  const dy = B1.y - B0.y;
+		  const chord = Math.hypot(dx, dy);
+		  if (chord >= minBaseChord) break;
+		  d += 1;
+		  B0 = pts[(k - d + n) % n];
+		  B1 = pts[(k + d) % n];
+		}
+	const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
+    const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
+    const T = add(P, nrm, tipLen);
+    return ensureWinding([B0, S0, T, S1, B1], wantCCW);
+	}
+	// Deterministic max-fit search (shrinks only)
 	const tipScales = [1.00, 0.85, 0.72, 0.60];
 	const widthExtraScales = [1.00, 0.85, 0.72]; // extra squeeze if needed
+	
+	// Precompute spacing cap once
+	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
 	
 	for (const ts of tipScales) {
 	  const tipLen = tipLen0 * ts;
 	
-	  // Recompute shoulders from tip length (ratio rule) at this scale
+	  // Shoulder half-span derived from tip length (ratio rule), then clamped by spacing
 	  const shoulderInTarget2 = 0.5 * shoulderSpanToTip * tipLen;
-	  const shoulderIn2 = Math.max(6, Math.min(shoulderInTarget2, shoulderInMaxFromSpacing));
+		const shoulderInHardCap = 0.60 * tipLen; // do not allow shoulders wider than 60% of tip length per side
+		const shoulderIn2 = Math.max(6, Math.min(shoulderInTarget2, shoulderInMaxFromSpacing, shoulderInHardCap));	
+	  // Keep B0/B1 sampling consistent with shoulderIn
 	  const baseHalf2 = shoulderIn2 / 0.55;
 	
 	  for (const ws of widthExtraScales) {
 	    const shoulderInTry = shoulderIn2 * ws;
 	    const baseHalfTry = shoulderInTry / 0.55;
 	
-	    const poly = build(baseHalfTry, shoulderInTry, tipLen);
+	    const poly = build(baseHalfTry, shoulderInTry, tipLen);   // IMPORTANT: 3 args in this order
 	    if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
 	    return poly;
 	  }
