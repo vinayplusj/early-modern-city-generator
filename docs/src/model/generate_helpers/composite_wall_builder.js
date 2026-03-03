@@ -168,16 +168,20 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
       const visited = new Set();
       let i = s;
       for (let guard = 0; guard < len + 1; guard++) {
-        // Do not count endpoints as overlap; allow bastions to touch at a curtain vertex.
-        if (i !== s && i !== e) visited.add(i);
+        visited.add(i);                 // include endpoints
         if (i === e) break;
         i = (i + 1) % n;
       }
 
       i = r.iStart;
       for (let guard = 0; guard < lenR + 1; guard++) {
-        // Also ignore accepted endpoints for the same reason.
-        if (i !== r.iStart && i !== r.iEnd && visited.has(i)) return true;
+        if (visited.has(i)) {
+          const candEndpoint = (i === s || i === e);
+          const accEndpoint  = (i === r.iStart || i === r.iEnd);
+        
+          // Allow touch only if it is an endpoint for BOTH arcs.
+          if (!(candEndpoint && accEndpoint)) return true;
+        }
         if (i === r.iEnd) break;
         i = (i + 1) % n;
       }
