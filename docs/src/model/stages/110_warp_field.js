@@ -231,7 +231,10 @@ export function runWarpFieldStage({
     const tan = unit({ x: -out.y, y: out.x });	
     const nrm = out;		
     const c = placement.clearance?.[k];
-
+	const shoulderSpanToTip =
+	  Number.isFinite(ctx?.params?.warpFort?.bastionShoulderSpanToTip)
+	    ? Math.max(0.1, ctx.params.warpFort.bastionShoulderSpanToTip)
+	    : 0.55; // default: shoulders ~= 55% of tip length
     // Local spacing for this maxima (fallback to global minSpacing if missing).
     const localSpacing =
       (placement.localSpacingByK && placement.localSpacingByK.has(k))
@@ -240,7 +243,6 @@ export function runWarpFieldStage({
 
     // 1) Base size depends on local spacing only.
     // Ensure base consumes well under half the neighbour gap to avoid overlap.
-    const baseHalf0 = Math.max(6, 0.22 * localSpacing);
     // 2) Tip length depends on clearance-to-outer-hull, with a fixed reserved buffer.
     // This enforces a fixed bastion↔outerHull clearance (space for ditch + glacis).
     const reserve = Number.isFinite(placement.bastionOuterClearance) ? placement.bastionOuterClearance : 0;
@@ -250,8 +252,19 @@ export function runWarpFieldStage({
 
     // Hard safety: never let the tip reach the hull even if reserve is 0.
     const tipLen0 = Math.max(10, Number.isFinite(c) ? Math.min(tipLenFromClearance, Math.max(0, c - 2)) : tipLenFromClearance);
-    function build(baseHalf, tipLen) {
-      const shoulderIn = 0.55 * baseHalf;	
+	// Shoulder half-span from tip length (ratio rule)
+	const shoulderInTarget = 0.5 * shoulderSpanToTip * tipLen0;
+	
+	// Keep shoulders from exceeding local spacing (anti-overlap safety)
+	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
+	
+	// Final shoulder half-span
+	const shoulderIn0 = Math.max(6, Math.min(shoulderInTarget, shoulderInMaxFromSpacing));
+	
+	// Keep B0/B1 sampling compatible with existing logic.
+	// Previously: shoulderIn = 0.55 * baseHalf  => baseHalf = shoulderIn / 0.55
+	const baseHalf0 = shoulderIn0 / 0.55;
+	  function build(baseHalf, shoulderIn, tipLen) {	
 
       const pts = placement.curtainPtsS;
       const n = pts.length;	
@@ -270,17 +283,29 @@ export function runWarpFieldStage({
       return ensureWinding([B0, S0, T, S1, B1], wantCCW);
     }
     // Deterministic max-fit search (shrinks only)	
-    const tipScales = [1.00, 0.85, 0.72, 0.60];
-    const baseScales = [1.00, 0.85, 0.72];
-    for (const ts of tipScales) {
-      for (const bs of baseScales) {
-        const poly = build(baseHalf0 * bs, tipLen0 * ts);
-        if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
-        return poly;
-      }
-    }
-    // If nothing worked, return the “best effort” base candidate (will be triangle-fallback later).	
-    return build(baseHalf0, tipLen0);
+	const tipScales = [1.00, 0.85, 0.72, 0.60];
+	const widthExtraScales = [1.00, 0.85, 0.72]; // extra squeeze if needed
+	
+	for (const ts of tipScales) {
+	  const tipLen = tipLen0 * ts;
+	
+	  // Recompute shoulders from tip length (ratio rule) at this scale
+	  const shoulderInTarget2 = 0.5 * shoulderSpanToTip * tipLen;
+	  const shoulderIn2 = Math.max(6, Math.min(shoulderInTarget2, shoulderInMaxFromSpacing));
+	  const baseHalf2 = shoulderIn2 / 0.55;
+	
+	  for (const ws of widthExtraScales) {
+	    const shoulderInTry = shoulderIn2 * ws;
+	    const baseHalfTry = shoulderInTry / 0.55;
+	
+	    const poly = build(baseHalfTry, shoulderInTry, tipLen);
+	    if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
+	    return poly;
+	  }
+	}
+	
+	// Best-effort fallback (still respects ratio rule)
+	return build(baseHalf0, shoulderIn0, tipLen0);
   }  
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
