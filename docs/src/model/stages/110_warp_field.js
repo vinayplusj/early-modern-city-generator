@@ -240,7 +240,7 @@ export function runWarpFieldStage({
       (placement.localSpacingByK && placement.localSpacingByK.has(k))
         ? placement.localSpacingByK.get(k)
         : placement.minSpacing;
-
+	const shoulderInMaxFromSpacing = 0.45 * localSpacing;
     // 1) Base size depends on local spacing only.
     // Ensure base consumes well under half the neighbour gap to avoid overlap.
     // 2) Tip length depends on clearance-to-outer-hull, with a fixed reserved buffer.
