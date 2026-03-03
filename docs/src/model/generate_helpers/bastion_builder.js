@@ -2,6 +2,7 @@
 //
 // Deterministic bastion polygon builder.
 // Produces 5-point bastions: [B0, S0, T, S1, B1] in requested winding.
+import { clampPointInsideAlongRay} from "../../geom/radial_ray_clamp.js";
 
 function polySignedArea(poly) {
   let a = 0;
@@ -46,7 +47,7 @@ function add(p, v, s) {
  *  - wantCCW: boolean
  *  - shoulderSpanToTip: number (ratio)
  */
-export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, shoulderSpanToTip }) {
+export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, shoulderSpanToTip, outerHullLoop }) {
   const pts = placement.curtainPtsS;
   const n = pts.length;
   const P = pts[k];
@@ -93,10 +94,20 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
       B1 = pts[(k + d) % n];
     }
 
-    const S0 = add(add(P, tan, -shoulderIn), nrm, 0.25 * tipLen);
-    const S1 = add(add(P, tan, +shoulderIn), nrm, 0.25 * tipLen);
-    const T  = add(P, nrm, tipLen);
-
+    // Candidate shoulders + tip (existing lines)
+    let S0 = add(add(P, tan, -shoulderIn), nrm, 0.50 * tipLen);
+    let S1 = add(add(P, tan, +shoulderIn), nrm, 0.50 * tipLen);
+    let T  = add(P, nrm, tipLen);
+    
+    // Reserve clamp for tip + shoulders against outerHullLoop (new)
+    if (reserve > 0 && Array.isArray(outerHullLoop) && outerHullLoop.length >= 3) {
+      const centre = { x: cx, y: cy };
+    
+      S0 = clampPointInsideAlongRay(S0, centre, outerHullLoop, reserve);
+      S1 = clampPointInsideAlongRay(S1, centre, outerHullLoop, reserve);
+      T  = clampPointInsideAlongRay(T,  centre, outerHullLoop, reserve);
+    }
+    
     return ensureWinding([B0, S0, T, S1, B1], wantCCW);
   }
 
