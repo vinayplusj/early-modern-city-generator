@@ -196,7 +196,11 @@ export const PIPELINE_STAGES = [
         cityMesh: meshOut.cityMesh,
         graph: meshOut.graph,
         waterModel: meshOut.waterModel,
-      
+
+        // Needed for Milestone 4.8+ adoption:
+        // vorGraph.cells carry { wardId } which CityMesh faces do not retain.
+        vorGraph: meshOut.vorGraph,
+
         // Option 1 hook for Milestone 5 exterior roads and biome fills
         boundaryBinding: meshOut.boundaryBinding,
       };
