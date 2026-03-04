@@ -303,14 +303,13 @@ export function runFieldsStage(env) {
         label: "waterEdge",
       });
 
-      // Persist for downstream determinism + debugging.
-      ctx.state.waterSourceVertexIds = waterVertexIdsDerived;
-      if (ctx.state.waterModel && typeof ctx.state.waterModel === "object") {
-        ctx.state.waterModel.waterSourceVertexIds = waterVertexIdsDerived;
-      }
-      if (ctx.state.routingMesh && ctx.state.routingMesh.waterModel) {
-        ctx.state.routingMesh.waterModel.waterSourceVertexIds = waterVertexIdsDerived;
-      }
+      // Do NOT write back into ctx.state here (avoids ordering coupling).
+      // Persist only in stageMeta for audits and for downstream consumers that opt in via fieldsMeta.
+      stageMeta.sources.waterVertexIdsDerived = waterVertexIdsDerived;
+      stageMeta.sources.waterVertexIdsDerivedFrom = {
+        shorelineEdgeIds: (wm && Array.isArray(wm.shorelineEdgeIds)) ? wm.shorelineEdgeIds.length : 0,
+        riverEdgeIds: (wm && Array.isArray(wm.riverEdgeIds)) ? wm.riverEdgeIds.length : 0,
+      };
     }
   } catch (e) {
     // Keep silent here; resolveOptionalSources will record the main error path.
@@ -333,7 +332,8 @@ export function runFieldsStage(env) {
   // ---------------------------------------------
   // 2) Build compute specs (deterministic ordering)
   // ---------------------------------------------
-
+  const SPEC_ORDER = ["distance_to_plaza_vertex", "distance_to_wall_vertex", "distance_to_water_vertex"];
+  stageMeta.specOrderContract = SPEC_ORDER.slice();
   const computeSpecs = [];
   computeSpecs.push(makeDistanceToPlazaVertexSpec(plazaSources));
 
@@ -341,7 +341,19 @@ export function runFieldsStage(env) {
   if (waterRes.ids && waterRes.ids.length > 0) computeSpecs.push(makeDistanceToWaterVertexSpec(waterRes.ids));
 
   stageMeta.computeSpecNames = computeSpecs.map((s) => String(s && s.name));
-
+  {
+    // Ensure deterministic, unique, and expected ordering.
+    const names = stageMeta.computeSpecNames;
+    const seen = Object.create(null);
+    for (let i = 0; i < names.length; i++) {
+      const n = names[i];
+      assert(n && typeof n === "string" && n !== "undefined", `Invalid compute spec name at i=${i}: ${n}`);
+      assert(!seen[n], `Duplicate compute spec name: ${n}`);
+      seen[n] = true;
+    }
+    // Ensure plaza spec is always first.
+    assert(names.length > 0 && names[0] === "distance_to_plaza_vertex", `Expected first spec to be distance_to_plaza_vertex, got ${names[0]}`);
+  }
   // ---------------------------------------
   // 3) Compute vertex fields into the registry
   // ---------------------------------------
