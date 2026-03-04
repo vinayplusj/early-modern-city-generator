@@ -26,6 +26,7 @@ import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
 import { runFieldsStage } from "../stages/075_fields.js";
 import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
+import { runWardFieldMetricsStage } from "../stages/085_ward_field_metrics.js";
 
 export const PIPELINE_STAGES = [
   {
@@ -248,7 +249,15 @@ export const PIPELINE_STAGES = [
       ctx.state.ringsPreWarp = ringsOut;
     },
   },
-
+  
+  {
+    id: 85,
+    name: "wardFieldMetrics",
+    run(env) {
+      runWardFieldMetricsStage(env);
+    },
+  },
+  
   {
     id: 90,
     name: "districts",
