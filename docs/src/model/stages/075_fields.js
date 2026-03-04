@@ -519,6 +519,9 @@ export function runFieldsStage(env) {
   } else {
     // Record for debugging without failing the run.
     stageMeta.derivedFaceFieldsSkipped = true;
+    stageMeta.derivedFaceFieldsDisabledReason =
+      stageMeta.derivedFaceFieldsDisabledReason ||
+      "faceBoundaryVertexIds unavailable, or iterFaceIds missing/empty, or boundary probe returned empty.";
   }
 
   // ----------------
