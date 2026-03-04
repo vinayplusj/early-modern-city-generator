@@ -23,11 +23,11 @@
 
 import { computeAllFields } from "../fields/compute_fields.js";
 import { makeMeshAccessFromCityMesh } from "../fields/mesh_access_from_city_mesh.js";
-
 import {
   getPlazaSourceVertexIds,
   getWallSourceVertexIds,
   getWaterSourceVertexIds,
+  deriveVertexIdsFromGraphEdgeIds,
 } from "../fields/field_sources.js";
 
 import {
@@ -185,17 +185,59 @@ export function runFieldsStage(env) {
   stageMeta.sources.wall = wallRes.ids;
   stageMeta.sourceErrors.wall = wallRes.error;
 
+  // Water sources may exist as vertex ids OR as water edge ids (shoreline/river) on the routing graph.
+  // Prefer explicit vertex ids; otherwise derive from edge ids deterministically.
+  const waterVertexIdsExplicit =
+    ctx.state.waterSourceVertexIds ||
+    (ctx.state.waterModel && ctx.state.waterModel.waterSourceVertexIds) ||
+    (ctx.state.routingMesh && ctx.state.routingMesh.waterModel && ctx.state.routingMesh.waterModel.waterSourceVertexIds) ||
+    null;
+
+  let waterVertexIdsDerived = null;
+  try {
+    const wm =
+      (ctx.state.routingMesh && ctx.state.routingMesh.waterModel) ? ctx.state.routingMesh.waterModel :
+      (ctx.state.waterModel ? ctx.state.waterModel : null);
+
+    const graph = (ctx.state.routingMesh && ctx.state.routingMesh.graph) ? ctx.state.routingMesh.graph : null;
+
+    const edgeIds = []
+      .concat((wm && Array.isArray(wm.shorelineEdgeIds)) ? wm.shorelineEdgeIds : [])
+      .concat((wm && Array.isArray(wm.riverEdgeIds)) ? wm.riverEdgeIds : []);
+
+    if (!waterVertexIdsExplicit && graph && edgeIds.length > 0) {
+      waterVertexIdsDerived = deriveVertexIdsFromGraphEdgeIds({
+        graph,
+        edgeIds,
+        label: "waterEdge",
+      });
+
+      // Persist for downstream determinism + debugging.
+      ctx.state.waterSourceVertexIds = waterVertexIdsDerived;
+      if (ctx.state.waterModel && typeof ctx.state.waterModel === "object") {
+        ctx.state.waterModel.waterSourceVertexIds = waterVertexIdsDerived;
+      }
+      if (ctx.state.routingMesh && ctx.state.routingMesh.waterModel) {
+        ctx.state.routingMesh.waterModel.waterSourceVertexIds = waterVertexIdsDerived;
+      }
+    }
+  } catch (e) {
+    // Keep silent here; resolveOptionalSources will record the main error path.
+    waterVertexIdsDerived = null;
+  }
+
   const waterRes = resolveOptionalSources({
     label: "water",
     resolveFn: () =>
       getWaterSourceVertexIds({
         meshAccess,
-        // Optional caller-provided list if you already have it in state:
-        waterVertexIds: ctx.state.waterSourceVertexIds || (ctx.state.waterModel && ctx.state.waterModel.waterSourceVertexIds),
+        waterVertexIds: waterVertexIdsExplicit || waterVertexIdsDerived,
       }),
   });
+
   stageMeta.sources.water = waterRes.ids;
   stageMeta.sourceErrors.water = waterRes.error;
+  stageMeta.sources.waterDerivedFromEdges = !!(waterVertexIdsDerived && waterVertexIdsDerived.length);
 
   // ---------------------------------------------
   // 2) Build compute specs (deterministic ordering)
