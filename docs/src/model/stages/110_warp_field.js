@@ -35,6 +35,18 @@ import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_build
  *    bastionHullWarpedSafe: Array<{x:number,y:number}>|null
  *  }
  */
+function dist(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.hypot(dx, dy);
+}
+
+function median(arr) {
+  if (!arr || arr.length === 0) return null;
+  const a = arr.slice().sort((x, y) => x - y);
+  const mid = (a.length / 2) | 0;
+  return (a.length % 2) ? a[mid] : 0.5 * (a[mid - 1] + a[mid]);
+}
 
 export function runWarpFieldStage({
   ctx,
@@ -267,10 +279,23 @@ const curtainVertexN = Math.max(
     // ---- Fixed clearance from bastion tips to outer hull ----
     // Goal: leave enough space for moatworks (ditch + glacis) plus a margin.
     // Stage 120 uses: ditchWidth = fortR * 0.035, glacisWidth = fortR * 0.08.
-    const fortR = Number.isFinite(ctx?.params?.warpFort?.bandOuter)
-      ? ctx.params.warpFort.bandOuter
-      : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
-  
+	const fortRParam =
+	  Number.isFinite(ctx?.params?.warpFort?.bandOuter) ? ctx.params.warpFort.bandOuter :
+	  (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
+	
+	let fortRGeom = null;
+	if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8) {
+	  // Use a stable sample set to avoid tiny changes.
+	  const pts = resampleClosedPolyline(wallCurtainForDraw, 128);
+	  const rs = [];
+	  for (let i = 0; i < pts.length; i++) rs.push(dist(pts[i], { x: cx, y: cy }));
+	  fortRGeom = median(rs);
+	}
+	
+	const fortR = Number.isFinite(fortRParam) ? fortRParam : fortRGeom;
+	if (warpOutworks) {
+	  warpOutworks._fortR = { param: fortRParam, geom: fortRGeom, used: fortR };
+	}
     const ditchWidthEst  = Number.isFinite(fortR) ? fortR * 0.030 : 0;
     const glacisWidthEst = Number.isFinite(fortR) ? fortR * 0.070  : 0;
   
