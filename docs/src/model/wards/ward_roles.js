@@ -50,6 +50,7 @@
  * @param {string} [args.params.coreOrderingFieldName] - Defaults to "distance_to_plaza_face".
  * @param {object} [args.fields] - FieldRegistry (ctx.state.fields)
  * @param {object} [args.meshAccess] - meshAccess (makeMeshAccessFromCityMesh(cityMesh)), optional
+ * @param {object} [args.fieldsMeta] - ctx.state.fieldsMeta (expects wardIdToFaceId when using face fields)
  * @returns {{
  *   wards: Ward[],
  *   indices: { plaza:number, citadel:number, inner:number[], outside:number[] },
@@ -83,6 +84,17 @@ function getFaceFieldValue(fields, meshAccess, fieldName, faceId) {
   assert(Number.isInteger(faceId) && faceId >= 0 && faceId < rec.values.length, `Face id ${faceId} out of range for field "${fieldName}".`);
   return rec.values[faceId];
 }
+function resolveFaceIdForWard({ wardId, fieldsMeta }) {
+  if (!fieldsMeta || !Array.isArray(fieldsMeta.wardIdToFaceId)) return null;
+
+  const arr = fieldsMeta.wardIdToFaceId;
+  if (!Number.isInteger(wardId) || wardId < 0 || wardId >= arr.length) return null;
+
+  const faceId = arr[wardId];
+  if (!Number.isInteger(faceId) || faceId < 0) return null;
+
+  return faceId;
+}
 function getVertexFieldValueAtPoint(fields, meshAccess, fieldName, p, vertexIdToIndex) {
   assert(meshAccess && typeof meshAccess.iterVertexIds === "function", "Vertex field sampling requires meshAccess.iterVertexIds().");
   assert(meshAccess && typeof meshAccess.vertexXY === "function", "Vertex field sampling requires meshAccess.vertexXY(vId).");
@@ -96,7 +108,7 @@ function getVertexFieldValueAtPoint(fields, meshAccess, fieldName, p, vertexIdTo
   return rec.values[idx];
 }
 
-export function assignWardRoles({ wards, centre, params, fields, meshAccess }) {
+export function assignWardRoles({ wards, centre, params, fields, fieldsMeta, meshAccess }) {
   const p = normaliseParams(params);
 
   // Defensive copy so caller can keep original list if needed.
@@ -132,8 +144,15 @@ export function assignWardRoles({ wards, centre, params, fields, meshAccess }) {
      w.distToCentreLegacy = w.distToCentre;
  
      if (mode === "face") {
-       // Ward id is treated as face id (dense) unless meshAccess.faceIdToIndex exists.
-       w.distToCentre = getFaceFieldValue(fields, meshAccess, fieldNameUsed, w.id);
+       const faceId = resolveFaceIdForWard({ wardId: w.id, fieldsMeta });
+     
+       // Hard fail if face fields are enabled but the ward->face bridge is missing.
+       assert(
+         Number.isInteger(faceId),
+         `useFieldsForCoreOrdering: missing fieldsMeta.wardIdToFaceId mapping for wardId=${w.id}.`
+       );
+     
+       w.distToCentre = getFaceFieldValue(fields, meshAccess, fieldNameUsed, faceId);
      } else {
        // Deterministic vertex sampling at ward seed.
        w.distToCentre = getVertexFieldValueAtPoint(fields, meshAccess, fieldNameUsed, w.seed, vertexIdToIndex);
@@ -143,7 +162,12 @@ export function assignWardRoles({ wards, centre, params, fields, meshAccess }) {
    }
  
    // Optional debug breadcrumb for audits (non-breaking; ignored by other code).
-   wardsCopy._coreOrderingField = { requested: coreOrderingFieldName, used: fieldNameUsed, mode };
+   wardsCopy._coreOrderingField = {
+    requested: coreOrderingFieldName,
+    used: fieldNameUsed,
+    mode,
+    hasWardIdToFaceId: !!(fieldsMeta && Array.isArray(fieldsMeta.wardIdToFaceId)),
+  };
  }
 
   const {
