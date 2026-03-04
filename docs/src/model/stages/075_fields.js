@@ -210,9 +210,6 @@ export function runFieldsStage(env) {
   const meshAccess = makeMeshAccessFromCityMesh(cityMesh);
   // Deterministic bridge for downstream ward-level consumers:
   // wardId -> CityMesh faceId (via persisted vorGraph).
-  const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
-  stageMeta.wardToFace = wardFaceMapRes.meta;
-  stageMeta.wardToFaceError = wardFaceMapRes.error;
   const stageMeta = {
     stage: "075_fields",
     version: 1,
@@ -221,7 +218,10 @@ export function runFieldsStage(env) {
     derived: [],
     computeSpecNames: [],
   };
-
+  const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
+  stageMeta.wardToFace = wardFaceMapRes.meta;
+  stageMeta.wardToFaceError = wardFaceMapRes.error;
+  
   // ------------------------------------------------------------
   // 1) Resolve source vertex sets (plaza required, others optional)
   // ------------------------------------------------------------
