@@ -47,7 +47,6 @@ function median(arr) {
   const mid = (a.length / 2) | 0;
   return (a.length % 2) ? a[mid] : 0.5 * (a[mid - 1] + a[mid]);
 }
-
 export function runWarpFieldStage({
   ctx,
   cx,
@@ -280,19 +279,24 @@ const curtainVertexN = Math.max(
     // Goal: leave enough space for moatworks (ditch + glacis) plus a margin.
     // Stage 120 uses: ditchWidth = fortR * 0.035, glacisWidth = fortR * 0.08.
 	const fortRParam =
-	  Number.isFinite(ctx?.params?.warpFort?.bandOuter) ? ctx.params.warpFort.bandOuter :
-	  (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
+	  Number.isFinite(ctx?.params?.warpFort?.bandOuter)
+	    ? ctx.params.warpFort.bandOuter
+	    : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
 	
+	// Deterministic geometric fallback: median curtain radius from centre.
 	let fortRGeom = null;
 	if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8) {
-	  // Use a stable sample set to avoid tiny changes.
-	  const pts = resampleClosedPolyline(wallCurtainForDraw, 128);
 	  const rs = [];
-	  for (let i = 0; i < pts.length; i++) rs.push(dist(pts[i], { x: cx, y: cy }));
-	  fortRGeom = median(rs);
+	  for (let i = 0; i < wallCurtainForDraw.length; i++) {
+	    const p = wallCurtainForDraw[i];
+	    if (!p) continue;
+	    rs.push(Math.sqrt(_dist2(p, { x: cx, y: cy })));
+	  }
+	  fortRGeom = _median(rs);
 	}
 	
 	const fortR = Number.isFinite(fortRParam) ? fortRParam : fortRGeom;
+	assert(Number.isFinite(fortR) && fortR > 0, `warpFort.bandOuter missing; fortRParam=${fortRParam}, fortRGeom=${fortRGeom}`);
 	if (warpOutworks) {
 	  warpOutworks._fortR = { param: fortRParam, geom: fortRGeom, used: fortR };
 	}
@@ -303,7 +307,9 @@ const curtainVertexN = Math.max(
       Number.isFinite(ctx?.params?.warpFort?.bastionOuterClearance)
         ? Math.max(0, ctx.params.warpFort.bastionOuterClearance)
         : (ditchWidthEst + glacisWidthEst) * 1.20; // fixed default + safety margin
-    
+	assert(Number.isFinite(bastionOuterClearance), `bastionOuterClearance non-finite: ${bastionOuterClearance}`);
+	assert(bastionOuterClearance > 0, `bastionOuterClearance is zero; fortR=${fortR}, ditchWidthEst=${ditchWidthEst}, glacisWidthEst=${glacisWidthEst}`);
+	if (warpDebugEnabled) console.log("[bastionOuterClearance]", { fortRParam, fortRGeom, fortR, ditchWidthEst, glacisWidthEst, bastionOuterClearance });
     // Minimum spacing along the curtain perimeter (map units).
     // Defaults: ~ one bastion per (perimeter/targetN) but with a conservative lower bound.
     const minSpacing =
