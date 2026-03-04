@@ -3,6 +3,7 @@
 // Deterministic bastion polygon builder.
 // Produces 5-point bastions: [B0, S0, T, S1, B1] in requested winding.
 import { clampPointInsideAlongRay} from "../../geom/radial_ray_clamp.js";
+import { clearanceToHullAlongRay } from "./warp_stage.js";
 
 function polySignedArea(poly) {
   let a = 0;
@@ -66,6 +67,40 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
   const shoulderInMaxFromSpacing = 0.45 * localSpacing;
 
   const reserve = Number.isFinite(placement.bastionOuterClearance) ? placement.bastionOuterClearance : 0;
+  // --- DEBUG: bastion tip clearance mismatch (Milestone 4.8 diagnostics) ---
+  if (typeof window !== "undefined" && window.__bastionDebug) {
+    try {
+      // Normal-based clearance as computed by warp_stage.js
+      const cNormal = c;
+  
+      // Radial direction used for tip point construction
+      const dir = nrm;
+  
+      // Clearance along the actual tip direction (radial)
+      const hit = clearanceToHullAlongRay(P, dir, outerHullLoop);
+      const cRadial = (hit && hit.ok) ? hit.dist : null;
+  
+      // “How far could the tip extend” after reserve
+      const tipRoomNormal = (Number.isFinite(cNormal) && Number.isFinite(reserve)) ? (cNormal - reserve) : null;
+      const tipRoomRadial = (Number.isFinite(cRadial) && Number.isFinite(reserve)) ? (cRadial - reserve) : null;
+  
+      // Print a single compact record
+      // Toggle: window.__bastionDebug = true
+      console.log("[bastion clearance]", {
+        k,
+        P: { x: +P.x.toFixed(2), y: +P.y.toFixed(2) },
+        out: { x: +dir.x.toFixed(4), y: +dir.y.toFixed(4) },
+        reserve: +reserve.toFixed(2),
+        cNormal: (cNormal == null) ? null : +cNormal.toFixed(2),
+        cRadial: (cRadial == null) ? null : +cRadial.toFixed(2),
+        tipRoomNormal: (tipRoomNormal == null) ? null : +tipRoomNormal.toFixed(2),
+        tipRoomRadial: (tipRoomRadial == null) ? null : +tipRoomRadial.toFixed(2),
+      });
+    } catch (e) {
+      console.warn("[bastion clearance] debug failed:", e && e.message ? e.message : e);
+    }
+  }
+  // --- END DEBUG ---  
   const tipLenFromClearance = Number.isFinite(c) ? Math.max(0, c - reserve) : 40;
   const tipLen0 = Math.max(10, Number.isFinite(c) ? Math.min(tipLenFromClearance, Math.max(0, c - 2)) : tipLenFromClearance);
 
