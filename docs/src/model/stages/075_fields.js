@@ -41,7 +41,17 @@ import {
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
-
+function computeMinMax(arr) {
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (!Number.isFinite(v)) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  if (min === Infinity) return { min: null, max: null };
+  return { min, max };
+}
 function toIntId(id, label) {
   if (typeof id === "number") {
     assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
@@ -221,7 +231,13 @@ export function runFieldsStage(env) {
   const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
   stageMeta.wardToFace = wardFaceMapRes.meta;
   stageMeta.wardToFaceError = wardFaceMapRes.error;
-  
+  stageMeta.fieldStats = {};
+  stageMeta.fieldNorm = {
+    schema: "field_norm_v1",
+    rule: "01 = clamp((x - min) / (max - min))",
+    clamp: true,
+    degenerate: "if max==min then 01=0",
+  };
   // ------------------------------------------------------------
   // 1) Resolve source vertex sets (plaza required, others optional)
   // ------------------------------------------------------------
@@ -339,7 +355,26 @@ export function runFieldsStage(env) {
     params: ctx.params,
     computeSpecs,
   });
+  // Publish bounded ranges for all fields computed so far.
+  const meta0 = fields.meta();
+  if (meta0 && Array.isArray(meta0.records)) {
+    for (let i = 0; i < meta0.records.length; i++) {
+      const r = meta0.records[i];
+      if (!r || !r.name) continue;
   
+      const rec = fields.get(r.name);
+      if (!rec || !rec.values) continue;
+  
+      const mm = computeMinMax(rec.values);
+      const m = rec.meta || {};
+      stageMeta.fieldStats[r.name] = {
+        min: mm.min,
+        max: mm.max,
+        domain: r.domain || m.domain || null,
+        units: r.units || m.units || null,
+      };
+    }
+  }
   // ------------------------------------------------------
   // 4) (Optional) Derive face fields by boundary reduction
   // ------------------------------------------------------
@@ -390,6 +425,16 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+      {
+        const rec2 = fields.get("distance_to_plaza_face");
+        const mm2 = computeMinMax(rec2.values);
+        stageMeta.fieldStats["distance_to_plaza_face"] = {
+          min: mm2.min,
+          max: mm2.max,
+          domain: "face",
+          units: "map_units",
+        };
+      }
       stageMeta.derived.push("distance_to_plaza_face");
     }
   
@@ -412,6 +457,16 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+      {
+          const rec2 = fields.get("distance_to_wall_face");
+          const mm2 = computeMinMax(rec2.values);
+          stageMeta.fieldStats["distance_to_wall_face"] = {
+            min: mm2.min,
+            max: mm2.max,
+            domain: "face",
+            units: "map_units",
+        };
+        }
       stageMeta.derived.push("distance_to_wall_face");
     }
   
@@ -423,6 +478,7 @@ export function runFieldsStage(env) {
         vertexValues: rec.values,
         mode: "min",
       });
+    
       fields.add(
         {
           name: "distance_to_water_face",
@@ -434,6 +490,18 @@ export function runFieldsStage(env) {
         },
         faceVals
       );
+    
+      {
+        const rec2 = fields.get("distance_to_water_face");
+        const mm2 = computeMinMax(rec2.values);
+        stageMeta.fieldStats["distance_to_water_face"] = {
+          min: mm2.min,
+          max: mm2.max,
+          domain: "face",
+          units: "map_units",
+        };
+      }
+    
       stageMeta.derived.push("distance_to_water_face");
     }
   } else {
