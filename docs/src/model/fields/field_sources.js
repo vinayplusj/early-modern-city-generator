@@ -188,6 +188,39 @@ export function getWallSourceVertexIds(args) {
 }
 
 /**
+ * Derive source vertex ids from graph edge ids (deterministic).
+ * Intended for water: shorelineEdgeIds / riverEdgeIds -> vertex ids (edge endpoints).
+ *
+ * @param {object} args
+ * @param {object} args.graph - { edges: Array<{a:number,b:number}> }
+ * @param {Array<number|string>} args.edgeIds
+ * @param {string} [args.label] - used for error messages
+ * @returns {number[]} sorted unique vertex ids
+ */
+export function deriveVertexIdsFromGraphEdgeIds(args) {
+  assert(args && args.graph, "deriveVertexIdsFromGraphEdgeIds requires args.graph.");
+  assert(Array.isArray(args.graph.edges), "deriveVertexIdsFromGraphEdgeIds requires graph.edges array.");
+  assert(Array.isArray(args.edgeIds), "deriveVertexIdsFromGraphEdgeIds requires args.edgeIds array.");
+
+  const label = args.label || "edge";
+
+  const vIds = [];
+  for (let i = 0; i < args.edgeIds.length; i++) {
+    const eid = toIntId(args.edgeIds[i], label);
+    if (eid < 0 || eid >= args.graph.edges.length) continue;
+
+    const e = args.graph.edges[eid];
+    if (!e) continue;
+
+    // Expected edge shape: { id, a, b, ... }
+    if (Number.isInteger(e.a)) vIds.push(e.a);
+    if (Number.isInteger(e.b)) vIds.push(e.b);
+  }
+
+  assert(vIds.length > 0, "deriveVertexIdsFromGraphEdgeIds: no vertex ids could be derived from edgeIds.");
+  return dedupeSortIntIds(vIds, "vertex");
+}
+/**
  * Get water source vertices.
  *
  * Preferred: meshAccess.waterSourceVertexIds() (exposed from water snapping layer)
