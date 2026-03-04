@@ -20,6 +20,7 @@
 // Outputs:
 // - ctx.state.fields (FieldRegistry)
 // - ctx.state.fieldsMeta (object; includes FieldRegistry.meta() plus stage-level provenance)
+// - ctx.state.fieldsMeta.wardIdToFaceId
 
 import { computeAllFields } from "../fields/compute_fields.js";
 import { makeMeshAccessFromCityMesh } from "../fields/mesh_access_from_city_mesh.js";
@@ -84,7 +85,77 @@ function resolveOptionalSources({ label, resolveFn }) {
     return { ids: null, error: formatErr(e) };
   }
 }
+function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
+  const vorGraph = routingMesh && routingMesh.vorGraph;
+  if (!vorGraph || !Array.isArray(vorGraph.cells)) {
+    return { map: null, meta: null, error: "Missing routingMesh.vorGraph.cells (Stage 70 output not persisted)." };
+  }
 
+  const wardCount =
+    (ctx.state.wards && Array.isArray(ctx.state.wards) && ctx.state.wards.length) ? (ctx.state.wards.length | 0) : null;
+
+  // Determine required length if wardCount is not available.
+  let maxWardId = -1;
+  for (let i = 0; i < vorGraph.cells.length; i++) {
+    const c = vorGraph.cells[i];
+    if (!c || c.disabled) continue;
+    const wId = toIntId(c.wardId, "ward");
+    if (wId > maxWardId) maxWardId = wId;
+  }
+
+  const n = (wardCount != null) ? wardCount : (maxWardId + 1);
+  const faceIdByWardId = new Array(n);
+  for (let i = 0; i < n; i++) faceIdByWardId[i] = -1;
+
+  let assigned = 0;
+
+  for (let cellIndex = 0; cellIndex < vorGraph.cells.length; cellIndex++) {
+    const c = vorGraph.cells[cellIndex];
+    if (!c || c.disabled) continue;
+
+    const wardId = toIntId(c.wardId, "ward");
+
+    // In this repo, CityMesh face id is the VorGraph cell id.
+    // build.js sets cell.id = cells.length, so this is stable.
+    const faceId = (c.id != null) ? toIntId(c.id, "face") : (cellIndex | 0);
+
+    if (wardCount != null) {
+      assert(wardId >= 0 && wardId < n, `wardId out of range: ${wardId} (wardCount=${n})`);
+    } else {
+      assert(wardId >= 0 && wardId < n, `wardId out of inferred range: ${wardId} (n=${n})`);
+    }
+
+    assert(faceIdByWardId[wardId] === -1, `Duplicate wardId mapping: wardId=${wardId} already mapped to faceId=${faceIdByWardId[wardId]}`);
+
+    // Sanity check: face id should exist on the mesh.
+    // meshAccess.resolveFace(...) is not guaranteed, so use faceCount bounds where possible.
+    if (typeof meshAccess.faceCount === "function") {
+      const fc = meshAccess.faceCount();
+      assert(faceId >= 0 && faceId < fc, `Mapped faceId out of range: faceId=${faceId} (faceCount=${fc})`);
+    }
+
+    faceIdByWardId[wardId] = faceId;
+    assigned++;
+  }
+
+  // Count missing ward ids (should be zero in normal runs).
+  let missing = 0;
+  for (let i = 0; i < faceIdByWardId.length; i++) if (faceIdByWardId[i] === -1) missing++;
+
+  const meta = {
+    wardCount: n,
+    assigned,
+    missing,
+    source: "routingMesh.vorGraph.cells[*].{wardId,id}",
+  };
+
+  // If wardCount is known, missing mappings are a hard error (hidden coupling / incomplete graph).
+  if (wardCount != null) {
+    assert(missing === 0, `Ward→face mapping incomplete: missing=${missing} of wardCount=${n}`);
+  }
+
+  return { map: faceIdByWardId, meta, error: null };
+}
 /**
  * Resolve a deterministic plaza source vertex id.
  *
@@ -137,7 +208,11 @@ export function runFieldsStage(env) {
 
   const cityMesh = routingMesh.cityMesh;
   const meshAccess = makeMeshAccessFromCityMesh(cityMesh);
-
+  // Deterministic bridge for downstream ward-level consumers:
+  // wardId -> CityMesh faceId (via persisted vorGraph).
+  const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
+  stageMeta.wardToFace = wardFaceMapRes.meta;
+  stageMeta.wardToFaceError = wardFaceMapRes.error;
   const stageMeta = {
     stage: "075_fields",
     version: 1,
@@ -376,6 +451,10 @@ export function runFieldsStage(env) {
     schema: "fields_meta_v1",
     stage: stageMeta,
     fields: fields.meta(),
+
+    // For ward-level scoring consumers:
+    // Index = wardId, value = CityMesh faceId (or -1 if missing).
+    wardIdToFaceId: wardFaceMapRes.map,
   };
 }
 
