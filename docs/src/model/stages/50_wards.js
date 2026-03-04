@@ -78,6 +78,12 @@ export function runWardsStage({
 
   const innerCount = computeDynamicInnerCount(ctx.seed);
 
+  // Milestone 4.8 adoption wiring:
+  // Stage 50 usually runs before fields are built, so these will be null in the default pipeline.
+  // Passing them is safe; ward_roles.js only consumes them when explicitly enabled via params.
+  const fields = (ctx.state && ctx.state.fields) ? ctx.state.fields : null;
+  const fieldsMeta = (ctx.state && ctx.state.fieldsMeta) ? ctx.state.fieldsMeta : null;
+
   const {
     wards: wardsWithRoles,
     indices: wardRoleIndices,
@@ -86,6 +92,13 @@ export function runWardsStage({
     wards,
     centre: { x: cx, y: cy },
     params: { innerCount },
+
+    // Optional (may be null in current stage order)
+    fields,
+    fieldsMeta,
+
+    // Not available in Stage 50 (routing mesh is built later); keep unset for now.
+    meshAccess: null,
   });
 
   // Persist on ctx exactly as before.
