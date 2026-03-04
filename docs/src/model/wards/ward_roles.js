@@ -72,6 +72,16 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+function getWardField01(ward, key) {
+  if (!ward || !ward.field) return null;
+  const v = ward.field[key];
+  if (!Number.isFinite(v)) return null;
+  // Guard against accidental out-of-range values.
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
 function getFaceFieldValue(fields, meshAccess, fieldName, faceId) {
   const rec = fields.get(fieldName);
   // If you later expose faceIdToIndex on meshAccess, prefer it.
@@ -84,6 +94,7 @@ function getFaceFieldValue(fields, meshAccess, fieldName, faceId) {
   assert(Number.isInteger(faceId) && faceId >= 0 && faceId < rec.values.length, `Face id ${faceId} out of range for field "${fieldName}".`);
   return rec.values[faceId];
 }
+
 function resolveFaceIdForWard({ wardId, fieldsMeta }) {
   if (!fieldsMeta || !Array.isArray(fieldsMeta.wardIdToFaceId)) return null;
 
@@ -95,6 +106,7 @@ function resolveFaceIdForWard({ wardId, fieldsMeta }) {
 
   return faceId;
 }
+
 function getVertexFieldValueAtPoint(fields, meshAccess, fieldName, p, vertexIdToIndex) {
   assert(meshAccess && typeof meshAccess.iterVertexIds === "function", "Vertex field sampling requires meshAccess.iterVertexIds().");
   assert(meshAccess && typeof meshAccess.vertexXY === "function", "Vertex field sampling requires meshAccess.vertexXY(vId).");
@@ -120,55 +132,70 @@ export function assignWardRoles({ wards, centre, params, fields, fieldsMeta, mes
   const useFieldsForCoreOrdering = !!p.useFieldsForCoreOrdering;
   const coreOrderingFieldName = p.coreOrderingFieldName || "distance_to_plaza_face";
 
- if (useFieldsForCoreOrdering) {
-   assert(fields && typeof fields.get === "function", "useFieldsForCoreOrdering=true requires a FieldRegistry in args.fields.");
- 
-   // Prefer face field when present; otherwise fall back to vertex field sampled at ward.seed.
-   let fieldNameUsed = coreOrderingFieldName;
-   let mode = "face";
- 
-   if (!fields.has(fieldNameUsed)) {
-     // Common, safe fallback: face field not available yet in this geometry variant.
-     if (fieldNameUsed === "distance_to_plaza_face" && fields.has("distance_to_plaza_vertex")) {
-       fieldNameUsed = "distance_to_plaza_vertex";
-       mode = "vertex_at_seed";
-     } else {
-       throw new Error(`Missing required field "${coreOrderingFieldName}" for core ordering, and no supported fallback is available.`);
-     }
-   }
- 
-   const vertexIdToIndex = (mode === "vertex_at_seed") ? makeVertexIdToIndex(meshAccess) : null;
- 
-   for (let i = 0; i < wardsCopy.length; i++) {
-     const w = wardsCopy[i];
-     w.distToCentreLegacy = w.distToCentre;
- 
-     if (mode === "face") {
-       const faceId = resolveFaceIdForWard({ wardId: w.id, fieldsMeta });
-     
-       // Hard fail if face fields are enabled but the ward->face bridge is missing.
-       assert(
-         Number.isInteger(faceId),
-         `useFieldsForCoreOrdering: missing fieldsMeta.wardIdToFaceId mapping for wardId=${w.id}.`
-       );
-     
-       w.distToCentre = getFaceFieldValue(fields, meshAccess, fieldNameUsed, faceId);
-     } else {
-       // Deterministic vertex sampling at ward seed.
-       w.distToCentre = getVertexFieldValueAtPoint(fields, meshAccess, fieldNameUsed, w.seed, vertexIdToIndex);
-     }
- 
-     assert(Number.isFinite(w.distToCentre), `Non-finite field value for ward id ${w.id} using field "${fieldNameUsed}" (${mode}).`);
-   }
- 
-   // Optional debug breadcrumb for audits (non-breaking; ignored by other code).
-   wardsCopy._coreOrderingField = {
-    requested: coreOrderingFieldName,
-    used: fieldNameUsed,
-    mode,
-    hasWardIdToFaceId: !!(fieldsMeta && Array.isArray(fieldsMeta.wardIdToFaceId)),
-  };
- }
+  if (useFieldsForCoreOrdering) {
+    // Prefer Stage 085 ward metrics when available.
+    let usedWardMetric = false;
+
+    for (let i = 0; i < wardsCopy.length; i++) {
+      const w = wardsCopy[i];
+      const v01 = getWardField01(w, "distPlaza01");
+      if (v01 != null) {
+        w.distToCentreLegacy = w.distToCentre;
+        w.distToCentre = v01;
+        usedWardMetric = true;
+      }
+    }
+
+    if (usedWardMetric) {
+      wardsCopy._coreOrderingField = {
+        requested: "ward.field.distPlaza01",
+        used: "ward.field.distPlaza01",
+        mode: "ward_metric_01",
+        hasWardIdToFaceId: !!(fieldsMeta && Array.isArray(fieldsMeta.wardIdToFaceId)),
+      };
+    } else {
+      // Fall back to FieldRegistry sampling logic.
+      assert(fields && typeof fields.get === "function", "useFieldsForCoreOrdering=true requires a FieldRegistry in args.fields.");
+
+      let fieldNameUsed = coreOrderingFieldName;
+      let mode = "face";
+
+      if (!fields.has(fieldNameUsed)) {
+        if (fieldNameUsed === "distance_to_plaza_face" && fields.has("distance_to_plaza_vertex")) {
+          fieldNameUsed = "distance_to_plaza_vertex";
+          mode = "vertex_at_seed";
+        } else {
+          throw new Error(`Missing required field "${coreOrderingFieldName}" for core ordering, and no supported fallback is available.`);
+        }
+      }
+
+      const vertexIdToIndex = (mode === "vertex_at_seed")
+        ? (assert(meshAccess, "vertex_at_seed field sampling requires meshAccess."), makeVertexIdToIndex(meshAccess))
+        : null;
+
+      for (let i = 0; i < wardsCopy.length; i++) {
+        const w = wardsCopy[i];
+        w.distToCentreLegacy = w.distToCentre;
+
+        if (mode === "face") {
+          const faceId = resolveFaceIdForWard({ wardId: w.id, fieldsMeta });
+          assert(Number.isInteger(faceId), `useFieldsForCoreOrdering: missing fieldsMeta.wardIdToFaceId mapping for wardId=${w.id}.`);
+          w.distToCentre = getFaceFieldValue(fields, meshAccess, fieldNameUsed, faceId);
+        } else {
+          w.distToCentre = getVertexFieldValueAtPoint(fields, meshAccess, fieldNameUsed, w.seed, vertexIdToIndex);
+        }
+
+        assert(Number.isFinite(w.distToCentre), `Non-finite field value for ward id ${w.id} using field "${fieldNameUsed}" (${mode}).`);
+      }
+
+      wardsCopy._coreOrderingField = {
+        requested: coreOrderingFieldName,
+        used: fieldNameUsed,
+        mode,
+        hasWardIdToFaceId: !!(fieldsMeta && Array.isArray(fieldsMeta.wardIdToFaceId)),
+      };
+    }
+  }
 
   const {
     order,
