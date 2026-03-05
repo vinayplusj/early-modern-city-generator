@@ -126,6 +126,7 @@ export const PIPELINE_STAGES = [
         cx: env.cx,
         cy: env.cy,
         baseR: env.baseR,
+        waterIntent: ctx.state.waterIntent ?? null,
       });
 
       ctx.state.waterModel = waterModel;
