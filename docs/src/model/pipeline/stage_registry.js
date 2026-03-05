@@ -1,6 +1,6 @@
 // docs/src/model/pipeline/stage_registry.js
 //
-// Phase 1 stage registry.
+// Phase 1 stage registry.hasDock: env.hasDock,
 // Purpose: centralize stage ordering WITHOUT changing stage code.
 // Contract (Phase 4.6+): stages read inputs from `env` (runtime) and publish outputs to `env.ctx.state`.
 // No stage-to-stage data is passed via `env.*`.
@@ -665,6 +665,10 @@ export const PIPELINE_STAGES = [
 
         wallBase: ctx.state.fortifications?.wallBase ?? null,
         outerBoundary: ctx.state.outerBoundary ?? null,
+
+        // New (Milestone 5A)
+        corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
+        params: ctx.params ?? null,
 
         width: env.width,
         height: env.height,
