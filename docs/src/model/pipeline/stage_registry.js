@@ -127,7 +127,7 @@ export const PIPELINE_STAGES = [
         throw new Error("[EMCG] Stage 40 requires ctx.state.outerBoundary (Stage 30 output).");
       }
 
-      const waterModel = runWaterStage({
+      const waterRes = runWaterStage({
         waterKind: env.waterKind,
         rng: env.rng.water,
         outerBoundary,
@@ -136,8 +136,9 @@ export const PIPELINE_STAGES = [
         baseR: env.baseR,
         waterIntent: ctx.state.waterIntent ?? null,
       });
-
-      ctx.state.waterModel = waterModel;
+      
+      ctx.state.waterModel = waterRes.waterModel;
+      ctx.state.waterIntentDerived = waterRes.waterIntentDerived;
     },
   },
 
