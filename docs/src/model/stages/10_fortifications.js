@@ -2,7 +2,7 @@
 //
 // Stage 10: Footprint + main fortifications.
 // Extracted from generate.js without functional changes.
-
+//
 import { centroid } from "../../geom/poly.js";
 import { offsetRadial } from "../../geom/offset.js";
 
