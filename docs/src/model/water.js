@@ -59,7 +59,7 @@ function pickBestEdge(poly, nearPoint) {
   return [a, b];
 }
 
-export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR } = {}) {
+export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR, waterIntent = null } = {}) {
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
   if (kind === "none") {
@@ -72,7 +72,7 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
   };
 }
 
-  const raw = buildWater({ rng, siteWater: kind, outerBoundary, cx, cy, baseR }) || {};
+  const raw = buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR, waterIntent }) || {};
 
   if (raw.kind === "river" && Array.isArray(raw.polyline) && raw.polyline.length >= 2) {
     return {
@@ -102,5 +102,6 @@ export function buildWaterModel({ rng, siteWater, outerBoundary, cx, cy, baseR }
     river: null, 
     coast: null, 
     shoreline: null, 
-    bankPoint: null };
+    bankPoint: null 
+  };
 }
