@@ -59,18 +59,18 @@ function getInputs() {
   syncGateControl();
 
   const bastionDensity = String(document.getElementById("bastionDensity").value || "medium");
+  const gateDensity = String(document.getElementById("gateDensity").value || "medium");
   const { w, h } = resizeCanvasToDevicePixels();
   const bastions = computeBastionTargetN({ w, h, density: bastionDensity });
-  const gatesRaw = Number(document.getElementById("gates").value) || 3;
-  const maxGates = Math.max(1, Math.floor(bastions / 2));
-  const gates = Math.min(Math.max(1, gatesRaw), maxGates);
-
   return {
     seed: Number(document.getElementById("seed").value) || 1331,
     bastionDensity,
-    gates,
+  
+    // New: gate density (until you add a UI control, keep it as a stable default)
+    gateDensity: "medium",
+  
     site: {
-      water,                 // "none" | "river" | "coast"
+      water,  // "none" | "river" | "coast"
       hasDock: water !== "none" && dock,
     },
   };
@@ -115,12 +115,13 @@ let model = null;
 function regenerate() {
   syncDockControl();
   const { w, h } = resizeCanvasToDevicePixels();
-  const { seed, bastionDensity, gates, site } = getInputs();
+  const { seed, bastionDensity, gateDensity, site } = getInputs();
   const bastions = computeBastionTargetN({ w, h, density: bastionDensity });
   
   console.log("REGEN", { seed, bastionDensity, bastions, gates, w, h });
   
-  model = generate(seed, bastionDensity, bastions, gates, w, h, site);
+  // gateCount argument can be kept as a legacy placeholder (for now pass null or 0).
+  model = generate(seed, bastionDensity, bastions, 0, gateDensity, w, h, site);
   window.model = model; // debug
   render(ctx, model);
 }
