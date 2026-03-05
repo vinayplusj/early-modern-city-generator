@@ -27,6 +27,10 @@ export function runDebugInvariantsStage({
   height,
   hasDock,
   waterModel,
+
+  // New (Milestone 5A)
+  corridorIntent,
+  params,
 }) {
 
   if (!debugEnabled) return;
@@ -38,7 +42,49 @@ export function runDebugInvariantsStage({
     edges: vorGraph?.edges?.length,
     primaryRoads: primaryRoads?.length,
   });
+  // ---------------- Corridor intent diagnostics (log-only) ----------------
+  if (corridorIntent && Array.isArray(corridorIntent.corridors)) {
+    const corridors = corridorIntent.corridors;
 
+    const summary = corridors.map((c) => {
+      const ang = Math.atan2(c.dir?.y ?? 0, c.dir?.x ?? 0);
+      const deg = (ang * 180) / Math.PI;
+      return {
+        kind: c.kind,
+        weight: c.weight,
+        deg: Math.round(deg * 10) / 10,
+        dir: c.dir,
+      };
+    });
+
+    console.info("[Corridors] intent", {
+      count: corridors.length,
+      centre: corridorIntent.centre,
+      corridors: summary,
+    });
+  } else {
+    console.info("[Corridors] intent", { count: 0 });
+  }
+
+  if (params && typeof params === "object") {
+    const stretch = {
+      strength: params.footprintStretchStrength,
+      widthRad: params.footprintStretchWidthRad,
+      clampMin: params.footprintStretchClampMin,
+      clampMax: params.footprintStretchClampMax,
+    };
+
+    // Only log if at least one value is present.
+    const hasAny =
+      stretch.strength != null ||
+      stretch.widthRad != null ||
+      stretch.clampMin != null ||
+      stretch.clampMax != null;
+
+    if (hasAny) {
+      console.info("[Footprint] corridor stretch params", stretch);
+    }
+  }
   if (vorGraph && Array.isArray(vorGraph.edges)) {
     let waterEdges = 0;
     let citadelEdges = 0;
@@ -247,5 +293,20 @@ export function runDebugInvariantsStage({
 
   if (debugOut && typeof debugOut === "object") {
     debugOut.invariants = { ok, errors };
+  }
+  if (debugOut && typeof debugOut === "object") {
+    debugOut.invariants = { ok, errors };
+
+    if (corridorIntent) {
+      debugOut.corridors = corridorIntent;
+    }
+    if (params && typeof params === "object") {
+      debugOut.footprintStretch = {
+        strength: params.footprintStretchStrength,
+        widthRad: params.footprintStretchWidthRad,
+        clampMin: params.footprintStretchClampMin,
+        clampMax: params.footprintStretchClampMax,
+      };
+    }
   }
 }
