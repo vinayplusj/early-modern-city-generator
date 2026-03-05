@@ -282,7 +282,7 @@ const curtainVertexN = Math.max(
     // Goal: leave enough space for moatworks (ditch + glacis) plus a margin.
     // Stage 120 uses: ditchWidth = fortR * 0.035, glacisWidth = fortR * 0.08.
 	const fortRParam =
-	  Number.isFinite(ctx?.params?.warpFort?.bandOuter)
+	  (Number.isFinite(ctx?.params?.warpFort?.bandOuter) && ctx.params.warpFort.bandOuter > 0)
 	    ? ctx.params.warpFort.bandOuter
 	    : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
 	
@@ -298,8 +298,15 @@ const curtainVertexN = Math.max(
 	  fortRGeom = median(rs);
 	}
 	
-	const fortR = Number.isFinite(fortRParam) ? fortRParam : fortRGeom;
-	assert(Number.isFinite(fortR) && fortR > 0, `warpFort.bandOuter missing; fortRParam=${fortRParam}, fortRGeom=${fortRGeom}`);
+	const fortR =
+	  (Number.isFinite(fortRParam) && fortRParam > 0)
+	    ? fortRParam
+	    : fortRGeom;
+	
+	assert(
+	  Number.isFinite(fortR) && fortR > 0,
+	  `warpFort.bandOuter invalid; fortRParam=${fortRParam}, fortRGeom=${fortRGeom}`
+	);
 	if (warpOutworks) {
 	  warpOutworks._fortR = { param: fortRParam, geom: fortRGeom, used: fortR };
 	}
