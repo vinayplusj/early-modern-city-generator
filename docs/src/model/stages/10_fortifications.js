@@ -55,7 +55,32 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   
   // Now build corridor intent with gates + water axis.
   const corridorIntent = buildCorridorIntent(corridorCentre, gates, waterDir, null);
-
+  // If water is a coast, prefer a one-sided bulge toward the sea.
+  // This activates the "halfplane" mode in _corridorFactorAtAngle.
+  const waterKind =
+    (ctx.state.waterIntentDerived && ctx.state.waterIntentDerived.kind) ? ctx.state.waterIntentDerived.kind :
+    (ctx.state.waterModel && ctx.state.waterModel.kind) ? ctx.state.waterModel.kind :
+    null;
+  
+  if (waterKind === "coast" && corridorIntent && Array.isArray(corridorIntent.corridors)) {
+    for (const c of corridorIntent.corridors) {
+      if (c && c.kind === "water") {
+        c.mode = "halfplane";
+        // Coast tends to strongly shape the town edge.
+        c.weight = Math.max(c.weight ?? 0, 1.9);
+      }
+    }
+  }
+  
+  // Rivers should elongate along the axis but not create a one-sided bulge.
+  if (waterKind === "river" && corridorIntent && Array.isArray(corridorIntent.corridors)) {
+    for (const c of corridorIntent.corridors) {
+      if (c && c.kind === "water") {
+        c.mode = "axis";
+        c.weight = Math.max(c.weight ?? 0, 1.6);
+      }
+    }
+  }
   // Stretched footprint along corridor directions.
   // Bounded and deterministic: generateFootprint clamps the radial multiplier.
   const footprint = generateFootprint(rng, cx, cy, baseR, 22, {
