@@ -116,7 +116,19 @@ function _corridorFactorAtAngle(corridors, ang, widthRad) {
   for (const c of corridors) {
     const a0 = _dirToAngle(c.dir);
     const d = _angDiff(ang, a0);
-    const t = Math.exp(- (d * d) / (widthRad * widthRad));
+    let t = Math.exp(- (d * d) / (widthRad * widthRad));
+    
+    // Optional: half-plane preference. If mode is "halfplane", angles within +/- 90°
+    // of the corridor direction get full strength; the opposite side is attenuated.
+    if (c.mode === "halfplane") {
+      // cos(d) is 1 at d=0, 0 at 90°, -1 at 180°
+      const cosd = Math.cos(d);
+      // Map [-1..1] to [0..1], clamp.
+      const hp = clamp((cosd + 1) * 0.5, 0, 1);
+      // Sharpen: favour the forward half strongly.
+      t *= hp * hp;
+    }
+    
     best = Math.max(best, c.weight * t);
   }
   return best;
