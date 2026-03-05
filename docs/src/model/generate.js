@@ -64,7 +64,7 @@ function logBuildOnce(seed, width, height, site) {
   console.info("[EMCG] First run params:", { seed, width, height, site });
 }
 
-export function generate(seed, bastionDensity, bastionTargetN, gateCount, width, height, site = {}) {
+export function generate(seed, bastionDensity, bastionTargetN, gateCount, gateDensity, width, height, site = {}) {
   logBuildOnce(seed, width, height, site);
 
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
@@ -76,10 +76,15 @@ export function generate(seed, bastionDensity, bastionTargetN, gateCount, width,
     h: height,
     site: { water: waterKind, hasDock },
     params: {
-      bastions: bastionTargetN,      // keep existing stages working
-      gates: gateCount,
-      bastionDensity,               // new, for audits/debug
-      bastionSoft: null,            // filled below
+      bastions: bastionTargetN,          // keep existing stages working
+      gates: gateCount,                  // numeric fallback (backward compatible)
+    
+      // New: density spec for gate selection in Stage 10.
+      // If null/undefined, Stage 10 falls back to gateCount or "medium".
+      gateDensity: (typeof gateDensity === "string") ? gateDensity : null,
+    
+      bastionDensity,                    // existing
+      bastionSoft: null,                 // filled below
     },
   });
   // Soft constraint policy for future delete+reinsert logic.
