@@ -3,6 +3,9 @@
 //
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
 
+import { warpPolylineRadial, buildWarpField } from "../warp.js";
+import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
+import { convexHull } from "../../geom/hull.js";
 import {
   buildFortWarp,
   clampPolylineRadial,
@@ -11,18 +14,20 @@ import {
   computeCurtainClearanceProfile,
   pickClearanceMaximaWithSpacing,
 } from "../generate_helpers/warp_stage.js";
-import { warpPolylineRadial, buildWarpField } from "../warp.js";
-import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
-import { convexHull } from "../../geom/hull.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
-import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
-import { loopPerimeter, polyAreaSigned } from "../../geom/loop_metrics.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
 import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
+import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
+import { nearestSampleIndex, circDist, nearestMaximaIndex } from "../generate_helpers/warpfield_slots.js";
+import { bastionCentroid } from "../generate_helpers/bastion_geom.js";
+import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
+import { loopPerimeter, polyAreaSigned } from "../../geom/loop_metrics.js";
+import { ensureWinding } from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
-import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
+import { assert } from "../util/assert.js";
+import { median } from "../util/stats.js";
 
 /**
  * @param {object} args
@@ -36,21 +41,6 @@ import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_build
  *    bastionHullWarpedSafe: Array<{x:number,y:number}>|null
  *  }
  */
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.hypot(dx, dy);
-}
-
-function median(arr) {
-  if (!arr || arr.length === 0) return null;
-  const a = arr.slice().sort((x, y) => x - y);
-  const mid = (a.length / 2) | 0;
-  return (a.length % 2) ? a[mid] : 0.5 * (a[mid - 1] + a[mid]);
-}
 export function runWarpFieldStage({
   ctx,
   cx,
@@ -226,14 +216,6 @@ export function runWarpFieldStage({
   
   const wantCCW = curtainArea > 0;
 	
-
-	
-	function ensureWinding(poly, wantCCW) {
-	  const a = polyAreaSigned(poly);
-	  const isCCW = a > 0;
-	  if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
-	  return poly;
-	}
   // ---------------- Bastion placement candidates (clearance maxima) ----------------
   // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
@@ -277,7 +259,7 @@ export function runWarpFieldStage({
 	  for (let i = 0; i < wallCurtainForDraw.length; i++) {
 	    const p = wallCurtainForDraw[i];
 	    if (!p) continue;
-	    rs.push(dist(p, { x: cx, y: cy }));
+	    rs.push(Math.hypot(p.x - cx, p.y - cy));
 	  }
 	  fortRGeom = median(rs);
 	}
@@ -477,43 +459,6 @@ export function runWarpFieldStage({
           params: { ...warpOutworks.params, debug: false },
         })
       : null;
-  function bastionCentroid(poly) {
-    let sx = 0, sy = 0, n = 0;
-    for (const p of poly) {
-      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-      sx += p.x; sy += p.y; n++;
-    }
-    return (n > 0) ? { x: sx / n, y: sy / n } : { x: cx, y: cy };
-  }
-  
-  function nearestSampleIndex(pts, p) {
-    // Deterministic: first minimum wins.
-    let bestI = 0;
-    let bestD2 = Infinity;
-    for (let i = 0; i < pts.length; i++) {
-      const q = pts[i];
-      const dx = q.x - p.x;
-      const dy = q.y - p.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) { bestD2 = d2; bestI = i; }
-    }
-    return bestI;
-  }
-  
-  function circDist(aS, bS, L) {
-    const d = Math.abs(aS - bS);
-    return Math.min(d, Math.max(0, L - d));
-  }
-  
-  function nearestMaximaIndex(maxima, s0, L) {
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < maxima.length; i++) {
-      const d = circDist(maxima[i].s, s0, L);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    return best;
-  }
   
   // Apply outworks warp to bastion polygons (two-target system).
   let bastionPolysWarpedSafe = bastionPolysUsed;
