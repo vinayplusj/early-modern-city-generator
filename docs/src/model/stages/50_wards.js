@@ -42,7 +42,7 @@ function computeDynamicInnerCount(seed) {
   const rem = ((seedInt % 3) + 3) % 3;
 
   // Final range: 3, 4, 5
-  return 3 + rem;
+  return 1 + rem;
 }
 
 export function runWardsStage({
