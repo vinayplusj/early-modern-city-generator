@@ -6,7 +6,7 @@ import { buildWaterModel } from "../water.js";
  * @param {object} args
  * @returns {object} waterModel
  */
-export function runWaterStage({ waterKind, rng, outerBoundary, cx, cy, baseR }) {
+export function runWaterStage({ waterKind, rng, outerBoundary, cx, cy, baseR, waterIntent = null }) {
   const waterModel = (waterKind === "none")
     ? { kind: "none", river: null, coast: null, shoreline: null, bankPoint: null }
     : buildWaterModel({
@@ -16,6 +16,7 @@ export function runWaterStage({ waterKind, rng, outerBoundary, cx, cy, baseR }) 
         cx,
         cy,
         baseR,
+        waterIntent,
       });
 
   return waterModel;
