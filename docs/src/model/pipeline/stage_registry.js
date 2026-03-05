@@ -36,7 +36,17 @@ export const PIPELINE_STAGES = [
       const { ctx, cx, cy, baseR, bastionCount } = env;
     
       // Stage RNG (keep whatever your project uses elsewhere; this is the common pattern).
-      const rngFort = ctx.fork ? ctx.fork("stage:fort") : env.rng;
+      // Stage RNG must be a function.
+      // Prefer env.rng (already a function), otherwise try ctx.rng.fork (common pattern).
+      const rngFort =
+        (typeof env.rng === "function") ? env.rng :
+        (ctx.rng && typeof ctx.rng.fork === "function") ? ctx.rng.fork("stage:fort") :
+        (typeof ctx.fork === "function") ? ctx.fork("stage:fort") :
+        null;
+      
+      if (typeof rngFort !== "function") {
+        throw new Error("[EMCG] Stage 10 requires a callable rng function.");
+      }
     
       // Gate selection spec: density only. Default: "medium".
       let gateSpec = (ctx.params && ctx.params.gateDensity != null)
