@@ -13,16 +13,6 @@ import {
   buildCorridorIntent,
 } from "../features.js";
 
-/**
- * @param {object} ctx
- * @param {function} rng - seeded RNG function (mulberry32(seed)) from generate.js
- * @param {number} cx
- * @param {number} cy
- * @param {number} baseR
- * @param {number} bastionCount
- * @param {number} gateCount
- * @returns {object} stage outputs (see below)
- */
 export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount) {
   ctx.geom = ctx.geom || {};
   // ---------------- Footprint + main fortifications ----------------
@@ -56,7 +46,17 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
 
   // Centre used by later stages remains the footprint centroid.
   const centre = centroid(footprint);
+  // Ditch and glacis geometry (used by later stages and rendering).
+  // Must be defined before returning.
+  const ditchWidth = wallR * 0.035;
+  const glacisWidth = wallR * 0.08;
 
+  // Radial offsets from the wall base. These are used as simple, stable approximations.
+  // If your original file used a different reference polygon, keep it consistent.
+  const ditchOuter = offsetRadial(wallBase, ditchWidth);
+  const ditchInner = offsetRadial(wallBase, -ditchWidth * 0.55);
+  const glacisOuter = offsetRadial(wallBase, ditchWidth + glacisWidth);
+  
   // Start with the full bastioned wall.
   const wallFinal = wall;
   const bastionPolys = bastions.map((b) => b.pts);
