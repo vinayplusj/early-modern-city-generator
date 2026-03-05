@@ -22,7 +22,7 @@ import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_cla
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
-
+import { assert } from "../fields/field_types.js";
 /**
  * @param {object} args
  * @returns {object}
@@ -35,6 +35,9 @@ import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_build
  *    bastionHullWarpedSafe: Array<{x:number,y:number}>|null
  *  }
  */
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
+}
 function dist(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
