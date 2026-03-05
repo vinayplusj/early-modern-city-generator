@@ -120,7 +120,7 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
   }
 
   const {
-    INNER_COUNT = 3,
+    INNER_COUNT = 1,
     NEW_TOWN_COUNT = 1,
     OUTER_WARD_COUNT = 2,
     OUTER_PATTERN = ["slums", "farms", "plains", "woods"],
