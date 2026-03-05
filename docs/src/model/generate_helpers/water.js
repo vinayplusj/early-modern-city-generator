@@ -4,7 +4,7 @@
 // Output is deterministic for a given RNG stream.
 //
 // Contract:
-// buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR }) -> {
+// buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR, waterIntent }) -> {
 //   kind: "none" | "river" | "coast",
 //   polyline: Array<{x,y}> | null,   // river centreline
 //   polygon: Array<{x,y}> | null,    // coast "sea" polygon
@@ -42,7 +42,7 @@ function supportPoint(poly, dir) {
   return best;
 }
 
-function makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR }) {
+function makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR, waterIntent }) {
   const bb = bboxFromPoly(outerBoundary);
   const pad = Math.max(baseR * 1.2, 120);
 
@@ -51,8 +51,17 @@ function makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR }) {
   const span = Math.max(w, h);
 
   // Pick a direction and a perpendicular.
-  const ang = rng() * Math.PI * 2;
-  const dir = normalize({ x: Math.cos(ang), y: Math.sin(ang) });
+  // Always consume RNG once so the remainder of the water stream stays aligned.
+  const angRnd = rng() * Math.PI * 2;
+  
+  let dir = null;
+  if (waterIntent && waterIntent.dir) {
+    dir = normalize(waterIntent.dir);
+  }
+  if (!dir || !Number.isFinite(dir.x) || !Number.isFinite(dir.y)) {
+    dir = normalize({ x: Math.cos(angRnd), y: Math.sin(angRnd) });
+  }
+  
   const perp = { x: -dir.y, y: dir.x };
 
   // Choose where the river crosses near the city centre.
@@ -93,7 +102,7 @@ function makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR }) {
   return { polyline: pts, bankPoint };
 }
 
-function makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR }) {
+function makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR, waterIntent }) {
   const bb = bboxFromPoly(outerBoundary);
   const pad = Math.max(baseR * 1.6, 180);
 
@@ -104,7 +113,12 @@ function makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR }) {
 
   // Pick a side for the sea to come from.
   // 0: left, 1: right, 2: top, 3: bottom
-  const side = Math.floor(rng() * 4);
+  const sideRnd = Math.floor(rng() * 4);
+  
+  let side = sideRnd;
+  if (waterIntent && Number.isInteger(waterIntent.side) && waterIntent.side >= 0 && waterIntent.side <= 3) {
+    side = waterIntent.side;
+  }
 
   // How deep the sea cuts into the map.
   const cut = baseR * (0.45 + rng() * 0.35);
@@ -153,7 +167,7 @@ function makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR }) {
   return { polygon: poly, bankPoint };
 }
 
-export function buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR }) {
+export function buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR, waterIntent = null }) {
   const kind = (siteWater === "river" || siteWater === "coast") ? siteWater : "none";
 
   if (kind === "none") {
@@ -165,11 +179,11 @@ export function buildWater({ rng, siteWater, outerBoundary, cx, cy, baseR }) {
   }
 
   if (kind === "river") {
-    const { polyline, bankPoint } = makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR });
+    const { polyline, bankPoint } = makeRiverPolyline({ rng, outerBoundary, cx, cy, baseR, waterIntent });
     return { kind: "river", polyline, polygon: null, bankPoint };
   }
 
   // Coast
-  const { polygon, bankPoint } = makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR });
+  const { polygon, bankPoint } = makeCoastPolygon({ rng, outerBoundary, cx, cy, baseR, waterIntent });
   return { kind: "coast", polyline: null, polygon, bankPoint };
 }
