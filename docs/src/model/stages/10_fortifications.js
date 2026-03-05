@@ -56,6 +56,27 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   const ditchOuter = offsetRadial(wallBase, ditchWidth);
   const ditchInner = offsetRadial(wallBase, -ditchWidth * 0.55);
   const glacisOuter = offsetRadial(wallBase, ditchWidth + glacisWidth);
+  // Required anchor constraints (anchors stage depends on these).
+  ctx.params = ctx.params || {};
+  ctx.params.baseR = baseR;
+
+  // Anchor placement needs a minimum clearance from the wall features.
+  ctx.params.minWallClear = ditchWidth * 1.25;
+
+  // Keep anchor separation stable and always satisfiable.
+  // This mirrors prior intent: scale with ditchWidth but clamp to sane bounds.
+  if (ctx.params.minAnchorSep == null) {
+    ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
+  }
+
+  // Existing code expects this sometimes for padding logic.
+  if (ctx.params.canvasPad == null) ctx.params.canvasPad = 10;
+
+  // Optional audit visibility (only if you want it; safe to keep).
+  if (ctx.params.footprintStretchStrength == null) ctx.params.footprintStretchStrength = 0.35;
+  if (ctx.params.footprintStretchWidthRad == null) ctx.params.footprintStretchWidthRad = Math.PI / 10;
+  if (ctx.params.footprintStretchClampMin == null) ctx.params.footprintStretchClampMin = 0.90;
+  if (ctx.params.footprintStretchClampMax == null) ctx.params.footprintStretchClampMax = 1.55;
   
   // Start with the full bastioned wall.
   const wallFinal = wall;
