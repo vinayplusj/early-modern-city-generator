@@ -138,7 +138,9 @@ export const PIPELINE_STAGES = [
       });
       
       ctx.state.waterModel = waterRes.waterModel;
-      ctx.state.waterIntentDerived = waterRes.waterIntentDerived;
+      ctx.state.waterIntentDerived = waterRes.waterIntentDerived
+        ? { ...waterRes.waterIntentDerived, kind: waterRes.waterModel?.kind ?? null }
+        : null;
     },
   },
 
