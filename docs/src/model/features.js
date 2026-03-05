@@ -30,20 +30,123 @@ import {
 
 import { polyIntersectsPoly } from "../geom/intersections.js";
 
+// ---------- Corridor intent (Milestone 5A) ----------
+// A "corridor" is a preferred outward direction that should receive more footprint mass.
+// This is used to stretch the outer boundary along main approaches (for example, gate axes),
+// and later (optional) water / new town axes.
+//
+// Design goals:
+// - Deterministic: no RNG use here.
+// - Stable: small input changes yield small output changes.
+// - Bounded: returned weights are clamped, and downstream stretch is clamped.
+//
+// Corridor object shape:
+// { dir: {x,y}, weight: number, kind: "gate"|"water"|"newTown" }
+function _angDiff(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return Math.abs(d);
+}
+
+function _dirToAngle(d) {
+  return Math.atan2(d.y, d.x);
+}
+
+/**
+ * Build a deterministic corridor intent set.
+ * @param {object} centre - {x,y}
+ * @param {Array<object>} gates - gate points with {x,y}
+ * @param {?object} waterDir - optional unit vector {x,y} pointing toward water pull
+ * @param {?object} newTownDir - optional unit vector {x,y} pointing toward new town pull
+ * @returns {{ centre: object, corridors: Array<object> }}
+ */
+export function buildCorridorIntent(centre, gates, waterDir = null, newTownDir = null) {
+  const corridors = [];
+
+  // Gate corridors
+  if (Array.isArray(gates)) {
+    for (const g of gates) {
+      const v = { x: g.x - centre.x, y: g.y - centre.y };
+      const dir = normalize(v);
+      // Skip degenerate vectors
+      if (!isFinite(dir.x) || !isFinite(dir.y)) continue;
+      corridors.push({ dir, weight: 1.0, kind: "gate" });
+    }
+  }
+
+  // Water corridor (optional)
+  if (waterDir) {
+    const dir = normalize(waterDir);
+    if (isFinite(dir.x) && isFinite(dir.y)) {
+      corridors.push({ dir, weight: 1.6, kind: "water" });
+    }
+  }
+
+  // New town corridor (optional)
+  if (newTownDir) {
+    const dir = normalize(newTownDir);
+    if (isFinite(dir.x) && isFinite(dir.y)) {
+      corridors.push({ dir, weight: 1.25, kind: "newTown" });
+    }
+  }
+
+  // Stable order: gate corridors are already stable if gates are sorted.
+  // Enforce stable ordering by kind then angle.
+  corridors.sort((a, b) => {
+    const ka = a.kind, kb = b.kind;
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    const aa = _dirToAngle(a.dir);
+    const ab = _dirToAngle(b.dir);
+    return aa - ab;
+  });
+
+  // Clamp weights to a safe range (downstream stretch also clamps).
+  for (const c of corridors) c.weight = clamp(c.weight, 0.0, 2.0);
+
+  return { centre, corridors };
+}
+
+function _corridorFactorAtAngle(corridors, ang, widthRad) {
+  if (!corridors || corridors.length === 0) return 0;
+
+  // Smooth peak around each corridor direction.
+  // Gaussian falloff: exp(-(d/width)^2)
+  let best = 0;
+  for (const c of corridors) {
+    const a0 = _dirToAngle(c.dir);
+    const d = _angDiff(ang, a0);
+    const t = Math.exp(- (d * d) / (widthRad * widthRad));
+    best = Math.max(best, c.weight * t);
+  }
+  return best;
+}
 
 // ---------- Footprint ----------
-export function generateFootprint(rng, cx, cy, baseR, pointCount = 80) {
+export function generateFootprint(rng, cx, cy, baseR, pointCount = 80, opts = null) {
   const pts = [];
   const wobble = baseR * 0.22;
   const phase = rng() * Math.PI * 2;
 
+  const corridors = opts && opts.corridors ? opts.corridors : null;
+  const stretchStrength = clamp(opts && opts.stretchStrength != null ? opts.stretchStrength : 0.0, 0.0, 0.9);
+  const stretchWidthRad = clamp(opts && opts.stretchWidthRad != null ? opts.stretchWidthRad : (Math.PI / 9), Math.PI / 24, Math.PI / 3);
+  const stretchClamp = opts && opts.stretchClamp ? opts.stretchClamp : { min: 0.85, max: 1.65 };
+
   for (let i = 0; i < pointCount; i++) {
     const t = i / pointCount;
     const ang = t * Math.PI * 2;
+
     const n1 = Math.sin(ang * 2 + phase) * (0.45 + rng() * 0.25);
     const n2 = Math.sin(ang * 5 + phase * 1.7) * (0.25 + rng() * 0.2);
-    const r = baseR + wobble * (n1 + n2) + wobble * (rng() - 0.5) * 0.35;
-    pts.push(polar(cx, cy, ang, r));
+    const r0 = baseR + wobble * (n1 + n2) + wobble * (rng() - 0.5) * 0.35;
+
+    // Corridor stretch (Milestone 5A). This is a bounded radial multiplier.
+    // If no corridors are provided, factor = 0 and behaviour matches prior code.
+    const f = _corridorFactorAtAngle(corridors, ang, stretchWidthRad);
+    const mulR = clamp(1.0 + stretchStrength * f, stretchClamp.min, stretchClamp.max);
+
+    pts.push(polar(cx, cy, ang, r0 * mulR));
   }
 
   // Light smoothing
