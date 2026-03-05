@@ -6,9 +6,8 @@
 // IMPORTANT:
 // - buildRoadGraph (docs/src/src/roads/graph.js) expects (polylines, eps), not an object.
 // - polylines must be objects like: { points:[...], kind, width, nodeKindA, nodeKindB }.
-
-import { buildRoadGraph } from "../../../src/roads/graph.js";
-import { extractBlocksFromRoadGraph } from "../../../src/roads/blocks.js";
+import { buildRoadGraph } from "../roads/graph.js";
+import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
 
 import { generateSecondaryRoads } from "../generate_helpers/roads_stage.js";
 
