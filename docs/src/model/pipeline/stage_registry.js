@@ -33,10 +33,19 @@ export const PIPELINE_STAGES = [
     id: 10,
     name: "fortifications",
     run(env) {
-      const { ctx, cx, cy, baseR, bastionCount, gateCount } = env;
-
-      const fort = runFortificationsStage(ctx, env.rng.fort, cx, cy, baseR, bastionCount, gateCount);
-
+      const { ctx, cx, cy, baseR, bastionCount } = env;
+    
+      // Stage RNG (keep whatever your project uses elsewhere; this is the common pattern).
+      const rngFort = ctx.fork ? ctx.fork("stage:fort") : env.rng;
+    
+      // Gate selection spec: density only. Default: "medium".
+      let gateSpec = (ctx.params && ctx.params.gateDensity != null)
+        ? ctx.params.gateDensity
+        : "medium";
+      
+      if (typeof gateSpec === "string") gateSpec = gateSpec.toLowerCase();
+      
+      const fort = runFortificationsStage(ctx, rngFort, cx, cy, baseR, bastionCount, gateSpec);
       ctx.state.fortifications = fort;
     },
   },
