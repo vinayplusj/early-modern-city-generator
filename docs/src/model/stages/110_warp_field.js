@@ -16,6 +16,7 @@ import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.
 import { convexHull } from "../../geom/hull.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
 import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
+import { loopPerimeter, polyAreaSigned } from "../../geom/loop_metrics.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
 import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
@@ -124,26 +125,17 @@ export function runWarpFieldStage({
       ? ctx.params.warpFort.curtainVertexMin
       : 60; 
   
-  const basePerimeter = (() => {
-  const poly = Array.isArray(wallBase) ? wallBase : null;
-  if (!poly || poly.length < 3) return 0;
-  let L = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i], q = poly[(i + 1) % poly.length];
-    L += Math.hypot(q.x - p.x, q.y - p.y);
-  }
-  return L;
-})();
-
-const targetEdgeLen =
-  Number.isFinite(ctx.params.warpFort?.curtainTargetEdgeLen)
-    ? Math.max(1, ctx.params.warpFort.curtainTargetEdgeLen)
-    : 5;
-
-const curtainVertexN = Math.max(
-  curtainVertexMin,
-  Math.round(basePerimeter / targetEdgeLen)
-);
+	const basePerimeter = loopPerimeter(wallBase);
+	
+	const targetEdgeLen =
+	  Number.isFinite(ctx.params.warpFort?.curtainTargetEdgeLen)
+	    ? Math.max(1, ctx.params.warpFort.curtainTargetEdgeLen)
+	    : 5;
+	
+	const curtainVertexN = Math.max(
+	  curtainVertexMin,
+	  Math.round(basePerimeter / targetEdgeLen)
+	);
   
   // Curtain wall warp tuning: allow stronger inward movement.
   const curtainParams = {
@@ -229,23 +221,15 @@ const curtainVertexN = Math.max(
     ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
     : wallCurtainForDrawRaw;
   const curtainArea = (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
-    ? polySignedArea(wallCurtainForDraw)
+    ? polyAreaSigned(wallCurtainForDraw)
     : 1;
   
   const wantCCW = curtainArea > 0;
 	
-	function polySignedArea(poly) {
-	  let a = 0;
-	  for (let i = 0; i < poly.length; i++) {
-	    const p = poly[i];
-	    const q = poly[(i + 1) % poly.length];
-	    a += (p.x * q.y - q.x * p.y);
-	  }
-	  return 0.5 * a;
-	}
+
 	
 	function ensureWinding(poly, wantCCW) {
-	  const a = polySignedArea(poly);
+	  const a = polyAreaSigned(poly);
 	  const isCCW = a > 0;
 	  if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
 	  return poly;
@@ -624,7 +608,7 @@ const curtainVertexN = Math.max(
       return poly;
     }
       poly = ensureWinding(poly, wantCCW);
-      if (Math.abs(polySignedArea(poly)) < 1e-3) {
+      if (Math.abs(polyAreaSigned(poly)) < 1e-3) {
         convexStats.push({ idx, ok: false, iters: 0, note: "degenerate_area" });
         return poly;
       }
@@ -708,7 +692,7 @@ const curtainVertexN = Math.max(
         }
     
         let poly2 = ensureWinding(clampedSafe, wantCCW);
-        if (Math.abs(polySignedArea(poly2)) < 1e-3) return { ok: false, poly: poly2 };
+        if (Math.abs(polyAreaSigned(poly2)) < 1e-3) return { ok: false, poly: poly2 };
         const res = repairBastionStrictConvex(poly2, centrePt, outerHullLoop, margin, K);
         return { ok: res.ok, poly: res.poly };
       }
@@ -785,7 +769,7 @@ const curtainVertexN = Math.max(
           }
         let poly2 = ensureWinding(poly, wantCCW);
         
-        if (Math.abs(polySignedArea(poly2)) < 1e-3) {
+        if (Math.abs(polyAreaSigned(poly2)) < 1e-3) {
           refreshed.push({ idx: i, ok: false, iters: 0, note: "degenerate_area" });
           bastionPolysWarpedSafe[i] = poly2;
           continue;
