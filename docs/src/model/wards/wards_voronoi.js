@@ -20,7 +20,7 @@
 // - clipToFootprint: if true, try to clip cells to footprintPoly when a clipper exists
 
 import { Delaunay } from "../../../vendor/d3-delaunay-6.0.4.umd-shim.js";
-import { clipPolyConvex } from "../../geom/clip_convex.js";
+import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
 
 
 /**
@@ -427,9 +427,17 @@ function polygonCentroid(poly) {
  * - Until then, keep clipToFootprint = false for Commit 2, and enable it later.
  */
 function tryClipToFootprint(cellPoly, footprintPoly) {
-  // Clip Voronoi cell to convex footprint (outerBoundary is a convex hull).
-  // Returns [] if fully outside.
-  const clipped = clipPolyConvex(cellPoly, footprintPoly);
-  if (!clipped || clipped.length < 3) return null;
-  return clipped;
+  if (!Array.isArray(cellPoly) || cellPoly.length < 3) return null;
+  if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return null;
+
+  // We assume the footprint is roughly star-shaped around its centroid, which is
+  // true for your “stretched but bounded” outerBoundary.
+  const centre = polygonCentroid(footprintPoly);
+
+  // Clamp each vertex along rays to stay inside the footprint.
+  // Margin 0 keeps it tight; increase slightly if you see boundary grazing issues.
+  const clamped = clampPolylineInsidePolyAlongRays(cellPoly, centre, footprintPoly, 0);
+
+  if (!clamped || clamped.length < 3) return null;
+  return clamped;
 }
