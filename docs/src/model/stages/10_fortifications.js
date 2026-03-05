@@ -28,12 +28,47 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
 
   // Pick gates first, so we can build corridor intent deterministically.
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
+  const gateCountEff = Math.min(gateCount, bastionCount);
+  if (gates.length !== gateCountEff) {
+    console.warn("[EMCG] pickGates returned unexpected count", {
+      requested: gateCount,
+      effective: gateCountEff,
+      got: gates.length,
+      bastionCount,
+    });
+  }
+  if (gates.length < gateCountEff) {
+    // Hard fail makes the bug obvious instead of silently degrading.
+    throw new Error(`[EMCG] pickGates produced ${gates.length} gates, expected ${gateCountEff}.`);
+  }
 
-  // Corridor intent for Milestone 5A.
+  // Corridor intent for Milestone 4.8.
   // Use the stage centre (cx, cy) here, not footprint centroid, so intent is defined
   // before the footprint exists and does not depend on its later wobble.
   const corridorCentre = { x: cx, y: cy };
-  const corridorIntent = buildCorridorIntent(corridorCentre, gates, null, null);
+  
+  // Shared water intent direction (deterministic, used by both footprint stretch and water stage).
+  // This must be generated exactly once per seed and stored.
+  ctx.state = ctx.state || {};
+  if (!ctx.state.waterIntent) {
+    // Use a dedicated RNG fork so intent is stable and does not depend on call order elsewhere.
+    // If your ctx fork API uses a different name, keep it consistent with your other stages.
+    const waterRng = ctx.fork ? ctx.fork("stage:water") : rng;
+  
+    const ang = (waterRng() * Math.PI * 2);
+    const waterDir = { x: Math.cos(ang), y: Math.sin(ang) };
+  
+    ctx.state.waterIntent = {
+      dir: waterDir,
+      // Optional: store kind if you already have it in params.
+      kind: ctx.params?.waterKind ?? null,
+    };
+  }
+  
+  const waterDir = ctx.state.waterIntent?.dir ?? null;
+  
+  // Corridor intent now includes waterDir (so footprint can stretch with the same axis used for water).
+  const corridorIntent = buildCorridorIntent(corridorCentre, gates, waterDir, null);
 
   // Stretched footprint along corridor directions.
   // Bounded and deterministic: generateFootprint clamps the radial multiplier.
