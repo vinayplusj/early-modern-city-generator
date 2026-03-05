@@ -4,8 +4,8 @@
 // Phase 1: pipeline owns the stage order, but stages keep their current signatures.
 // This preserves behaviour while moving orchestration out of generate.js.
 
-import { mulberry32 } from "../../rng/mulberry32.js";
-import { rngFork } from "../../rng/rng_fork.js";
+import { mulberry32 } from "../rng/mulberry32.js";
+import { rngFork } from "../rng/rng_fork.js";
 import { assembleModel } from "../assemble_model.js";
 import { PIPELINE_STAGES } from "./stage_registry.js";
 
