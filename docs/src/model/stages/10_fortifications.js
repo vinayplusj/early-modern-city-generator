@@ -10,6 +10,7 @@ import {
   generateFootprint,
   generateBastionedWall,
   pickGates,
+  buildCorridorIntent,
 } from "../features.js";
 
 /**
@@ -25,7 +26,6 @@ import {
 export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount) {
   ctx.geom = ctx.geom || {};
   // ---------------- Footprint + main fortifications ----------------
-  const footprint = generateFootprint(rng, cx, cy, baseR, 22);
   const wallR = baseR * 0.78;
 
   const { base: wallBase, wall, bastions } = generateBastionedWall(
@@ -36,33 +36,26 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
     bastionCount
   );
 
-  let ditchWidth = wallR * 0.035;
-  let glacisWidth = wallR * 0.08;
-
-  // Keep separation proportional, but bounded so it is always satisfiable.
-  ctx.params.baseR = baseR;
-  ctx.params.minWallClear = ditchWidth * 1.25;
-  ctx.params.minAnchorSep = Math.max(ditchWidth * 3.0, Math.min(baseR * 0.14, wallR * 0.22));
-  ctx.params.canvasPad = 10;
-
-  // Routing tuning
-  ctx.params.roadWaterPenalty = 5000;
-  ctx.params.roadCitadelPenalty = 1500;
-  ctx.params.roadWaterClearance = 20;
-  ctx.params.roadCitadelAvoidRadius = 80;
-
-  // Hard avoid toggles (safe defaults)
-  ctx.params.roadHardAvoidWater = true;
-  ctx.params.roadHardAvoidCitadel = false;
-
-  // Remove or disable moatworks here. Stage 120 will build final moatworks.
-  let ditchOuter = null;
-  let ditchInner = null;
-  let glacisOuter = null;
-
-  const centre = centroid(footprint);
-
+  // Pick gates first, so we can build corridor intent deterministically.
   const gates = pickGates(rng, wallBase, gateCount, bastionCount);
+
+  // Corridor intent for Milestone 5A.
+  // Use the stage centre (cx, cy) here, not footprint centroid, so intent is defined
+  // before the footprint exists and does not depend on its later wobble.
+  const corridorCentre = { x: cx, y: cy };
+  const corridorIntent = buildCorridorIntent(corridorCentre, gates, null, null);
+
+  // Stretched footprint along corridor directions.
+  // Bounded and deterministic: generateFootprint clamps the radial multiplier.
+  const footprint = generateFootprint(rng, cx, cy, baseR, 22, {
+    corridors: corridorIntent.corridors,
+    stretchStrength: 0.35,
+    stretchWidthRad: Math.PI / 10,
+    stretchClamp: { min: 0.90, max: 1.55 },
+  });
+
+  // Centre used by later stages remains the footprint centroid.
+  const centre = centroid(footprint);
 
   // Start with the full bastioned wall.
   const wallFinal = wall;
@@ -84,5 +77,7 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
     glacisOuter,
 
     centre,
+    corridorIntent,
+    corridorCentre,
   };
 }
