@@ -57,7 +57,20 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
   const tan = unit({ x: -out.y, y: out.x });
   const nrm = out;
 
-  const c = placement.clearance?.[k];
+  const cNormal = placement.clearance?.[k];
+  
+  // Clearance along the actual tip direction (radial)
+  let cRadial = null;
+  if (Array.isArray(outerHullLoop) && outerHullLoop.length >= 3) {
+    const hit = clearanceToHullAlongRay(P, nrm, outerHullLoop);
+    cRadial = (hit && hit.ok) ? hit.dist : null;
+  }
+  
+  // Conservative effective clearance for tip sizing.
+  let cEff = null;
+  if (Number.isFinite(cNormal) && Number.isFinite(cRadial)) cEff = Math.min(cNormal, cRadial);
+  else if (Number.isFinite(cNormal)) cEff = cNormal;
+  else if (Number.isFinite(cRadial)) cEff = cRadial;
 
   const localSpacing =
     (placement.localSpacingByK && placement.localSpacingByK.has && placement.localSpacingByK.has(k))
@@ -69,16 +82,12 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
   const reserve = Number.isFinite(placement.bastionOuterClearance) ? placement.bastionOuterClearance : 0;
   // --- DEBUG: bastion tip clearance mismatch (Milestone 4.8 diagnostics) ---
   if (typeof window !== "undefined" && window.__bastionDebug) {
-    try {
-      // Normal-based clearance as computed by warp_stage.js
-      const cNormal = c;
-  
+    try {  
       // Radial direction used for tip point construction
       const dir = nrm;
   
       // Clearance along the actual tip direction (radial)
       const hit = clearanceToHullAlongRay(P, dir, outerHullLoop);
-      const cRadial = (hit && hit.ok) ? hit.dist : null;
   
       // “How far could the tip extend” after reserve
       const tipRoomNormal = (Number.isFinite(cNormal) && Number.isFinite(reserve)) ? (cNormal - reserve) : null;
@@ -95,14 +104,18 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
         cRadial: (cRadial == null) ? null : +cRadial.toFixed(2),
         tipRoomNormal: (tipRoomNormal == null) ? null : +tipRoomNormal.toFixed(2),
         tipRoomRadial: (tipRoomRadial == null) ? null : +tipRoomRadial.toFixed(2),
+        cEff: (cEff == null) ? null : +cEff.toFixed(2),
       });
     } catch (e) {
       console.warn("[bastion clearance] debug failed:", e && e.message ? e.message : e);
     }
   }
   // --- END DEBUG ---  
-  const tipLenFromClearance = Number.isFinite(c) ? Math.max(0, c - reserve) : 40;
-  const tipLen0 = Math.max(10, Number.isFinite(c) ? Math.min(tipLenFromClearance, Math.max(0, c - 2)) : tipLenFromClearance);
+  const tipLenFromClearance = Number.isFinite(cEff) ? Math.max(0, cEff - reserve) : 40;
+  const tipLen0 = Math.max(
+    10,
+    Number.isFinite(cEff) ? Math.min(tipLenFromClearance, Math.max(0, cEff - 2)) : tipLenFromClearance
+  );
 
   const ratio = Number.isFinite(shoulderSpanToTip) ? Math.max(0.1, shoulderSpanToTip) : 0.55;
 
