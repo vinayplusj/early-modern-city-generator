@@ -13,7 +13,7 @@ import {
   buildCorridorIntent,
 } from "../features.js";
 
-export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateCount) {
+export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateSpec) {
   ctx.geom = ctx.geom || {};
   // ---------------- Footprint + main fortifications ----------------
   const wallR = baseR * 0.78;
@@ -26,21 +26,9 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
     bastionCount
   );
 
-  // Pick gates first, so we can build corridor intent deterministically.
-  const gates = pickGates(rng, wallBase, gateCount, bastionCount);
-  const gateCountEff = Math.min(gateCount, bastionCount);
-  if (gates.length !== gateCountEff) {
-    console.warn("[EMCG] pickGates returned unexpected count", {
-      requested: gateCount,
-      effective: gateCountEff,
-      got: gates.length,
-      bastionCount,
-    });
-  }
-  if (gates.length < gateCountEff) {
-    // Hard fail makes the bug obvious instead of silently degrading.
-    throw new Error(`[EMCG] pickGates produced ${gates.length} gates, expected ${gateCountEff}.`);
-  }
+  // Gate selection: gateSpec may be a number or "low" | "medium" | "high".
+  // pickGates is responsible for feasibility caps and warnings.
+  const gates = pickGates(rng, wallBase, gateSpec, bastionCount);
 
   // Corridor intent for Milestone 4.8.
   // Use the stage centre (cx, cy) here, not footprint centroid, so intent is defined
@@ -53,7 +41,10 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   if (!ctx.state.waterIntent) {
     // Use a dedicated RNG fork so intent is stable and does not depend on call order elsewhere.
     // If your ctx fork API uses a different name, keep it consistent with your other stages.
-    const waterRng = ctx.fork ? ctx.fork("stage:water") : rng;
+    const waterRng =
+      (ctx.forkRng ? ctx.forkRng("stage:water") :
+       ctx.fork ? ctx.fork("stage:water") :
+       rng);
   
     const ang = (waterRng() * Math.PI * 2);
     const waterDir = { x: Math.cos(ang), y: Math.sin(ang) };
