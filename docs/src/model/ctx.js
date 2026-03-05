@@ -1,6 +1,6 @@
 // docs/src/model/ctx.js
-import { mulberry32 } from "../rng/mulberry32.js";
-import { rngFork } from "../rng/rng_fork.js";
+import { mulberry32 } from "./rng/mulberry32.js";
+import { rngFork } from "./rng/rng_fork.js";
 
 export function createCtx({ seed, w, h, site, params }) {
   const canvas = {
