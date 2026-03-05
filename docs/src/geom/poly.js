@@ -11,6 +11,7 @@ export function centroid(poly) {
   }
   a *= 0.5;
 
+  
   if (Math.abs(a) < 1e-6) {
     let sx = 0, sy = 0;
     for (const p of poly) { sx += p.x; sy += p.y; }
@@ -20,6 +21,32 @@ export function centroid(poly) {
   cx /= (6 * a);
   cy /= (6 * a);
   return { x: cx, y: cy };
+}
+/**
+ * Ensure polygon vertex order matches desired winding.
+ * @param {Array<{x:number,y:number}>} poly
+ * @param {boolean} wantCCW - true for CCW, false for CW
+ * @param {(poly:Array<{x,y}>)=>number} areaSignedFn - optional signed area function
+ * @returns {Array<{x:number,y:number}>} new array (may be same order), or [] if invalid
+ */
+export function ensureWinding(poly, wantCCW) {
+  if (!Array.isArray(poly) || poly.length < 3) return [];
+
+  // Local signed area to avoid import cycles.
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  a *= 0.5;
+
+  const isCCW = a > 0;
+  if (isCCW === wantCCW) {
+    // Return a shallow copy to avoid accidental mutation by caller.
+    return poly.slice();
+  }
+  return poly.slice().reverse();
 }
 
 function offsetRadial(poly, cx, cy, offset) {
