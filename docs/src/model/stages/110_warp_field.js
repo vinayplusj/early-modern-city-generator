@@ -30,6 +30,7 @@ import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hint
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
+import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
 
 /**
  * @param {object} args
