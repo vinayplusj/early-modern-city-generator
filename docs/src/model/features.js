@@ -30,7 +30,7 @@ import {
 
 import { polyIntersectsPoly } from "../geom/intersections.js";
 
-// ---------- Corridor intent (Milestone 5A) ----------
+// ---------- Corridor intent (Milestone 4.8) ----------
 // A "corridor" is a preferred outward direction that should receive more footprint mass.
 // This is used to stretch the outer boundary along main approaches (for example, gate axes),
 // and later (optional) water / new town axes.
