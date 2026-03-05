@@ -535,80 +535,55 @@ export function runWarpFieldStage({
 	  ? ctx.params.warpFort.bastionConvexIters
 	  : 121;
 {
-  const { bastionPolysOut, convexStats } = repairBastionsStrictConvex({
-    bastionPolys: bastionPolysWarpedSafe,      // <-- use your actual variable name
-    wantCCW,
-    areaEps: 1e-3,
-
-    // Dependencies (already present in this file after your prior refactors):
-    ensureWinding,
-    polyAreaSigned,
-
-    // Adapt Stage-110’s existing repair function to the helper’s expected shape.
-    repairOne: (poly, opts) => {
-      // If your repair function already returns { ok, poly, reason }, pass it through.
-      // Otherwise wrap it.
-      repairOne: (poly) => {
-		  const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
-		  if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
-		  return (r.ok && Array.isArray(r.poly)) ? { ok: true, poly: r.poly } : { ok: false, reason: r.reason || "repair failed" };
-		},
-		repairOpts: {}, // no longer needed
-      if (!res) return { ok: false, reason: "repairBastionStrictConvex returned null" };
-
-      // Common patterns:
-      // - returns Poly directly
-      // - returns { ok, poly }
-      // - returns { poly }
-      if (Array.isArray(res)) return { ok: true, poly: res };
-      if (res.ok && Array.isArray(res.poly)) return { ok: true, poly: res.poly };
-      if (Array.isArray(res.poly)) return { ok: true, poly: res.poly };
-      return { ok: false, reason: res.reason || "repair failed" };
-    },
-
-    // Forward the same tuning knobs you previously used inside the inline block.
-    // Keep the key names identical to what repairBastionStrictConvex expects.
-    repairOpts: {
-      centrePt,
-      outerHullLoop,
-      K,
-      margin,
-      // Add any other fields you previously closed over in the inline code.
-      // Example: clampMaxMargin: warpOutworks.clampMaxMargin,
-    },
-  });
-
-  bastionPolysWarpedSafe = bastionPolysOut;
-  bastionConvexSummary = convexStats;
-}
-// ---------------- Sliding repair (before delete/reinsert) ----------------
-// If a bastion is still failing convexity/angle after repair, try sliding its anchor
-// to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
-const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair);
-
-if (
-  enableSlideRepair &&
-  warpOutworks?.bastionPlacement?.maxima?.length &&
-  warpOutworks.bastionPlacement.curtainPtsS?.length &&
-  warpOutworks.bastionPlacement.sArr?.length &&
-  warpOutworks?.field &&
-  outerHullLoop &&
-  Array.isArray(wallCurtainForDraw)
-) {
-  const placement = warpOutworks.bastionPlacement;
-  const maxima = placement.maxima;
-  const L = placement.totalLen;
-
-  const slideTries = Number.isFinite(ctx?.params?.warpFort?.slideMaxTries)
-    ? Math.max(1, ctx.params.warpFort.slideMaxTries | 0)
-    : 3;
-
-  // Compute failing indices deterministically (do not rely on convexStats array).
-  // We re-check each 5-point bastion using the same strict convex repair function.
-  const failedIndices = [];
-  for (let i = 0; i < bastionPolysWarpedSafe.length; i++) {
-    const poly = bastionPolysWarpedSafe[i];
-    if (!Array.isArray(poly) || poly.length !== 5) continue;
+	let bastionConvexSummary = null;
+	
+	{
+	  const { bastionPolysOut, convexStats } = repairBastionsStrictConvex({
+	    bastionPolys: bastionPolysWarpedSafe,
+	    wantCCW,
+	    areaEps: 1e-3,
+	    ensureWinding,
+	    polyAreaSigned,
+	    repairOne: (poly) => {
+	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
+	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
+	      return (r.ok && Array.isArray(r.poly))
+	        ? { ok: true, poly: r.poly }
+	        : { ok: false, reason: r.reason || "repair failed" };
+	    },
+	  });
+	
+	  bastionPolysWarpedSafe = bastionPolysOut;
+	  bastionConvexSummary = convexStats;
+	}
+	// ---------------- Sliding repair (before delete/reinsert) ----------------
+	// If a bastion is still failing convexity/angle after repair, try sliding its anchor
+	// to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
+	const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair);
+	
+	if (
+	  enableSlideRepair &&
+	  warpOutworks?.bastionPlacement?.maxima?.length &&
+	  warpOutworks.bastionPlacement.curtainPtsS?.length &&
+	  warpOutworks.bastionPlacement.sArr?.length &&
+	  warpOutworks?.field &&
+	  outerHullLoop &&
+	  Array.isArray(wallCurtainForDraw)
+	) {
+	  const placement = warpOutworks.bastionPlacement;
+	  const maxima = placement.maxima;
+	  const L = placement.totalLen;
+	
+	  const slideTries = Number.isFinite(ctx?.params?.warpFort?.slideMaxTries)
+	    ? Math.max(1, ctx.params.warpFort.slideMaxTries | 0)
+	    : 3;
+	
+	  // Compute failing indices deterministically (do not rely on convexStats array).
+	  // We re-check each 5-point bastion using the same strict convex repair function.
+	  const failedIndices = [];
+	  for (let i = 0; i < bastionPolysWarpedSafe.length; i++) {
+	    const poly = bastionPolysWarpedSafe[i];
+	    if (!Array.isArray(poly) || poly.length !== 5) continue;
 
     const poly2 = ensureWinding(poly, wantCCW);
     if (Math.abs(polyAreaSigned(poly2)) < 1e-3) {
@@ -616,7 +591,7 @@ if (
       continue;
     }
 
-    const res = repairBastionStrictConvex(poly2, centrePt, outerHullLoop, margin, K);
+    const res = repairBastionStrictConvex(poly2.slice(), centrePt, outerHullLoop, margin, K);
     if (!res || !res.ok) failedIndices.push(i);
   }
 
@@ -697,7 +672,7 @@ if (
       };
     }
   }
-
+}
 
  // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
