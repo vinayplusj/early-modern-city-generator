@@ -185,14 +185,40 @@ export function generateBastionedWall(rng, cx, cy, wallR, bastionCount) {
 
   return { base, wall, bastions: [] };
 }
+export function gateTargetFromDensity(density, bastionCount) {
+  const B = Math.max(1, bastionCount | 0);
+  const d = (density || "medium").toLowerCase();
+
+  let frac = 0.50; // medium default
+  if (d === "low") frac = 0.25;
+  else if (d === "high") frac = 0.75;
+
+  let target = Math.round(B * frac);
+
+  // Hard bounds to keep maps readable and stable.
+  target = Math.max(2, Math.min(6, target));
+  return target;
+}
 
 // ---------- Gates ----------
-export function pickGates(rng, wallBase, gateCount, bastionCount) {
-  const n = wallBase.length;
+export function pickGates(rng, wallBase, gateSpec, bastionCount) {
+  const n = (wallBase && wallBase.length) ? wallBase.length : 0;
+  if (n < 3) return [];
+
+  // Derive requested gate count from either a density string or a number.
+  const requested = (typeof gateSpec === "string")
+    ? gateTargetFromDensity(gateSpec, bastionCount)
+    : (gateSpec | 0);
+
+  // With a min-gap style constraint, the maximum number of usable edges on a cycle
+  // is bounded. Using floor(n/2) is a conservative, safe cap.
+  const maxFeasible = Math.max(1, Math.floor(n / 2));
+  const gateCountEff = Math.max(1, Math.min(requested, maxFeasible));
+
   const gates = [];
   const usedEdges = new Set();
 
-  const minGap = Math.max(1, Math.floor(n / gateCount) - 1);
+  const minGap = Math.max(1, Math.floor(n / gateCountEff) - 1);
   const tJitter = clamp(0.16 - (bastionCount - 5) * (0.09 / 7), 0.07, 0.16);
 
   function edgeOk(e) {
@@ -203,8 +229,9 @@ export function pickGates(rng, wallBase, gateCount, bastionCount) {
     return true;
   }
 
-  // Primary pass
-  for (let k = 0; k < gateCount; k++) {
+  // Primary pass: try to place up to gateCountEff gates.
+  for (let k = 0; k < gateCountEff; k++) {
+    let placed = false;
     let tries = 0;
     while (tries++ < 220) {
       const e = Math.floor(rng() * n);
@@ -221,13 +248,15 @@ export function pickGates(rng, wallBase, gateCount, bastionCount) {
 
       const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
       gates.push({ ...p, idx: e });
+      placed = true;
       break;
     }
+    if (!placed) break;
   }
 
   // Fallback fill (still deterministic)
   let guard = 0;
-  while (gates.length < gateCount && guard++ < 5000) {
+  while (gates.length < gateCountEff && guard++ < 5000) {
     const e = Math.floor(rng() * n);
     if (usedEdges.has(e)) continue;
     if (!edgeOk(e)) continue;
@@ -242,6 +271,17 @@ export function pickGates(rng, wallBase, gateCount, bastionCount) {
 
   // Stable order
   gates.sort((g1, g2) => g1.idx - g2.idx);
+
+  // Optional diagnostic
+  if (gates.length !== gateCountEff) {
+    console.warn("[EMCG] pickGates produced fewer gates than target", {
+      requested,
+      effective: gateCountEff,
+      got: gates.length,
+      wallBaseN: n,
+      minGap,
+    });
+  }
 
   return gates;
 }
