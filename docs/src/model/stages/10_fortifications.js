@@ -33,32 +33,27 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
   // Corridor intent for Milestone 4.8.
   // Use the stage centre (cx, cy) here, not footprint centroid, so intent is defined
   // before the footprint exists and does not depend on its later wobble.
+  // Corridor intent for Milestone 5A (footprint stretch along corridors).
   const corridorCentre = { x: cx, y: cy };
   
-  // Shared water intent direction (deterministic, used by both footprint stretch and water stage).
-  // This must be generated exactly once per seed and stored.
   ctx.state = ctx.state || {};
-  if (!ctx.state.waterIntent) {
-    // Use a dedicated RNG fork so intent is stable and does not depend on call order elsewhere.
-    // If your ctx fork API uses a different name, keep it consistent with your other stages.
-    const waterRng =
-      (ctx.forkRng ? ctx.forkRng("stage:water") :
-       ctx.fork ? ctx.fork("stage:water") :
-       rng);
   
-    const ang = (waterRng() * Math.PI * 2);
-    const waterDir = { x: Math.cos(ang), y: Math.sin(ang) };
+  // Prefer derived water intent (from Stage 40) when available.
+  // Fallback to stored base water intent, and only create it if missing.
+  let waterDir =
+    (ctx.state.waterIntentDerived && ctx.state.waterIntentDerived.dir) ? ctx.state.waterIntentDerived.dir :
+    (ctx.state.waterIntent && ctx.state.waterIntent.dir) ? ctx.state.waterIntent.dir :
+    null;
   
-    ctx.state.waterIntent = {
-      dir: waterDir,
-      // Optional: store kind if you already have it in params.
-      kind: ctx.params?.waterKind ?? null,
-    };
+  if (!waterDir) {
+    // First pass only: create a stable water axis so Stage 10 can stretch before Stage 40 runs.
+    // Use the stage RNG passed into this function. It is already deterministic for the seed.
+    const ang = rng() * Math.PI * 2;
+    waterDir = { x: Math.cos(ang), y: Math.sin(ang) };
+    ctx.state.waterIntent = { dir: waterDir };
   }
   
-  const waterDir = ctx.state.waterIntent?.dir ?? null;
-  
-  // Corridor intent now includes waterDir (so footprint can stretch with the same axis used for water).
+  // Now build corridor intent with gates + water axis.
   const corridorIntent = buildCorridorIntent(corridorCentre, gates, waterDir, null);
 
   // Stretched footprint along corridor directions.
