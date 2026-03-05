@@ -251,7 +251,7 @@ const curtainVertexN = Math.max(
   // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
   
-  if (outerHullLoop && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) {
+  if (outerHullLoop && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8) {
     const centrePt = { x: cx, y: cy };
   
     // Sampling step in map units. Lower => more accurate but more expensive.
@@ -290,9 +290,9 @@ const curtainVertexN = Math.max(
 	  for (let i = 0; i < wallCurtainForDraw.length; i++) {
 	    const p = wallCurtainForDraw[i];
 	    if (!p) continue;
-	    rs.push(Math.sqrt(_dist2(p, { x: cx, y: cy })));
+	    rs.push(dist(p, { x: cx, y: cy }));
 	  }
-	  fortRGeom = _median(rs);
+	  fortRGeom = median(rs);
 	}
 	
 	const fortR = Number.isFinite(fortRParam) ? fortRParam : fortRGeom;
