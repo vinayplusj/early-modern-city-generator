@@ -5,12 +5,12 @@
 import { clampPointInsideAlongRay} from "../../geom/radial_ray_clamp.js";
 import { clearanceToHullAlongRay } from "./warp_stage.js";
 import { add } from "../../geom/primitives.js";
-import { polygonSignedArea } from "../../geom/poly.js";
+import { signedArea } from "../../geom/poly.js";
 
-const polySignedArea = polygonSignedArea;
+const signedArea = signedArea;
 
 function ensureWinding(poly, wantCCW) {
-  const a = polySignedArea(poly);
+  const a = signedArea(poly);
   const isCCW = a > 0;
   if (wantCCW ? !isCCW : isCCW) return poly.slice().reverse();
   return poly;
@@ -165,7 +165,7 @@ export function buildPentBastionAtSampleIndex({ k, placement, cx, cy, wantCCW, s
       const baseHalfTry = shoulderInTry / 0.55;
 
       const poly = build(baseHalfTry, shoulderInTry, tipLen);
-      if (Math.abs(polySignedArea(poly)) < 1e-3) continue;
+      if (Math.abs(signedArea(poly)) < 1e-3) continue;
       return poly;
     }
   }
