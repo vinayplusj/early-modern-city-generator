@@ -16,10 +16,7 @@
 import { clampPointInsideAlongRay } from "../../geom/radial_ray_clamp.js";
 import { dist, clamp01 } from "../../geom/primitives.js";
 import { polygonSignedArea } from "../../geom/poly.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 // Note: max interior angle is enforced only at movable vertices (S0, T, S1), not at base corners (B0, B1).
 const MIN_INTERIOR_ANGLE_DEG = 30;
