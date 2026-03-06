@@ -25,14 +25,13 @@ import { repairBastionsStrictConvex } from "../generate_helpers/bastion_convex_r
 import { slideRepairBastions } from "../generate_helpers/bastion_slide_repair.js";
 import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
 import { loopPerimeter } from "../../geom/loop_metrics.js";
-import { ensureWinding , polygonSignedArea} from "../../geom/poly.js";
+import { ensureWinding , signedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
 
-const polyAreaSigned = polygonSignedArea;
 /**
  * @param {object} args
  * @returns {object}
@@ -216,7 +215,7 @@ export function runWarpFieldStage({
     ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
     : wallCurtainForDrawRaw;
   const curtainArea = (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
-    ? polyAreaSigned(wallCurtainForDraw)
+    ? signedArea(wallCurtainForDraw)
     : 1;
   
   const wantCCW = curtainArea > 0;
@@ -545,7 +544,7 @@ export function runWarpFieldStage({
 	    wantCCW,
 	    areaEps: 1e-3,
 	    ensureWinding,
-	    polyAreaSigned,
+	    signedArea,
 	    repairOne: (poly) => {
 	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
 	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
@@ -588,7 +587,7 @@ export function runWarpFieldStage({
 	    if (!Array.isArray(poly) || poly.length !== 5) continue;
 
     const poly2 = ensureWinding(poly, wantCCW);
-    if (Math.abs(polyAreaSigned(poly2)) < 1e-3) {
+    if (Math.abs(signedArea(poly2)) < 1e-3) {
       failedIndices.push(i);
       continue;
     }
@@ -628,7 +627,7 @@ export function runWarpFieldStage({
     clampPolylineRadial,
     clampPolylineInsidePolyAlongRays,
     ensureWinding,
-    polyAreaSigned,
+    signedArea,
     repairBastionStrictConvex,
 
     bastionCentroid,
@@ -651,7 +650,7 @@ export function runWarpFieldStage({
     wantCCW,
     areaEps: 1e-3,
     ensureWinding,
-    polyAreaSigned,
+    signedArea,
     repairOne: (poly, opts) => {
       const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
       if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
