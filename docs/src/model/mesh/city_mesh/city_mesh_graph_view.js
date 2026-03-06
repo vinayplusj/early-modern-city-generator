@@ -17,6 +17,8 @@
 // - This view is meant to be MUTABLE because existing code (snapPointToGraph with splitEdges)
 //   mutates nodes/edges/adj. If want immutability later, clone it at call sites.
 
+import { polygonAreaAbs } from "../../../geom/poly.js";
+
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
@@ -44,16 +46,6 @@ function sortAdjacencyDeterministic(adj) {
 
 function pairKey(a, b) {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-function polygonAreaAbs(points) {
-  let s = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    s += a.x * b.y - b.x * a.y;
-  }
-  return Math.abs(0.5 * s);
 }
 
 /**
