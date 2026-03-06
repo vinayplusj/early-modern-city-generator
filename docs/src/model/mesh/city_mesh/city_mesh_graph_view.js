@@ -18,10 +18,7 @@
 //   mutates nodes/edges/adj. If want immutability later, clone it at call sites.
 
 import { polygonAreaAbs } from "../../../geom/poly.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../../util/assert.js";
 
 function ensureArraySize(arr, n, fillFn) {
   while (arr.length < n) arr.push(fillFn ? fillFn(arr.length) : undefined);
