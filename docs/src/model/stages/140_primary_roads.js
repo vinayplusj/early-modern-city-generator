@@ -14,8 +14,8 @@
 
 import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
-import { makeRoadWeightFn } from "../routing/weights.js";
 import { buildBlockedEdgeSet } from "../routing/blocked_edges.js";
+import { buildRoutingCostInputs } from "../roads/routing_cost_inputs.js";
 
 function isFinitePoint(p) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y);
@@ -89,13 +89,65 @@ export function runPrimaryRoadsStage({
   primaryGateWarped,
   gatesWarped,
 }) {
-  // ---------------- Road weight + blocking ----------------
-  const roadWeight = makeRoadWeightFn({
-    graph,
-    waterModel,
-    anchors,
-    params: ctx.params,
-  });
+  // ---------------- Road weight + blocking (FIELDS ONLY) ----------------
+  const costInputs = buildRoutingCostInputs(ctx);
+  
+  
+  /**
+   * Weight function for Dijkstra.
+   * This must be deterministic and must not depend on raw geometry layers (water polys, wall polys, etc).
+   *
+   * Supports both common call conventions:
+   * - weightFn(u, step) where step = { to, edgeId, ... }
+   * - weightFn(edgeId) where edgeId is a number
+   */
+  function roadWeight(arg0, arg1) {
+    let edgeId = null;
+    let u = null;
+    let v = null;
+  
+    // Convention A: (u, step)
+    if (Number.isInteger(arg0) && arg1 && typeof arg1 === "object" && Number.isInteger(arg1.edgeId)) {
+      u = arg0;
+      v = arg1.to;
+      edgeId = arg1.edgeId;
+    }
+    // Convention B: (edgeId)
+    else if (Number.isInteger(arg0) && arg1 == null) {
+      edgeId = arg0;
+    }
+    // Convention C: (step) alone
+    else if (arg0 && typeof arg0 === "object" && Number.isInteger(arg0.edgeId)) {
+      edgeId = arg0.edgeId;
+      v = arg0.to;
+    }
+  
+    if (edgeId == null) return 1; // safe fallback; should not happen
+  
+    const e = graph.edges[edgeId];
+    if (!e || e.disabled) return Infinity;
+  
+    // Edge length: prefer explicit fields if present; otherwise fall back to 1.
+    // (Graph implementations vary: len, length, w, weight are common.)
+    let edgeLen =
+      (Number.isFinite(e.len) ? e.len :
+      Number.isFinite(e.length) ? e.length :
+      Number.isFinite(e.w) ? e.w :
+      Number.isFinite(e.weight) ? e.weight :
+      1);
+  
+    // If we know both endpoints, shape cost by vertex penalties.
+    // If u or v is unknown (because of a different dijkstra signature),
+    // fall back to a constant multiplier (still deterministic).
+    let penalty = 1;
+    if (Number.isInteger(u) && Number.isInteger(v)) {
+      const pu = costInputs.vertexPenalty(u);
+      const pv = costInputs.vertexPenalty(v);
+      penalty = 0.5 * (pu + pv);
+    }
+  
+    return edgeLen * penalty;
+  }
 
   // Blocked edges are a function of graph flags and hard-avoid params. Compute once.
   const blocked = buildBlockedEdgeSet(graph, ctx.params);
@@ -248,6 +300,15 @@ export function runPrimaryRoadsStage({
   }
 
   const primaryRoadsMeta = intents.filter(Boolean);
+  for (const m of primaryRoadsMeta) {
+    if (m && typeof m === "object") {
+      m.costModel = {
+        type: "fields_only_v1",
+        weights: costInputs.weights,
+        hasFields: costInputs.has,
+      };
+    }
+  }
 
   // Legacy output: just the polylines, for render compatibility.
   const primaryRoads = primaryRoadsMeta
