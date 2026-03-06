@@ -8,6 +8,7 @@
 
 import { clampPolylineRadial } from "./warp_stage.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
+import { normalize, dist } from "../../geom/primitives.js";
 
 // ---------------------------------------------------------------------------
 // Shrink strength is a combination of:
@@ -32,16 +33,6 @@ function centroidOfPoly(poly) {
   }
   if (n === 0) return null;
   return { x: sx / n, y: sy / n };
-}
-
-function normalize(v) {
-  const m = Math.hypot(v.x, v.y);
-  if (m < 1e-9) return { x: 0, y: 0 };
-  return { x: v.x / m, y: v.y / m };
-}
-
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 // Clamp and return movement stats (how many points were moved by clamp).
