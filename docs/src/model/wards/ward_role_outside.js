@@ -6,11 +6,7 @@
 // This module assigns roles to wards that are not plaza/citadel/inner.
 // It expects `outsideOrder` to already be a deterministic ordering (typically by distToCentre, id).
 
-function clamp01(x) {
-  if (x < 0) return 0;
-  if (x > 1) return 1;
-  return x;
-}
+import { clamp01 } from "../../geom/primitives.js";
 
 function normaliseOutsideBands(outsideBands) {
   const fallback = [
