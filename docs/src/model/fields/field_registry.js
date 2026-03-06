@@ -5,18 +5,13 @@
 // - Provides stable normalised [0,1] accessors with clamping
 //
 // This module is intentionally dependency-free.
+import { clamp01 } from "../../geom/primitives.js";
 
 const DOMAIN_FACE = "face";
 const DOMAIN_VERTEX = "vertex";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function clamp01(x) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  return x;
 }
 
 function computeMinMax(arr) {
