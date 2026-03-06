@@ -14,14 +14,12 @@
 // - Fixed step schedule and deterministic tie-break rules.
 
 import { clampPointInsideAlongRay } from "../../geom/radial_ray_clamp.js";
+import { dist, clamp01 } from "../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
 // Note: max interior angle is enforced only at movable vertices (S0, T, S1), not at base corners (B0, B1).
 const MIN_INTERIOR_ANGLE_DEG = 30;
 const MAX_INTERIOR_ANGLE_DEG = 150;
@@ -103,12 +101,6 @@ function findBadTurns(poly, expectedSign, epsCross) {
     }
   }
   return bad;
-}
-
-function clamp01(x) {
-  if (x < 0) return 0;
-  if (x > 1) return 1;
-  return x;
 }
 
 function interiorAngleAt(poly, i) {
