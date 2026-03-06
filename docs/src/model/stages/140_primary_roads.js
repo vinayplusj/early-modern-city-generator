@@ -16,6 +16,7 @@ import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 import { buildBlockedEdgeSet } from "../routing/blocked_edges.js";
 import { buildRoutingCostInputs } from "../roads/routing_cost_inputs.js";
+import { applyDeterministicEdgeFlags } from "../mesh/voronoi_planar_graph/water_flags.js";
 
 function isFinitePoint(p) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y);
@@ -149,23 +150,32 @@ export function runPrimaryRoadsStage({
     return edgeLen * penalty;
   }
 
-  // Blocked edges are a function of graph flags and hard-avoid params. Compute once.
-  const blocked = buildBlockedEdgeSet(graph, ctx.params);
-
   // ---------------- Snap endpoints (stable order; splitEdges mutates graph) ----------------
   const snapCfg = { graph, maxSnapDist: 40, splitEdges: true };
-
+  
   const gateForRoad = (isFinitePoint(primaryGateWarped))
     ? primaryGateWarped
     : (Array.isArray(gatesWarped) && isFinitePoint(gatesWarped[0]) ? gatesWarped[0] : null);
-
+  
   // Snap in a fixed order regardless of parameter values (do not reorder lightly).
   const nGate = gateForRoad ? snapPointToGraph({ point: gateForRoad, ...snapCfg }) : null;
   const nPlaza = isFinitePoint(anchors?.plaza) ? snapPointToGraph({ point: anchors.plaza, ...snapCfg }) : null;
   const nCitadel = isFinitePoint(anchors?.citadel) ? snapPointToGraph({ point: anchors.citadel, ...snapCfg }) : null;
   const nDocks = isFinitePoint(anchors?.docks) ? snapPointToGraph({ point: anchors.docks, ...snapCfg }) : null;
-
+  
   const snappedNodes = { gate: nGate, plaza: nPlaza, citadel: nCitadel, docks: nDocks };
+  
+  // Re-apply deterministic edge flags after snapping, because splitEdges mutates graph (new edges).
+  applyDeterministicEdgeFlags({
+    edges: graph.edges,
+    nodes: graph.nodes,
+    waterModel,
+    anchors,
+    params: ctx.params,
+  });
+  
+  // Blocked edges are a function of graph flags and hard-avoid params. Compute after flags are up to date.
+  const blocked = buildBlockedEdgeSet(graph, ctx.params);
 
   // Debug: log once after snapping, to confirm flags and blocking are active.
   if (ctx.params?.warpFort?.debug && graph && Array.isArray(graph.edges)) {
