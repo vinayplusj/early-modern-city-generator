@@ -14,13 +14,10 @@
 // - vorGraph.edgeCells: Array<Array<number>>   // incident cell ids per edge id
 //
 // Note: This adapter does not change behaviour. It creates a topology layer only.
+import { isFinitePoint } from "../../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
 function segDist2(p, a, b) {
