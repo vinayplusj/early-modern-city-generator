@@ -8,12 +8,10 @@
 // AUDIT (sha256 of extracted helper block, LF newlines):
 // TODO_REPLACE_WITH_REAL_SHA256
 
-import { centroid, pointInPolyOrOn, polygonSignedArea } from "../../geom/poly.js";
+import { centroid, pointInPolyOrOn, signedArea } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 import { loopMetrics } from "../../geom/loop_metrics.js";
 import { buildLoopsFromPolys } from "./loops_from_polys.js";
-
-const polyAreaSigned = polygonSignedArea;
 
 export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
   const wardArr = Array.isArray(wards) ? wards : [];
@@ -103,11 +101,11 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
   // Hole count: loops other than outer loop whose signed area sign differs from outer loop sign.
   // (Typical polygon orientation convention: outer CCW, holes CW.)
   let holeCount = 0;
-  const outerSign = (outerLoop && Number.isFinite(polyAreaSigned(outerLoop)) && polyAreaSigned(outerLoop) >= 0) ? 1 : -1;
+  const outerSign = (outerLoop && Number.isFinite(signedArea(outerLoop)) && signedArea(outerLoop) >= 0) ? 1 : -1;
 
   for (let i = 0; i < loops.length; i++) {
     if (i === outerLoopIndex) continue;
-    const a = polyAreaSigned(loops[i]);
+    const a = signedArea(loops[i]);
     const s = (a >= 0) ? 1 : -1;
     if (s !== outerSign) holeCount++;
   }
@@ -124,7 +122,7 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
       let inHole = false;
       for (let i = 0; i < loops.length; i++) {
         if (i === outerLoopIndex) continue;
-        const a = polyAreaSigned(loops[i]);
+        const a = signedArea(loops[i]);
         const s = (a >= 0) ? 1 : -1;
         if (s !== outerSign) {
           if (pointInPolyOrOn(candidate, loops[i])) {
