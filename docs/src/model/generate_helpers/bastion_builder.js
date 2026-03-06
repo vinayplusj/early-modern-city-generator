@@ -7,8 +7,6 @@ import { clearanceToHullAlongRay } from "./warp_stage.js";
 import { add } from "../../geom/primitives.js";
 import { signedArea } from "../../geom/poly.js";
 
-const signedArea = signedArea;
-
 function ensureWinding(poly, wantCCW) {
   const a = signedArea(poly);
   const isCCW = a > 0;
