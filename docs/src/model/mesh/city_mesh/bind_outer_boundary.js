@@ -12,10 +12,7 @@
 // }
 import { isFinitePoint, dist } from "../../../geom/primitives.js";
 import { polygonSignedArea, polygonAreaAbs, polygonCentroid } from "../../../geom/poly.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../../util/assert.js";
 
 /**
  * @param {object} args
