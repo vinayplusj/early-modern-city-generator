@@ -13,10 +13,7 @@
 
 import { FieldRegistry } from "./field_registry.js";
 import { FieldDomain } from "./field_types.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 /**
  * @typedef {object} MeshAccess
