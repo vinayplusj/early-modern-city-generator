@@ -11,7 +11,7 @@
 //   metrics: { areaAbsOuter:number, areaAbsLoop:number, centroidDist:number }
 // }
 import { isFinitePoint, dist } from "../../../geom/primitives.js";
-import { polygonSignedArea, polygonAreaAbs, polygonCentroid } from "../../../geom/poly.js";
+import { polygonSignedArea, polygonAreaAbs, centroid } from "../../../geom/poly.js";
 import { assert } from "../../util/assert.js";
 
 /**
@@ -26,7 +26,7 @@ export function bindOuterBoundaryToCityMesh({ cityMesh, outerBoundary }) {
   assert(outerBoundary.every(isFinitePoint), "[EMCG][bindOuterBoundary] outerBoundary has invalid points.");
 
   const areaOuter = polygonAreaAbs(outerBoundary);
-  const ctrOuter = polygonCentroid(outerBoundary);
+  const ctrOuter = centroid(outerBoundary);
 
   let best = null;
 
@@ -37,7 +37,7 @@ export function bindOuterBoundaryToCityMesh({ cityMesh, outerBoundary }) {
     if (!Array.isArray(loop.polygon) || loop.polygon.length < 3) continue;
 
     const areaLoop = Number.isFinite(loop.areaAbs) ? loop.areaAbs : polygonAreaAbs(loop.polygon);
-    const ctrLoop = loop.centroid && isFinitePoint(loop.centroid) ? loop.centroid : polygonCentroid(loop.polygon);
+    const ctrLoop = loop.centroid && isFinitePoint(loop.centroid) ? loop.centroid : centroid(loop.polygon);
 
     const areaDiff = Math.abs(areaLoop - areaOuter);
     const ctrDist = dist(ctrLoop, ctrOuter);
