@@ -20,10 +20,7 @@
 
 import { dijkstraVertexDistances } from "./dijkstra_vertex_distances.js";
 import { FieldDomain } from "./field_types.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function toIntId(id, label) {
   if (typeof id === "number") {
