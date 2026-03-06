@@ -7,7 +7,7 @@
 //
 
 import { dist2 } from "./primitives.js";
-import { polygonSignedArea } from "./poly.js";
+import { signedArea } from "./poly.js";
 
 export function clipPolyConvex(subjectPoly, clipPoly) {
   if (!Array.isArray(subjectPoly) || subjectPoly.length < 3) return [];
@@ -17,7 +17,7 @@ export function clipPolyConvex(subjectPoly, clipPoly) {
   const subj = dropClosingPoint(subjectPoly);
 
   // Ensure clip polygon is counter-clockwise so "inside" test is consistent.
-  const clipCCW = polygonSignedArea(clip) < 0 ? clip.slice().reverse() : clip;
+  const clipCCW = signedArea(clip) < 0 ? clip.slice().reverse() : clip;
 
   let output = subj;
 
