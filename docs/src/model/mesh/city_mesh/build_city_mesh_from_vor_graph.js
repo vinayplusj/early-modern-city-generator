@@ -16,10 +16,7 @@
 // Note: This adapter does not change behaviour. It creates a topology layer only.
 import { isFinitePoint } from "../../../geom/primitives.js";
 import { polygonSignedArea, polygonCentroid } from "../../../geom/poly.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../../util/assert.js";
 
 function segDist2(p, a, b) {
   // squared distance from p to segment ab
