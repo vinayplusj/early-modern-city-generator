@@ -25,7 +25,7 @@ import { dist } from "../../geom/primitives.js";
 import {
   pointInPoly,
   pointInPolyOrOn,
-  polygonSignedArea,
+  signedArea,
   centroid,
   closestPointOnSegment,
   pointSegmentDistance,
@@ -209,7 +209,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
     }
 
     const centroid = poly ? centroid(poly) : null;
-    const area = poly ? Math.abs(polygonSignedArea(poly)) : null;
+    const area = poly ? Math.abs(signedArea(poly)) : null;
 
     wards.push({
       id,
