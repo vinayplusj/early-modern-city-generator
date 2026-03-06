@@ -4,5 +4,5 @@
 // Use for invariants that must hold in deterministic generation.
 
 export function assert(cond, msg) {
-  if (!cond) throw new Error(msg || "[EMCG] assertion failed");
+  if (!cond) throw new Error(msg || "Assertion failed.");
 }
