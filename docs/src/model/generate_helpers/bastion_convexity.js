@@ -15,6 +15,7 @@
 
 import { clampPointInsideAlongRay } from "../../geom/radial_ray_clamp.js";
 import { dist, clamp01 } from "../../geom/primitives.js";
+import { polygonSignedArea } from "../../geom/poly.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -25,16 +26,6 @@ const MIN_INTERIOR_ANGLE_DEG = 30;
 const MAX_INTERIOR_ANGLE_DEG = 150;
 const MIN_INTERIOR_ANGLE_RAD = (MIN_INTERIOR_ANGLE_DEG * Math.PI) / 180;
 const MAX_INTERIOR_ANGLE_RAD = (MAX_INTERIOR_ANGLE_DEG * Math.PI) / 180;
-
-function signedArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += (p.x * q.y - q.x * p.y);
-  }
-  return 0.5 * a;
-}
 
 function crossZ(a, b, c) {
   const e1x = b.x - a.x;
@@ -72,7 +63,7 @@ function majoritySignFromCross(cross, epsCross) {
 }
 
 function expectedTurnSign(poly, epsArea, epsCross) {
-  const a = signedArea(poly);
+  const a = polygonSignedArea(poly);
   if (Math.abs(a) >= epsArea) return (a >= 0) ? 1 : -1;
   const { cross } = computeTurnsCross(poly);
   return majoritySignFromCross(cross, epsCross);
