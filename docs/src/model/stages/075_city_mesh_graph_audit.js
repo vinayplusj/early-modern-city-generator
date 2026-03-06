@@ -19,10 +19,7 @@
 // - This audit is deterministic and intended for developer builds.
 // - It is safe to run on every generate when meshAuditEnabled is true.
 import { isFinitePoint } from "../../geom/primitives.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function keyUndirected(a, b) {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
