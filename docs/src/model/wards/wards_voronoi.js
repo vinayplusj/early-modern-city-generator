@@ -186,7 +186,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       poly = dropClosingPoint(poly);
 
       if (p.clipToFootprint) {
-        poly = tryClipToFootprint(poly, footprintPoly);
+        poly = tryClipToFootprint(poly, footprintPoly, p);
       
         // Debug-only invariant: detect any remaining boundary-chord segments.
         if (p.debugWardClip && Array.isArray(poly) && poly.length >= 3) {
@@ -229,6 +229,7 @@ function normaliseParams(params) {
     bboxPadding: numberOr(params?.bboxPadding, 250),
     clipToFootprint: Boolean(params?.clipToFootprint ?? false),
     debugWardClip: Boolean(params?.debugWardClip ?? false),
+    wardClipMaxSegLen: numberOr(params?.wardClipMaxSegLen, 10),
 
     // NEW: add one deterministic “ring” of seeds near the boundary
     boundarySeedCount: clampInt(params?.boundarySeedCount ?? 0, 0, 400),
@@ -515,7 +516,7 @@ function dropNearDuplicatePoints(poly, eps = 1e-6) {
  * - If the project already has a polygon boolean intersection, wire it here.
  * - Until then, keep clipToFootprint = false for Commit 2, and enable it later.
  */
-function tryClipToFootprint(cellPoly, footprintPoly) {
+function tryClipToFootprint(cellPoly, footprintPoly, p) {
   if (!Array.isArray(cellPoly) || cellPoly.length < 3) return null;
   if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return null;
 
@@ -525,7 +526,7 @@ function tryClipToFootprint(cellPoly, footprintPoly) {
 
   // Densify first so edges do not “cut chords” outside concave/curvy boundaries.
   // This is deterministic and avoids requiring a full polygon intersection algorithm.
-  const maxSegLen = Number.isFinite(params?.wardClipMaxSegLen) ? params.wardClipMaxSegLen : 10;// world units; keep small enough to respect curved boundary detail
+  const maxSegLen = Number.isFinite(p?.wardClipMaxSegLen) ? p.wardClipMaxSegLen : 10; // world units; keep small enough to respect curved boundary detail
   const dense = densifyPolyline(cellPoly, maxSegLen);
 
   // Clamp each point along rays to stay inside the footprint.
