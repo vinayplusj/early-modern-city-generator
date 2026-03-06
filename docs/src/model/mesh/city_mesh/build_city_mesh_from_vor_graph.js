@@ -15,7 +15,7 @@
 //
 // Note: This adapter does not change behaviour. It creates a topology layer only.
 import { isFinitePoint } from "../../../geom/primitives.js";
-import { polygonSignedArea, polygonCentroid } from "../../../geom/poly.js";
+import { polygonSignedArea, centroid } from "../../../geom/poly.js";
 import { assert } from "../../util/assert.js";
 
 function segDist2(p, a, b) {
@@ -404,7 +404,7 @@ export function buildCityMeshFromVorGraph(vorGraph, opts = {}) {
 
     const areaSigned = polygonSignedArea(polygon);
     const areaAbs = Math.abs(areaSigned);
-    const centroid = polygonCentroid(polygon);
+    const centroid = centroid(polygon);
 
     const loopId = nextLoopId++;
     for (const heId of loopHalfEdges) {
