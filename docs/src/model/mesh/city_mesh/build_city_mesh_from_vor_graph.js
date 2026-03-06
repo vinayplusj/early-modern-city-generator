@@ -15,6 +15,7 @@
 //
 // Note: This adapter does not change behaviour. It creates a topology layer only.
 import { isFinitePoint } from "../../../geom/primitives.js";
+import { polygonSignedArea, polygonCentroid } from "../../../geom/poly.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -36,46 +37,6 @@ function segDist2(p, a, b) {
   const dx = p.x - qx;
   const dy = p.y - qy;
   return dx * dx + dy * dy;
-}
-
-function polygonAreaSigned(points) {
-  // signed area (shoelace), points assumed closed by caller if needed
-  let s = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    s += a.x * b.y - b.x * a.y;
-  }
-  return 0.5 * s;
-}
-
-function polygonCentroid(points) {
-  // centroid of a simple polygon, robust enough for our binding choices
-  const a = polygonAreaSigned(points);
-  if (!Number.isFinite(a) || Math.abs(a) < 1e-12) {
-    // fallback: average
-    let sx = 0;
-    let sy = 0;
-    for (const p of points) {
-      sx += p.x;
-      sy += p.y;
-    }
-    const n = points.length || 1;
-    return { x: sx / n, y: sy / n };
-  }
-  let cx = 0;
-  let cy = 0;
-  let fsum = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
-    const f = p.x * q.y - q.x * p.y;
-    fsum += f;
-    cx += (p.x + q.x) * f;
-    cy += (p.y + q.y) * f;
-  }
-  const inv = 1 / (3 * fsum);
-  return { x: cx * inv, y: cy * inv };
 }
 
 /**
