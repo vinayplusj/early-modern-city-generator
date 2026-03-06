@@ -12,7 +12,7 @@
 // - Neighbour ordering is angle-sorted with explicit ANGLE_EPS tie breaks.
 // - Face ordering is stable via sort key.
 //
-import { polygonSignedArea, polygonCentroid } from "../../geom/poly.js";
+import { polygonSignedArea, centroid } from "../../geom/poly.js";
 
 const OUTER_RATIO_MIN = 1.5;
 
@@ -206,8 +206,8 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
   inner.sort((A, B) => {
     if (A.absArea !== B.absArea) return B.absArea - A.absArea;
 
-    const cA = polygonCentroid(A.polygon);
-    const cB = polygonCentroid(B.polygon);
+    const cA = centroid(A.polygon);
+    const cB = centroid(B.polygon);
 
     if (cA.x !== cB.x) return cA.x - cB.x;
     if (cA.y !== cB.y) return cA.y - cB.y;
