@@ -15,7 +15,7 @@
 //
 // Note: This adapter does not change behaviour. It creates a topology layer only.
 import { isFinitePoint } from "../../../geom/primitives.js";
-import { polygonSignedArea, centroid } from "../../../geom/poly.js";
+import { signedArea, centroid } from "../../../geom/poly.js";
 import { assert } from "../../util/assert.js";
 
 function segDist2(p, a, b) {
@@ -402,7 +402,7 @@ export function buildCityMeshFromVorGraph(vorGraph, opts = {}) {
     // Invariants: at least 3 edges
     assert(loopHalfEdges.length >= 3, "[CityMesh] invariant: boundary loop too small.");
 
-    const areaSigned = polygonSignedArea(polygon);
+    const areaSigned = signedArea(polygon);
     const areaAbs = Math.abs(areaSigned);
     const centroid = centroid(polygon);
 
