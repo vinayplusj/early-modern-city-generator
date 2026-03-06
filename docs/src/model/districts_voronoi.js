@@ -13,7 +13,7 @@
 // - It is not a full polygon boolean with robust hole handling.
 // - Multiple disjoint components are supported; we keep the largest as polygon for now.
 
-import { centroid as polyCentroid, pointInPolyOrOn } from "../geom/poly.js";
+import { centroid, pointInPolyOrOn } from "../geom/poly.js";
 
 function wrapAngle(a) {
   const t = a % (Math.PI * 2);
@@ -414,7 +414,7 @@ export function buildVoronoiDistrictsFromWards({ wards, centre }) {
       if (i === outerIdx) continue;
       const l = loops[i];
       if (!Array.isArray(l) || l.length < 3) continue;
-      const c = polyCentroid(l);
+      const c = centroid(l);
       if (c && pointInPolyOrOn(c, outer, 1e-6)) holes.push(l);
     }
     
@@ -464,7 +464,7 @@ export function assignBlocksToDistrictsByWards({ blocks, wards, districts }) {
     const c =
       w?.centroid && Number.isFinite(w.centroid.x)
         ? w.centroid
-        : (Array.isArray(w?.poly) ? polyCentroid(w.poly) : null);
+        : (Array.isArray(w?.poly) ? centroid(w.poly) : null);
     return { id: w.id, role: w.role, poly: w.poly, centroid: c };
   });
 
@@ -496,7 +496,7 @@ export function assignBlocksToDistrictsByWards({ blocks, wards, districts }) {
   for (const b of blocks) {
     if (!b || !Array.isArray(b.polygon) || b.polygon.length < 3) continue;
 
-    const c = polyCentroid(b.polygon);
+    const c = centroid(b.polygon);
     if (!c) continue;
 
     const w = findWardForPoint(c);
