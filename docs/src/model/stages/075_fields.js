@@ -35,137 +35,17 @@ import {
   makeDistanceToPlazaVertexSpec,
   makeDistanceToWallVertexSpec,
   makeDistanceToWaterVertexSpec,
-  deriveFaceFieldFromBoundaryVertices,
 } from "../fields/distance_fields.js";
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
-function computeMinMax(arr) {
-  let min = Infinity, max = -Infinity;
-  for (let i = 0; i < arr.length; i++) {
-    const v = arr[i];
-    if (!Number.isFinite(v)) continue;
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  if (min === Infinity) return { min: null, max: null };
-  return { min, max };
-}
-function toIntId(id, label) {
-  if (typeof id === "number") {
-    assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
-    return id | 0;
-  }
-  if (typeof id === "string") {
-    assert(/^-?\d+$/.test(id), `Non-integer ${label} id string: "${id}"`);
-    return (Number(id) | 0);
-  }
-  throw new Error(`Unsupported ${label} id type: ${typeof id}`);
-}
+import {
+  assert,
+  computeMinMax,
+  normaliseSourceIds,
+  resolveOptionalSources,
+  buildWardIdToFaceIdMap,
+} from "../fields/fields_stage_utils.js";
+import { deriveBaseFaceFields } from "../fields/derive_face_fields.js";
 
-function normaliseSourceIds(ids, label) {
-  assert(Array.isArray(ids), `${label} sources must be an array.`);
-  const arr = new Array(ids.length);
-  for (let i = 0; i < ids.length; i++) arr[i] = toIntId(ids[i], label);
-  // Sort + de-dupe to remove any accidental order sensitivity.
-  arr.sort((a, b) => a - b);
-  const out = [];
-  let prev = null;
-  for (let i = 0; i < arr.length; i++) {
-    const v = arr[i];
-    if (prev === null || v !== prev) out.push(v);
-    prev = v;
-  }
-  return out;
-}
-
-function formatErr(e) {
-  if (!e) return "Unknown error";
-  const msg = (e && e.message) ? e.message : String(e);
-  return msg;
-}
-
-function resolveOptionalSources({ label, resolveFn }) {
-  try {
-    const ids = resolveFn();
-    if (!ids || ids.length === 0) return { ids: null, error: `${label} sources resolved to an empty set.` };
-    return { ids: normaliseSourceIds(ids, label), error: null };
-  } catch (e) {
-    return { ids: null, error: formatErr(e) };
-  }
-}
-function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
-  const vorGraph = routingMesh && routingMesh.vorGraph;
-  if (!vorGraph || !Array.isArray(vorGraph.cells)) {
-    return { map: null, meta: null, error: "Missing routingMesh.vorGraph.cells (Stage 70 output not persisted)." };
-  }
-
-  const wardCount =
-    (ctx.state.wards && Array.isArray(ctx.state.wards) && ctx.state.wards.length) ? (ctx.state.wards.length | 0) : null;
-
-  // Determine required length if wardCount is not available.
-  let maxWardId = -1;
-  for (let i = 0; i < vorGraph.cells.length; i++) {
-    const c = vorGraph.cells[i];
-    if (!c || c.disabled) continue;
-    const wId = toIntId(c.wardId, "ward");
-    if (wId > maxWardId) maxWardId = wId;
-  }
-
-  const n = (wardCount != null) ? wardCount : (maxWardId + 1);
-  const faceIdByWardId = new Array(n);
-  for (let i = 0; i < n; i++) faceIdByWardId[i] = -1;
-
-  let assigned = 0;
-
-  for (let cellIndex = 0; cellIndex < vorGraph.cells.length; cellIndex++) {
-    const c = vorGraph.cells[cellIndex];
-    if (!c || c.disabled) continue;
-
-    const wardId = toIntId(c.wardId, "ward");
-
-    // In this repo, CityMesh face id is the VorGraph cell id.
-    // build.js sets cell.id = cells.length, so this is stable.
-    const faceId = (c.id != null) ? toIntId(c.id, "face") : (cellIndex | 0);
-
-    if (wardCount != null) {
-      assert(wardId >= 0 && wardId < n, `wardId out of range: ${wardId} (wardCount=${n})`);
-    } else {
-      assert(wardId >= 0 && wardId < n, `wardId out of inferred range: ${wardId} (n=${n})`);
-    }
-
-    assert(faceIdByWardId[wardId] === -1, `Duplicate wardId mapping: wardId=${wardId} already mapped to faceId=${faceIdByWardId[wardId]}`);
-
-    // Sanity check: face id should exist on the mesh.
-    // meshAccess.resolveFace(...) is not guaranteed, so use faceCount bounds where possible.
-    if (typeof meshAccess.faceCount === "function") {
-      const fc = meshAccess.faceCount();
-      assert(faceId >= 0 && faceId < fc, `Mapped faceId out of range: faceId=${faceId} (faceCount=${fc})`);
-    }
-
-    faceIdByWardId[wardId] = faceId;
-    assigned++;
-  }
-
-  // Count missing ward ids (should be zero in normal runs).
-  let missing = 0;
-  for (let i = 0; i < faceIdByWardId.length; i++) if (faceIdByWardId[i] === -1) missing++;
-
-  const meta = {
-    wardCount: n,
-    assigned,
-    missing,
-    source: "routingMesh.vorGraph.cells[*].{wardId,id}",
-  };
-
-  // If wardCount is known, missing mappings are a hard error (hidden coupling / incomplete graph).
-  if (wardCount != null) {
-    assert(missing === 0, `Ward→face mapping incomplete: missing=${missing} of wardCount=${n}`);
-  }
-
-  return { map: faceIdByWardId, meta, error: null };
-}
 /**
  * Resolve a deterministic plaza source vertex id.
  *
@@ -176,14 +56,18 @@ function resolvePlazaSources({ ctx, meshAccess }) {
   const anchors = ctx.state.anchors;
 
   // Preferred path (requires vertexXY + iterVertexIds)
-  if (typeof meshAccess.vertexXY === "function" && typeof meshAccess.iterVertexIds === "function" && anchors && anchors.plaza) {
+  if (
+    typeof meshAccess.vertexXY === "function" &&
+    typeof meshAccess.iterVertexIds === "function" &&
+    anchors &&
+    anchors.plaza
+  ) {
     const ids = getPlazaSourceVertexIds({ meshAccess, anchors });
     assert(ids && ids.length > 0, "Plaza sources resolved to an empty set.");
     return normaliseSourceIds(ids, "plaza");
   }
 
   // Fallback path: accept an explicit plaza vertex id if your pipeline already computes it.
-  // These are speculative but safe to check; if none exist we throw with a clear message.
   const candidates = [
     ctx.state.plazaVertexId,
     anchors && anchors.plazaVertexId,
@@ -218,6 +102,7 @@ export function runFieldsStage(env) {
 
   const cityMesh = routingMesh.cityMesh;
   const meshAccess = makeMeshAccessFromCityMesh(cityMesh);
+
   // Deterministic bridge for downstream ward-level consumers:
   // wardId -> CityMesh faceId (via persisted vorGraph).
   const stageMeta = {
@@ -228,9 +113,28 @@ export function runFieldsStage(env) {
     derived: [],
     computeSpecNames: [],
   };
+  stageMeta.sourceResolution = {
+    plaza: {
+      method: null,               // "nearest_vertex_to_anchor" | "explicit_vertex_id"
+      tieBreak: "lowest_vertex_id",
+      anchorUsed: null,           // { x, y } if used
+      explicitKeyUsed: null,      // "ctx.state.plazaVertexId" etc if used
+    },
+    wall: {
+      method: null,               // "explicit_vertex_ids" | "polyline_sample_nearest_vertices" | "unavailable"
+      sampleStep: null,
+      polylineKeyUsed: null,      // identifies which state key won (for debugging)
+    },
+    water: {
+      method: null,               // "explicit_vertex_ids" | "edge_ids_to_vertices" | "unavailable"
+      edgeCounts: { shoreline: 0, river: 0 },
+    },
+  };
+
   const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
   stageMeta.wardToFace = wardFaceMapRes.meta;
   stageMeta.wardToFaceError = wardFaceMapRes.error;
+
   stageMeta.fieldStats = {};
   stageMeta.fieldNorm = {
     schema: "field_norm_v1",
@@ -238,12 +142,14 @@ export function runFieldsStage(env) {
     clamp: true,
     degenerate: "if max==min then 01=0",
   };
+
   // ------------------------------------------------------------
   // 1) Resolve source vertex sets (plaza required, others optional)
   // ------------------------------------------------------------
 
   const plazaSources = resolvePlazaSources({ ctx, meshAccess });
   stageMeta.sources.plaza = plazaSources;
+
   const wallPolylineForFields =
     (ctx.state.warp && ctx.state.warp.wallCurtainForDraw) ||
     (ctx.state.warp && ctx.state.warp.wallForDraw) ||
@@ -255,6 +161,7 @@ export function runFieldsStage(env) {
 
   const wallSampleStepForFields =
     (ctx.params && ctx.params.fields && ctx.params.fields.wallSampleStep) || 20;
+
   const wallRes = resolveOptionalSources({
     label: "wall",
     resolveFn: () =>
@@ -266,11 +173,12 @@ export function runFieldsStage(env) {
           ctx.state.wallSourceVertexIds ||
           (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds),
 
-        // New deterministic fallback: polyline -> sampled points -> nearest vertices.
+        // Deterministic fallback: polyline -> sampled points -> nearest vertices.
         wallPolyline: wallPolylineForFields,
         wallSampleStep: wallSampleStepForFields,
       }),
   });
+
   stageMeta.sources.wallPolylineUsed = !!wallPolylineForFields;
   stageMeta.sources.wallSampleStep = wallSampleStepForFields;
   stageMeta.sources.wall = wallRes.ids;
@@ -287,8 +195,9 @@ export function runFieldsStage(env) {
   let waterVertexIdsDerived = null;
   try {
     const wm =
-      (ctx.state.routingMesh && ctx.state.routingMesh.waterModel) ? ctx.state.routingMesh.waterModel :
-      (ctx.state.waterModel ? ctx.state.waterModel : null);
+      (ctx.state.routingMesh && ctx.state.routingMesh.waterModel)
+        ? ctx.state.routingMesh.waterModel
+        : (ctx.state.waterModel ? ctx.state.waterModel : null);
 
     const graph = (ctx.state.routingMesh && ctx.state.routingMesh.graph) ? ctx.state.routingMesh.graph : null;
 
@@ -303,7 +212,7 @@ export function runFieldsStage(env) {
         label: "waterEdge",
       });
 
-      // Do NOT write back into ctx.state here (avoids ordering coupling).
+      // Do not write back into ctx.state here (avoids ordering coupling).
       // Persist only in stageMeta for audits and for downstream consumers that opt in via fieldsMeta.
       stageMeta.sources.waterVertexIdsDerived = waterVertexIdsDerived;
       stageMeta.sources.waterVertexIdsDerivedFrom = {
@@ -312,7 +221,6 @@ export function runFieldsStage(env) {
       };
     }
   } catch (e) {
-    // Keep silent here; resolveOptionalSources will record the main error path.
     waterVertexIdsDerived = null;
   }
 
@@ -334,9 +242,9 @@ export function runFieldsStage(env) {
   // ---------------------------------------------
   const SPEC_ORDER = ["distance_to_plaza_vertex", "distance_to_wall_vertex", "distance_to_water_vertex"];
   stageMeta.specOrderContract = SPEC_ORDER.slice();
+
   const computeSpecs = [];
   computeSpecs.push(makeDistanceToPlazaVertexSpec(plazaSources));
-
   if (wallRes.ids && wallRes.ids.length > 0) computeSpecs.push(makeDistanceToWallVertexSpec(wallRes.ids));
   if (waterRes.ids && waterRes.ids.length > 0) computeSpecs.push(makeDistanceToWaterVertexSpec(waterRes.ids));
 
@@ -352,12 +260,15 @@ export function runFieldsStage(env) {
       seen[n] = true;
     }
     // Ensure plaza spec is always first.
-    assert(names.length > 0 && names[0] === "distance_to_plaza_vertex", `Expected first spec to be distance_to_plaza_vertex, got ${names[0]}`);
+    assert(
+      names.length > 0 && names[0] === "distance_to_plaza_vertex",
+      `Expected first spec to be distance_to_plaza_vertex, got ${names[0]}`
+    );
   }
+
   // ---------------------------------------
   // 3) Compute vertex fields into the registry
   // ---------------------------------------
-
   const fields = computeAllFields({
     cityMesh,
     meshAccess,
@@ -367,16 +278,17 @@ export function runFieldsStage(env) {
     params: ctx.params,
     computeSpecs,
   });
+
   // Publish bounded ranges for all fields computed so far.
   const meta0 = fields.meta();
   if (meta0 && Array.isArray(meta0.records)) {
     for (let i = 0; i < meta0.records.length; i++) {
       const r = meta0.records[i];
       if (!r || !r.name) continue;
-  
+
       const rec = fields.get(r.name);
       if (!rec || !rec.values) continue;
-  
+
       const mm = computeMinMax(rec.values);
       const m = rec.meta || {};
       stageMeta.fieldStats[r.name] = {
@@ -387,143 +299,16 @@ export function runFieldsStage(env) {
       };
     }
   }
-  // ------------------------------------------------------
+
+    // ------------------------------------------------------
   // 4) (Optional) Derive face fields by boundary reduction
   // ------------------------------------------------------
   //
-  // IMPORTANT:
-  // Some CityMesh variants do not provide a DCEL-style per-face boundary pointer.
-  // Our meshAccess.faceBoundaryVertexIds(faceId) helper may throw in those cases.
-  // Face fields are useful, but they are not required to proceed with Milestone 4.8,
-  // so we only derive them if we can prove the helper works without throwing.
-  
-  let canDeriveFaceFields = false;
-  if (typeof meshAccess.faceBoundaryVertexIds === "function") {
-    try {
-      // Probe exactly one face id in a deterministic way.
-      // If this throws, we disable face derivation entirely.
-      if (typeof meshAccess.iterFaceIds === "function") {
-        const it = meshAccess.iterFaceIds();
-        const first = it.next();
-        if (!first.done) {
-          const faceId = first.value;
-          const b = meshAccess.faceBoundaryVertexIds(faceId);
-          if (Array.isArray(b) && b.length > 0) canDeriveFaceFields = true;
-        }
-      }
-    } catch (e) {
-      canDeriveFaceFields = false;
-      stageMeta.derivedFaceFieldsDisabledReason = formatErr(e);
-    }
-  }
-  
-  if (canDeriveFaceFields) {
-    // plaza face field always
-    {
-      const rec = fields.get("distance_to_plaza_vertex");
-      const faceVals = deriveFaceFieldFromBoundaryVertices({
-        meshAccess,
-        vertexValues: rec.values,
-        mode: "min",
-      });
-      fields.add(
-        {
-          name: "distance_to_plaza_face",
-          domain: "face",
-          version: 1,
-          units: "map_units",
-          description: "Boundary-min of distance_to_plaza_vertex.",
-          source: "deriveFaceFieldFromBoundaryVertices(min)",
-        },
-        faceVals
-      );
-      {
-        const rec2 = fields.get("distance_to_plaza_face");
-        const mm2 = computeMinMax(rec2.values);
-        stageMeta.fieldStats["distance_to_plaza_face"] = {
-          min: mm2.min,
-          max: mm2.max,
-          domain: "face",
-          units: "map_units",
-        };
-      }
-      stageMeta.derived.push("distance_to_plaza_face");
-    }
-  
-    // wall face field if available
-    if (fields.has("distance_to_wall_vertex")) {
-      const rec = fields.get("distance_to_wall_vertex");
-      const faceVals = deriveFaceFieldFromBoundaryVertices({
-        meshAccess,
-        vertexValues: rec.values,
-        mode: "min",
-      });
-      fields.add(
-        {
-          name: "distance_to_wall_face",
-          domain: "face",
-          version: 1,
-          units: "map_units",
-          description: "Boundary-min of distance_to_wall_vertex.",
-          source: "deriveFaceFieldFromBoundaryVertices(min)",
-        },
-        faceVals
-      );
-      {
-          const rec2 = fields.get("distance_to_wall_face");
-          const mm2 = computeMinMax(rec2.values);
-          stageMeta.fieldStats["distance_to_wall_face"] = {
-            min: mm2.min,
-            max: mm2.max,
-            domain: "face",
-            units: "map_units",
-        };
-        }
-      stageMeta.derived.push("distance_to_wall_face");
-    }
-  
-    // water face field if available
-    if (fields.has("distance_to_water_vertex")) {
-      const rec = fields.get("distance_to_water_vertex");
-      const faceVals = deriveFaceFieldFromBoundaryVertices({
-        meshAccess,
-        vertexValues: rec.values,
-        mode: "min",
-      });
-    
-      fields.add(
-        {
-          name: "distance_to_water_face",
-          domain: "face",
-          version: 1,
-          units: "map_units",
-          description: "Boundary-min of distance_to_water_vertex.",
-          source: "deriveFaceFieldFromBoundaryVertices(min)",
-        },
-        faceVals
-      );
-    
-      {
-        const rec2 = fields.get("distance_to_water_face");
-        const mm2 = computeMinMax(rec2.values);
-        stageMeta.fieldStats["distance_to_water_face"] = {
-          min: mm2.min,
-          max: mm2.max,
-          domain: "face",
-          units: "map_units",
-        };
-      }
-    
-      stageMeta.derived.push("distance_to_water_face");
-    }
-  } else {
-    // Record for debugging without failing the run.
-    stageMeta.derivedFaceFieldsSkipped = true;
-    stageMeta.derivedFaceFieldsDisabledReason =
-      stageMeta.derivedFaceFieldsDisabledReason ||
-      "faceBoundaryVertexIds unavailable, or iterFaceIds missing/empty, or boundary probe returned empty.";
-  }
+  // This is optional and will be skipped when the mesh access layer does not expose
+  // deterministic face boundary vertex ids.
 
+  deriveBaseFaceFields({ fields, meshAccess, stageMeta });
+  
   // ----------------
   // 5) Publish output
   // ----------------
