@@ -8,9 +8,9 @@
 // This is true if your mesh builder sets cell.id deterministically and the mesh uses
 // the same id space for faces.
 
-export function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
+
+export { assert };
 
 export function computeMinMax(arr) {
   let min = Infinity, max = -Infinity;
