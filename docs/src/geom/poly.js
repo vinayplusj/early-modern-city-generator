@@ -1,7 +1,7 @@
 import { add, sub, mul, dist, lerp, clamp, vec, safeNormalize } from "./primitives.js";
 // Compatibility wrappers (Phase 2)
 
-export function polygonAreaAbs(poly) { return Math.abs(signedArea(poly)); }
+export function areaAbs(poly) { return Math.abs(signedArea(poly)); }
 
 export function signedArea(poly) {
   let a = 0;
