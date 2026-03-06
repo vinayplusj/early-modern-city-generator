@@ -8,12 +8,8 @@
 // Build a single outer loop by splicing final bastion polygons into the final curtain loop.
 // Assumes bastion point order [B0, S0, T, S1, B1].
 // Deterministic; no polygon boolean ops.
+import { dist2 } from "../../geom/primitives.js";
 
-function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
 
 // Return nearest vertex index on a closed polyline (curtain) for point p.
 // This assumes B0/B1 are already aligned very close to curtain vertices after warp.
