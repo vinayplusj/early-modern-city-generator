@@ -1,4 +1,8 @@
 import { add, sub, mul, dist, lerp, clamp, vec, safeNormalize } from "./primitives.js";
+// Compatibility wrappers (Phase 2)
+export function polygonSignedArea(poly) { return signedArea(poly); }
+export function polygonAreaAbs(poly) { return Math.abs(polygonSignedArea(poly)); }
+export function polygonCentroid(poly) { return centroid(poly); }
 
 export function centroid(poly) {
   let a = 0, cx = 0, cy = 0;
@@ -268,4 +272,9 @@ export function closestPointOnPolyline(p, poly) {
     if (d < bestD) { bestD = d; best = q; }
   }
   return best;
+}
+
+export function pointSegmentDistance(p, a, b) {
+  const q = closestPointOnSegment(p, a, b);
+  return dist(p, q);
 }
