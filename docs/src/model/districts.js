@@ -1,7 +1,7 @@
 // docs/src/model/districts.js
 import { angle, normAngle, inSector, sortAngles } from "../geom/angle_sector.js";
 import { cyclicDistance, nextIndex, prevIndex } from "./mesh/loops_from_polys.js";
-import { centroid as polyCentroid } from "../geom/poly.js";
+import { centroid} from "../geom/poly.js";
 
 export function buildRadialDistricts(rng, outerBoundary, cx, cy, opts = {}) {
   const {
@@ -91,7 +91,7 @@ export function assignBlocksToDistricts(blocks, districts, cx, cy) {
   }
 
   for (const b of blocks || []) {
-    const c = polyCentroid(b.polygon);
+    const c = centroid(b.polygon);
     b.districtId = findDistrictId(c);
   }
 
