@@ -11,50 +11,10 @@
 //   metrics: { areaAbsOuter:number, areaAbsLoop:number, centroidDist:number }
 // }
 import { isFinitePoint, dist } from "../../../geom/primitives.js";
+import { polygonSignedArea, polygonAreaAbs, polygonCentroid } from "../../../geom/poly.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function polygonAreaSigned(points) {
-  let s = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    s += a.x * b.y - b.x * a.y;
-  }
-  return 0.5 * s;
-}
-
-function polygonAreaAbs(points) {
-  return Math.abs(polygonAreaSigned(points));
-}
-
-function polygonCentroid(points) {
-  const a = polygonAreaSigned(points);
-  if (!Number.isFinite(a) || Math.abs(a) < 1e-12) {
-    let sx = 0;
-    let sy = 0;
-    for (const p of points) { sx += p.x; sy += p.y; }
-    const n = points.length || 1;
-    return { x: sx / n, y: sy / n };
-  }
-
-  let cx = 0;
-  let cy = 0;
-  let fsum = 0;
-
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
-    const f = p.x * q.y - q.x * p.y;
-    fsum += f;
-    cx += (p.x + q.x) * f;
-    cy += (p.y + q.y) * f;
-  }
-
-  const inv = 1 / (3 * fsum);
-  return { x: cx * inv, y: cy * inv };
 }
 
 /**
