@@ -22,10 +22,7 @@
 // - If only a vertex field exists, it reduces over the face boundary vertices.
 // - sampleVector supports a derived "to_plaza" vector using anchors (no mesh needed).
 import { clamp01 } from "../../geom/primitives.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function isFiniteXY(p) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y);
