@@ -67,10 +67,7 @@ import { selectCoreWards } from "./ward_role_select.js";
 import { buildFortHulls } from "./ward_role_build_hulls.js";
 import { pickNearestVertexId } from "../fields/field_sources.js";
 import { makeVertexIdToIndex } from "../fields/field_api.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function getWardField01(ward, key) {
   if (!ward || !ward.field) return null;
