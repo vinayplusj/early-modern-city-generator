@@ -11,7 +11,7 @@
 //   metrics: { areaAbsOuter:number, areaAbsLoop:number, centroidDist:number }
 // }
 import { isFinitePoint, dist } from "../../../geom/primitives.js";
-import { polygonSignedArea, areaAbs, centroid } from "../../../geom/poly.js";
+import { signedArea, areaAbs, centroid } from "../../../geom/poly.js";
 import { assert } from "../../util/assert.js";
 
 /**
