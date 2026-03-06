@@ -2,6 +2,7 @@
 // Shared, dependency-free types and helpers for deterministic scalar fields over CityMesh.
 //
 // This file is intentionally small and stable. It should not import from other modules.
+import { assert } from "../util/assert.js";
 export { clamp01 } from "../../geom/primitives.js";
 
 export const FieldDomain = Object.freeze({
@@ -26,10 +27,6 @@ export const FieldDomain = Object.freeze({
  * @property {number} min
  * @property {number} max
  */
-
-export function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
 
 /**
  * Computes min/max and asserts all values are finite.
