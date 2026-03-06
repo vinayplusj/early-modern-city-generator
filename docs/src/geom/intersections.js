@@ -6,6 +6,8 @@
 
 import { add, sub, mul, lerp, dist2 , clamp } from "./primitives.js";
 export { add, sub, mul, lerp, dist2 };
+import { pointInPoly, pointInPolyOrOn } from "./poly.js";
+export { pointInPoly, pointInPolyOrOn };
 
 // ---------- Vector helpers ----------
 function lerpPoint(a, b, t) {
@@ -233,26 +235,6 @@ function pointOnSeg(p, a, b, eps = 1e-6) {
   if (dot - len2 > eps) return false;
 
   return true;
-}
-
-function pointInPoly(pt, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i], b = poly[j];
-    const intersect =
-      ((a.y > pt.y) !== (b.y > pt.y)) &&
-      (pt.x < (b.x - a.x) * (pt.y - a.y) / ((b.y - a.y) || 1e-9) + a.x);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function pointInPolyOrOn(pt, poly, eps = 1e-6) {
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    if (pointOnSeg(pt, a, b, eps)) return true;
-  }
-  return pointInPoly(pt, poly);
 }
 
 export function polyIntersectsPoly(A, B) {
