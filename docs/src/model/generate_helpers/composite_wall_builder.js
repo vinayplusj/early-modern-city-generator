@@ -9,7 +9,7 @@
 // Assumes bastion point order [B0, S0, T, S1, B1].
 // Deterministic; no polygon boolean ops.
 import { dist2 } from "../../geom/primitives.js";
-import { polygonSignedArea } from "../../geom/poly.js";
+import { signedArea } from "../../geom/poly.js";
 
 // Return nearest vertex index on a closed polyline (curtain) for point p.
 // This assumes B0/B1 are already aligned very close to curtain vertices after warp.
@@ -72,7 +72,7 @@ function dedupeConsecutiveClosed(poly, eps = 1e-6) {
 // Orient a polygon to match the curtain orientation sign.
 function orientLike(poly, targetSign) {
   if (!Array.isArray(poly) || poly.length < 3) return poly;
-  const s = (polygonSignedArea(poly) >= 0) ? 1 : -1;
+  const s = (signedArea(poly) >= 0) ? 1 : -1;
   if (s === targetSign) return poly;
   const rev = poly.slice().reverse();
   return rev;
@@ -87,7 +87,7 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
   const curtainClean = dedupeConsecutiveClosed(curtain, 1e-6);
   if (curtainClean.length < 3) return null;
 
-  const curtainSign = (polygonSignedArea(curtainClean) >= 0) ? 1 : -1;
+  const curtainSign = (signedArea(curtainClean) >= 0) ? 1 : -1;
 
   // Collect valid bastion splice descriptors.
   const splices = [];
