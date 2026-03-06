@@ -55,9 +55,6 @@ function getInputs() {
   const water = String(document.getElementById("water").value || "none");
   const dock = Boolean(document.getElementById("dock").checked);
 
-  // Ensure gates max and current value are valid before reading.
-  syncGateControl();
-
   const bastionDensity = String(document.getElementById("bastionDensity").value || "medium");
   const gateDensity = String(document.getElementById("gateDensity").value || "medium");
   const { w, h } = resizeCanvasToDevicePixels();
