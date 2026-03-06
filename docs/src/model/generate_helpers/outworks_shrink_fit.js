@@ -9,6 +9,7 @@
 import { clampPolylineRadial } from "./warp_stage.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
 import { normalize, dist } from "../../geom/primitives.js";
+import { closestPointOnSegment } from "../../geom/poly.js";
 
 // ---------------------------------------------------------------------------
 // Shrink strength is a combination of:
@@ -208,20 +209,6 @@ function avgRadiusFromCentroid(poly, c) {
     n++;
   }
   return n ? (sum / n) : 0;
-}
-
-// Finds the closest point on a polyline segment list (closed polygon).
-function closestPointOnSegment(p, a, b) {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const apx = p.x - a.x;
-  const apy = p.y - a.y;
-  const ab2 = abx * abx + aby * aby;
-  if (ab2 < 1e-9) return { x: a.x, y: a.y, t: 0 };
-  let t = (apx * abx + apy * aby) / ab2;
-  if (t < 0) t = 0;
-  if (t > 1) t = 1;
-  return { x: a.x + abx * t, y: a.y + aby * t, t };
 }
 
 // Approximate outward normal of the curtain wall at the closest point to apex.
