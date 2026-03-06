@@ -8,9 +8,9 @@
 // AUDIT (sha256 of extracted helper block, LF newlines):
 // TODO_REPLACE_WITH_REAL_SHA256
 
-import { segIntersect } from "./poly.js";
+import { segIntersect , signedArea} from "./poly.js";
 
-export { signedArea} from "./poly.js";
+export { signedArea } from "./poly.js";
 
 export function loopBBox(loop) {
   if (!Array.isArray(loop) || loop.length === 0) return null;
