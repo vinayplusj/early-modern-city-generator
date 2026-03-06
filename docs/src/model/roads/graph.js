@@ -17,7 +17,7 @@ import {
   makePointSnapper,
   samePoint,
   dist2,
-} from "../geom/intersections.js";
+} from "../../geom/intersections.js";
 
 // ---------- Small utils ----------
 function snapKey(x, y, eps) {
