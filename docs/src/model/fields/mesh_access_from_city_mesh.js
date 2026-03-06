@@ -11,6 +11,7 @@
 // - It does NOT mutate the mesh.
 // - It only reads properties/methods.
 // - It throws with clear messages if it cannot infer required structures.
+import { dist2 } from "../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -53,12 +54,6 @@ function getXYFromVertex(v) {
   if (v && v.p && Number.isFinite(v.p.x) && Number.isFinite(v.p.y)) return { x: v.p.x, y: v.p.y };
   if (v && v.pos && Number.isFinite(v.pos.x) && Number.isFinite(v.pos.y)) return { x: v.pos.x, y: v.pos.y };
   return null;
-}
-
-function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
 }
 
 function pickArrayOrNull(obj, a, b) {
