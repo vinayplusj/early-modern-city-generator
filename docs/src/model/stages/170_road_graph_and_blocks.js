@@ -8,12 +8,8 @@
 // - polylines must be objects like: { points:[...], kind, width, nodeKindA, nodeKindB }.
 import { buildRoadGraph } from "../roads/graph.js";
 import { extractBlocksFromRoadGraph } from "../roads/blocks.js";
-
+import { isFinitePoint } from "../../geom/primitives.js";
 import { generateSecondaryRoads } from "../generate_helpers/roads_stage.js";
-
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
 
 function asPolyline(points, kind, width, nodeKindA = "junction", nodeKindB = "junction") {
   if (!Array.isArray(points) || points.length < 2) return null;
