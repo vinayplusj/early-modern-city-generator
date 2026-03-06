@@ -5,19 +5,8 @@
 //   the Sutherland–Hodgman algorithm.
 // - Deterministic, no retries, no external dependencies.
 //
-// Contract / assumptions
-// - clipPoly must be convex and non-degenerate.
-// - subjectPoly can be concave.
-// - Polygons are arrays of {x, y}. They may be open (no repeated first point).
-// - Output is open (no repeated first point).
-//
-// Geometry variant note
-// - This is a half-plane clipper. It does not handle holes.
-// - If clipPoly is not convex, results are undefined.
-//
-// Typical usage
-//   import { clipPolyConvex } from "../geom/clip_convex.js";
-//   const clipped = clipPolyConvex(cellPoly, outerBoundary);
+
+import { dist2 } from "./primitives.js";
 
 export function clipPolyConvex(subjectPoly, clipPoly) {
   if (!Array.isArray(subjectPoly) || subjectPoly.length < 3) return [];
@@ -157,12 +146,6 @@ function dedupeNear(poly, eps) {
     out.pop();
   }
   return out;
-}
-
-function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
 }
 
 function almostEqual(a, b) {
