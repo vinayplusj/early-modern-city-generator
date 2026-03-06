@@ -152,3 +152,46 @@ export function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
 
   return { map: faceIdByWardId, meta, error: null };
 }
+
+export function assertStrictAscendingIntIds(ids, label) {
+  assert(Array.isArray(ids) && ids.length > 0, `${label}: expected non-empty id set.`);
+  let prev = -Infinity;
+  for (let i = 0; i < ids.length; i++) {
+    const v = ids[i];
+    assert((v | 0) === v, `${label}: id not int at i=${i}: ${v}`);
+    assert(v >= 0, `${label}: id negative at i=${i}: ${v}`);
+    assert(v > prev, `${label}: ids not strictly ascending at i=${i}: ${prev} then ${v}`);
+    prev = v;
+  }
+}
+
+export function computeFiniteStats(arr) {
+  let finiteCount = 0;
+  let nonFiniteCount = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (Number.isFinite(arr[i])) finiteCount++;
+    else nonFiniteCount++;
+  }
+  return { finiteCount, nonFiniteCount };
+}
+
+export function computeFieldStats(values) {
+  const mm = computeMinMax(values);
+  const counts = computeFiniteStats(values);
+  return {
+    min: mm.min,
+    max: mm.max,
+    finiteCount: counts.finiteCount,
+    nonFiniteCount: counts.nonFiniteCount,
+  };
+}
+
+export function pickFirstPresent(candidates) {
+  // candidates: Array<[keyName: string, value: any]>
+  for (let i = 0; i < candidates.length; i++) {
+    const key = candidates[i][0];
+    const val = candidates[i][1];
+    if (val) return { key, value: val };
+  }
+  return { key: null, value: null };
+}
