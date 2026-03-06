@@ -7,6 +7,7 @@
 //
 
 import { dist2 } from "./primitives.js";
+import { polygonSignedArea } from "./poly.js";
 
 export function clipPolyConvex(subjectPoly, clipPoly) {
   if (!Array.isArray(subjectPoly) || subjectPoly.length < 3) return [];
@@ -103,16 +104,6 @@ function intersectionSegmentLine(S, E, A, B) {
 
 function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
-}
-
-function polygonSignedArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
 }
 
 /* ------------------------------ Housekeeping ----------------------------- */
