@@ -1,11 +1,8 @@
 // docs/src/model/mesh/voronoi_planar_graph/util.js
+export { isFinitePoint } from "../../../geom/primitives.js";
 
 export function isFiniteNumber(x) {
   return Number.isFinite(x);
-}
-
-export function isFinitePoint(p) {
-  return p && isFiniteNumber(p.x) && isFiniteNumber(p.y);
 }
 
 export function quantKey(x, y, eps) {
