@@ -1,4 +1,5 @@
 // docs/src/model/water_on_mesh/util.js
+export { dist2 } from "../../geom/primitives.js";
 
 export function isFiniteNumber(x) {
   return Number.isFinite(x);
@@ -6,12 +7,6 @@ export function isFiniteNumber(x) {
 
 export function finitePoint(p) {
   return p && isFiniteNumber(p.x) && isFiniteNumber(p.y);
-}
-
-export function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
 }
 
 export function clampInt(n, lo, hi) {
