@@ -17,10 +17,7 @@ import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 import { buildBlockedEdgeSet } from "../routing/blocked_edges.js";
 import { buildRoutingCostInputs } from "../roads/routing_cost_inputs.js";
 import { applyDeterministicEdgeFlags } from "../mesh/voronoi_planar_graph/water_flags.js";
-
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isFinitePoint } from "../../geom/primitives.js";
 
 /**
  * Convert a nodePath into a deterministic list of edge ids by selecting, for each
