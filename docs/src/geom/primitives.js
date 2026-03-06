@@ -1,6 +1,7 @@
 export function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 export function lerp(a, b, t) { return a + (b - a) * t; }
-
+export function clamp01(v) { return clamp(v, 0, 1); }
+export function isFinitePoint(p) { return isPoint(p); }
 export function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
 export function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
 export function mul(a, s) { return { x: a.x * s, y: a.y * s }; }
