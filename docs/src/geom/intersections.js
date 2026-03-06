@@ -4,31 +4,10 @@
 // Focus: robust "proper" intersections for splitting road segments.
 // Collinear overlaps are intentionally treated as "no proper intersection" for stability.
 
-import { clamp } from "./primitives.js";
+import { add, sub, mul, lerp, dist2 , clamp } from "./primitives.js";
+export { add, sub, mul, lerp, dist2 };
 
 // ---------- Vector helpers ----------
-function sub(a, b) {
-  return { x: a.x - b.x, y: a.y - b.y };
-}
-
-function add(a, b) {
-  return { x: a.x + b.x, y: a.y + b.y };
-}
-
-function mul(a, s) {
-  return { x: a.x * s, y: a.y * s };
-}
-
-export function dist2(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
 function lerpPoint(a, b, t) {
   return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
 }
