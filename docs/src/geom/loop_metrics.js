@@ -10,16 +10,7 @@
 
 import { segIntersect } from "./poly.js";
 
-export function polyAreaSigned(poly) {
-  if (!Array.isArray(poly) || poly.length < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a * 0.5;
-}
+export { polygonSignedArea as polyAreaSigned } from "./poly.js";
 
 export function loopBBox(loop) {
   if (!Array.isArray(loop) || loop.length === 0) return null;
