@@ -13,7 +13,7 @@
 // - face ids must be stable (no reindexing between stages).
 
 import { deriveFaceFieldFromBoundaryVertices } from "../fields/distance_fields.js";
-import { computeMinMax, formatErr, assert } from "../fields/fields_stage_utils.js";
+import { computeFieldStats, formatErr, assert } from "../fields/fields_stage_utils.js";
 
 function pickDeterministicProbeFaceId(meshAccess) {
   // Prefer faceId = 0 when a faceCount is available. This avoids reliance on iterator ordering.
@@ -81,15 +81,22 @@ function addFaceFieldMinFromVertexField({ fields, meshAccess, vertexFieldName, f
   );
 
   const fRec = fields.get(faceFieldName);
-  const mm = computeMinMax(fRec.values);
+  assert(fRec && fRec.values, `Derived face field missing values after add: ${faceFieldName}`);
+
+  const stats = computeFieldStats(fRec.values);
+  assert(stats.finiteCount > 0, `Derived face field ${faceFieldName} has no finite values.`);
+  assert(stats.min != null && stats.max != null, `Derived face field ${faceFieldName} has null bounds.`);
+  assert(Number.isFinite(stats.min) && Number.isFinite(stats.max), `Derived face field ${faceFieldName} has non-finite bounds: ${stats.min}, ${stats.max}`);
 
   if (stageMeta) {
     stageMeta.derived = stageMeta.derived || [];
     stageMeta.fieldStats = stageMeta.fieldStats || {};
     stageMeta.derived.push(faceFieldName);
     stageMeta.fieldStats[faceFieldName] = {
-      min: mm.min,
-      max: mm.max,
+      min: stats.min,
+      max: stats.max,
+      finiteCount: stats.finiteCount,
+      nonFiniteCount: stats.nonFiniteCount,
       domain: "face",
       units: "map_units",
     };
@@ -114,7 +121,11 @@ export function deriveBaseFaceFields({ fields, meshAccess, stageMeta = null }) {
   const out = {
     derivedNames: [],
     skipped: !res.ok,
-    skippedReason: res.ok ? null : (stageMeta && stageMeta.derivedFaceFieldsDisabledReason) ? stageMeta.derivedFaceFieldsDisabledReason : "Face derivation disabled.",
+    skippedReason: res.ok
+      ? null
+      : (stageMeta && stageMeta.derivedFaceFieldsDisabledReason)
+        ? stageMeta.derivedFaceFieldsDisabledReason
+        : "Face derivation disabled.",
     probeFaceId: res.probeFaceId,
   };
 
@@ -162,7 +173,6 @@ export function deriveBaseFaceFields({ fields, meshAccess, stageMeta = null }) {
     out.derivedNames.push("distance_to_water_face");
   }
 
-  // Keep out.derivedNames in sync with stageMeta.derived (if provided).
   return out;
 }
 
