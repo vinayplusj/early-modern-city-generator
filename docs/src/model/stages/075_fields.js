@@ -39,7 +39,6 @@ import {
 
 import {
   assert,
-  computeMinMax,
   computeFieldStats,
   normaliseSourceIds,
   resolveOptionalSources,
@@ -153,7 +152,11 @@ export function runFieldsStage(env) {
   const plazaSources = resolvePlazaSources({ ctx, meshAccess });
   stageMeta.sources.plaza = plazaSources;
   assertStrictAscendingIntIds(plazaSources, "plaza");
-
+  stageMeta.sourceResolution.plaza.method =
+    (ctx.state.anchors && ctx.state.anchors.plaza) ? "nearest_vertex_to_anchor" : "explicit_vertex_id";
+  stageMeta.sourceResolution.plaza.anchorUsed =
+    (ctx.state.anchors && ctx.state.anchors.plaza) ? ctx.state.anchors.plaza : null;
+  
   const wallPick = pickFirstPresent([
     ["ctx.state.warp.wallCurtainForDraw", ctx.state.warp && ctx.state.warp.wallCurtainForDraw],
     ["ctx.state.warp.wallForDraw", ctx.state.warp && ctx.state.warp.wallForDraw],
@@ -192,6 +195,18 @@ export function runFieldsStage(env) {
   stageMeta.sourceErrors.wall = wallRes.error;
   if (wallRes.ids) assertStrictAscendingIntIds(wallRes.ids, "wall");
 
+  const wallVertexIdsExplicit =
+    ctx.state.wallSourceVertexIds ||
+    (ctx.state.fortifications && ctx.state.fortifications.wallSourceVertexIds) ||
+    null;
+
+  stageMeta.sourceResolution.wall.method =
+    wallVertexIdsExplicit ? "explicit_vertex_ids" :
+    wallPolylineForFields ? "polyline_sample_nearest_vertices" :
+    "unavailable";
+
+  stageMeta.sourceResolution.wall.sampleStep = wallSampleStepForFields;
+
   // Water sources may exist as vertex ids OR as water edge ids (shoreline/river) on the routing graph.
   // Prefer explicit vertex ids; otherwise derive from edge ids deterministically.
   const waterVertexIdsExplicit =
@@ -206,6 +221,10 @@ export function runFieldsStage(env) {
       (ctx.state.routingMesh && ctx.state.routingMesh.waterModel)
         ? ctx.state.routingMesh.waterModel
         : (ctx.state.waterModel ? ctx.state.waterModel : null);
+    stageMeta.sourceResolution.water.edgeCounts = {
+      shoreline: (wm && Array.isArray(wm.shorelineEdgeIds)) ? wm.shorelineEdgeIds.length : 0,
+      river: (wm && Array.isArray(wm.riverEdgeIds)) ? wm.riverEdgeIds.length : 0,
+    };
 
     const graph = (ctx.state.routingMesh && ctx.state.routingMesh.graph) ? ctx.state.routingMesh.graph : null;
 
@@ -240,7 +259,10 @@ export function runFieldsStage(env) {
         waterVertexIds: waterVertexIdsExplicit || waterVertexIdsDerived,
       }),
   });
-  
+  stageMeta.sourceResolution.water.method =
+    waterVertexIdsExplicit ? "explicit_vertex_ids" :
+    (waterVertexIdsDerived && waterVertexIdsDerived.length) ? "edge_ids_to_vertices" :
+    "unavailable";
   stageMeta.sources.water = waterRes.ids;
   stageMeta.sourceErrors.water = waterRes.error;
   if (waterRes.ids) assertStrictAscendingIntIds(waterRes.ids, "water");
