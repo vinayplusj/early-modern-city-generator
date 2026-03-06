@@ -4,10 +4,7 @@
 // Normalizes the output so generate.js and render code have a stable shape.
 
 import { buildWater } from "./generate_helpers/water.js";
-
-function isPoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isPoint } from "../geom/primitives.js";
 
 function dist2PointToSeg(p, a, b) {
   const abx = b.x - a.x;
