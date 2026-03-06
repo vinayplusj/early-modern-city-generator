@@ -405,7 +405,7 @@ export function buildCityMeshFromVorGraph(vorGraph, opts = {}) {
     // Invariants: at least 3 edges
     assert(loopHalfEdges.length >= 3, "[CityMesh] invariant: boundary loop too small.");
 
-    const areaSigned = polygonAreaSigned(polygon);
+    const areaSigned = polygonSignedArea(polygon);
     const areaAbs = Math.abs(areaSigned);
     const centroid = polygonCentroid(polygon);
 
