@@ -22,6 +22,14 @@
 import { Delaunay } from "../../../vendor/d3-delaunay-6.0.4.umd-shim.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
 import { dist } from "../../geom/primitives.js";
+import {
+  pointInPoly,
+  pointInPolyOrOn,
+  polygonSignedArea,
+  polygonCentroid,
+  closestPointOnSegment,
+  pointSegmentDistance,
+} from "../../geom/poly.js";
 
 /**
  * @typedef {{x:number, y:number}} Point
@@ -290,25 +298,6 @@ function almostEqual(a, b) {
  * Ray casting point-in-polygon.
  * Works for simple polygons. Treats boundary as inside.
  */
-function pointInPoly(p, poly) {
-  let inside = false;
-
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i];
-    const b = poly[j];
-
-    // Boundary check (segment distance near zero)
-    if (pointSegmentDistance(p, a, b) <= 1e-9) return true;
-
-    const intersect =
-      (a.y > p.y) !== (b.y > p.y) &&
-      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y + 0.0) + a.x;
-
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
-}
 function assertWardEdgesInsideFootprint({ wardId, poly, footprintPoly, maxFails = 3 }) {
   if (!Array.isArray(poly) || poly.length < 3) return;
   if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return;
@@ -382,65 +371,6 @@ function nearestPointOnPoly(p, poly) {
   return best || { x: poly[0].x, y: poly[0].y };
 }
 
-function closestPointOnSegment(p, a, b) {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const apx = p.x - a.x;
-  const apy = p.y - a.y;
-
-  const ab2 = abx * abx + aby * aby;
-  if (ab2 <= 1e-12) return { x: a.x, y: a.y };
-
-  let t = (apx * abx + apy * aby) / ab2;
-  t = Math.max(0, Math.min(1, t));
-
-  return { x: a.x + t * abx, y: a.y + t * aby };
-}
-
-function pointSegmentDistance(p, a, b) {
-  const q = closestPointOnSegment(p, a, b);
-  return dist(p, q);
-}
-
-function polygonSignedArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
-}
-
-function polygonCentroid(poly) {
-  // Standard centroid for non-self-intersecting polygon.
-  const a = polygonSignedArea(poly);
-  if (Math.abs(a) <= 1e-12) {
-    // Degenerate, return average of vertices.
-    let sx = 0;
-    let sy = 0;
-    for (const p of poly) {
-      sx += p.x;
-      sy += p.y;
-    }
-    const n = poly.length || 1;
-    return { x: sx / n, y: sy / n };
-  }
-
-  let cx = 0;
-  let cy = 0;
-
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    const cross = p.x * q.y - q.x * p.y;
-    cx += (p.x + q.x) * cross;
-    cy += (p.y + q.y) * cross;
-  }
-
-  const f = 1 / (6 * a);
-  return { x: cx * f, y: cy * f };
-}
 function densifyPolyline(poly, maxSegLen) {
   if (!Array.isArray(poly) || poly.length < 2) return poly;
 
