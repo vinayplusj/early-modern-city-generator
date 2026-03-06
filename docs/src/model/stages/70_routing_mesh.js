@@ -14,7 +14,27 @@ import { assertCityMesh } from "../mesh/city_mesh/invariants.js";
 import { makeGraphViewFromCityMesh } from "../mesh/city_mesh/city_mesh_graph_view.js";
 
 const VOR_EPS = 1e-3;
+function ensureWaterMeshArrays(waterModel) {
+  if (!waterModel || typeof waterModel !== "object") return waterModel;
 
+  if (!waterModel.mesh || typeof waterModel.mesh !== "object") {
+    waterModel.mesh = {};
+  }
+
+  const m = waterModel.mesh;
+
+  // Edge id sets that existing code may produce.
+  if (!Array.isArray(m.riverEdgeIds)) m.riverEdgeIds = [];
+  if (!Array.isArray(m.coastEdgeIds)) m.coastEdgeIds = [];
+  if (!Array.isArray(m.waterEdgeIds)) m.waterEdgeIds = [];
+
+  // Milestone 5 hooks: allowed crossings.
+  if (!Array.isArray(m.bridgeEdgeIds)) m.bridgeEdgeIds = [];
+  if (!Array.isArray(m.fordEdgeIds)) m.fordEdgeIds = [];
+  if (!Array.isArray(m.allowWaterCrossingEdgeIds)) m.allowWaterCrossingEdgeIds = [];
+
+  return waterModel;
+}
 function writeMeshToCtx(ctx, graph, waterModel) {
   if (!ctx) return;
 
@@ -80,13 +100,14 @@ export function runRoutingMeshStage({
       graph: vorGraph,
       waterModel,
       params: ctx.params,
-
       // Required routing helpers (buildWaterOnMesh still expects these)
       dijkstra,
       pathNodesToPolyline,
       snapPointToGraph,
     });
-
+    
+    waterModel = ensureWaterMeshArrays(waterModel);
+    
     // Pass 2: rebuild graph so edge.flags.isWater is driven by waterModel.mesh edge ids.
     vorGraph = buildVoronoiPlanarGraph({
       wards: wardsWithRoles,
