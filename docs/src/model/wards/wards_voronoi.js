@@ -24,9 +24,9 @@ import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js
 import { dist } from "../../geom/primitives.js";
 import {
   pointInPoly,
-  pointInPolyOrOn,
   signedArea,
   centroid,
+  areaAbs, 
   closestPointOnSegment,
   pointSegmentDistance,
 } from "../../geom/poly.js";
@@ -208,14 +208,14 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       poly = null;
     }
 
-    const centroid = poly ? centroid(poly) : null;
-    const area = poly ? Math.abs(signedArea(poly)) : null;
+    const centroidPt = poly ? centroid(poly) : null;
+    const area = poly ? areaAbs(poly) : null;
 
     wards.push({
       id,
       seed,
       poly,
-      centroid,
+      centroid: centroidPt,
       area,
       distToCentre: dist(seed, centre),
     });
