@@ -4,7 +4,7 @@
 // Extraction only. No behaviour changes intended.
 //
 // All external dependencies are injected to keep this module deterministic and easy to audit.
-import { polygonSignedArea } from "../../geom/poly.js";
+import { signedArea } from "../../geom/poly.js";
 
 function quantile(sorted, q) {
   if (!Array.isArray(sorted) || sorted.length === 0) return null;
@@ -41,7 +41,7 @@ export function selectOuterLoopDeterministic({ hull, preferPoint, pointInPolyOrO
     scored.push({
       i,
       contains: contains ? 1 : 0,
-      areaAbs: Math.abs(polygonSignedArea(loop)),
+      areaAbs: Math.abs(signedArea(loop)),
     });
   }
 
