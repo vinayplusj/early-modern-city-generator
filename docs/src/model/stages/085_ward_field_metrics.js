@@ -7,9 +7,7 @@
 // - No ward role changes.
 // - Deterministic for same seed/params.
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function get01Safe(fields, name, idx) {
   if (!fields || !fields.has(name)) return null;
