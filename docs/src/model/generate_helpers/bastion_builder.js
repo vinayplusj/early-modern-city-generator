@@ -4,6 +4,7 @@
 // Produces 5-point bastions: [B0, S0, T, S1, B1] in requested winding.
 import { clampPointInsideAlongRay} from "../../geom/radial_ray_clamp.js";
 import { clearanceToHullAlongRay } from "./warp_stage.js";
+import { add } from "../../geom/primitives.js";
 
 function polySignedArea(poly) {
   let a = 0;
@@ -26,10 +27,6 @@ function unit(v) {
   const L = Math.hypot(v.x, v.y);
   if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
   return { x: v.x / L, y: v.y / L };
-}
-
-function add(p, v, s) {
-  return { x: p.x + v.x * s, y: p.y + v.y * s };
 }
 
 /**
