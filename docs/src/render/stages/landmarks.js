@@ -2,10 +2,7 @@
 
 import { pointInPolyOrOn } from "../../geom/poly.js";
 import { drawCircle } from "../helpers/draw.js";
-
-function isPoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isPoint } from "../../geom/primitives.js";
 
 export function drawLandmarksAndCentre(ctx, {
   wallBase,
