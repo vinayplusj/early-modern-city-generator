@@ -10,7 +10,7 @@
 
 import { segIntersect } from "./poly.js";
 
-export { polygonSignedArea as polyAreaSigned } from "./poly.js";
+export { signedArea} from "./poly.js";
 
 export function loopBBox(loop) {
   if (!Array.isArray(loop) || loop.length === 0) return null;
@@ -81,7 +81,7 @@ export function loopSelfIntersectionCount(loop) {
 }
 
 export function loopMetrics(loop) {
-  const areaSigned = polyAreaSigned(loop);
+  const areaSigned = signedArea(loop);
   const areaAbs = Math.abs(areaSigned);
 
   const bbox = loopBBox(loop);
