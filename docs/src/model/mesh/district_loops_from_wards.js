@@ -8,10 +8,12 @@
 // AUDIT (sha256 of extracted helper block, LF newlines):
 // TODO_REPLACE_WITH_REAL_SHA256
 
-import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
+import { centroid, pointInPolyOrOn, polygonSignedArea } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
-import { polyAreaSigned, loopMetrics } from "../../geom/loop_metrics.js";
+import { loopMetrics } from "../../geom/loop_metrics.js";
 import { buildLoopsFromPolys } from "./loops_from_polys.js";
+
+const polyAreaSigned = polygonSignedArea;
 
 export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
   const wardArr = Array.isArray(wards) ? wards : [];
