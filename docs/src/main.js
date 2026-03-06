@@ -122,5 +122,4 @@ window.addEventListener("resize", () => {
 });
 
 // Initial render
-syncGateControl();
 regenerate();
