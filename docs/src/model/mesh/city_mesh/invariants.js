@@ -4,9 +4,7 @@
 // These checks are intentionally strict and throw on failure.
 // Keep them deterministic and side-effect free.
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../../util/assert.js";
 
 function assertInt(n, msg) {
   assert(Number.isInteger(n), msg);
