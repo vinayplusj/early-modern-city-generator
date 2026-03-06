@@ -10,13 +10,10 @@
 //   polygon: Array<{x,y}>,
 //   metrics: { areaAbsOuter:number, areaAbsLoop:number, centroidDist:number }
 // }
+import { isFinitePoint, dist } from "../../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
 function polygonAreaSigned(points) {
@@ -58,12 +55,6 @@ function polygonCentroid(points) {
 
   const inv = 1 / (3 * fsum);
   return { x: cx * inv, y: cy * inv };
-}
-
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.hypot(dx, dy);
 }
 
 /**
