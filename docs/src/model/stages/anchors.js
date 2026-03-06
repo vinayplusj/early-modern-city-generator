@@ -1,6 +1,6 @@
 // docs/src/model/stages/anchors.js
 
-import { add, mul } from "../../geom/primitives.js";
+import { add, mul ,clamp, clampPointToCanvas, isPoint, safeNormalize } from "../../geom/primitives.js";
 import { centroid, pointInPolyOrOn } from "../../geom/poly.js";
 
 import {
@@ -10,19 +10,6 @@ import {
 } from "../domain/anchor_constraints.js";
 
 import { assertFinitePoint, assertDistinctPoints } from "../invariants.js";
-
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function clampPointToCanvas(p, w, h, pad) {
-  if (!p) return p;
-  return { x: clamp(p.x, pad, w - pad), y: clamp(p.y, pad, h - pad) };
-}
-
-function isPoint(p) {
-  return Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
 
 function wardPoly(w) {
   if (!w) return null;
@@ -58,12 +45,6 @@ function vec(a, b) {
 
 function len(v) {
   return Math.hypot(v.x, v.y);
-}
-
-function safeNormalize(v, fallback = { x: 1, y: 0 }) {
-  const m = len(v);
-  if (m > 1e-9) return { x: v.x / m, y: v.y / m };
-  return fallback;
 }
 
 function pushInsidePoly(p, poly, toward, step = 4, iters = 60) {
