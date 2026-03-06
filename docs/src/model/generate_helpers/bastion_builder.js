@@ -5,16 +5,9 @@
 import { clampPointInsideAlongRay} from "../../geom/radial_ray_clamp.js";
 import { clearanceToHullAlongRay } from "./warp_stage.js";
 import { add } from "../../geom/primitives.js";
+import { polygonSignedArea } from "../../geom/poly.js";
 
-function polySignedArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += (p.x * q.y - q.x * p.y);
-  }
-  return 0.5 * a;
-}
+const polySignedArea = polygonSignedArea;
 
 function ensureWinding(poly, wantCCW) {
   const a = polySignedArea(poly);
