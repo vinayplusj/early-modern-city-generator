@@ -17,7 +17,7 @@
 // - This view is meant to be MUTABLE because existing code (snapPointToGraph with splitEdges)
 //   mutates nodes/edges/adj. If want immutability later, clone it at call sites.
 
-import { polygonAreaAbs } from "../../../geom/poly.js";
+import { areaAbs } from "../../../geom/poly.js";
 import { assert } from "../../util/assert.js";
 
 function ensureArraySize(arr, n, fillFn) {
@@ -160,7 +160,7 @@ export function makeGraphViewFromCityMesh(cityMesh, opts = {}) {
 
     // Compute polygon area (use node coords); useful as stable hinting later.
     const poly = nodeIds.map((nid) => nodes[nid]).filter(Boolean);
-    const areaAbs = (poly.length >= 3) ? polygonAreaAbs(poly) : 0;
+    const areaAbs = (poly.length >= 3) ? areaAbs(poly) : 0;
 
     cells[f.id] = {
       id: f.id,
