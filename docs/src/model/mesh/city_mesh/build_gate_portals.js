@@ -12,13 +12,10 @@
 //   t: number,                 // 0..1 on that boundary segment
 //   interiorFaceId: number|null
 // }
+import { isFinitePoint } from "../../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
 function buildVertexPosMap(cityMesh) {
