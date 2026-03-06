@@ -8,10 +8,7 @@ import { mulberry32 } from "../rng/mulberry32.js";
 import { rngFork } from "../rng/rng_fork.js";
 import { assembleModel } from "../assemble_model.js";
 import { PIPELINE_STAGES } from "./stage_registry.js";
-
-function isPoint(p) {
-  return Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isPoint } from "../../geom/primitives.js";
 
 export function runPipeline(ctx) {
   // Legacy containers that some stages still write into.
