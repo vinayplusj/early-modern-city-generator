@@ -11,6 +11,7 @@ import {
 } from "./util/angles.js";
 import { buildBastionLockMask, buildBastionClearMask } from "./domain/bastion_warp_masks.js";
 export { enforceInsidePolyAlongRay, enforceOutsidePolyAlongRay } from "./util/poly_ray_constraints.js";
+import { clamp } from "../geom/primitives.js";
 
 export function buildWarpField({ centre, wallPoly, targetPoly = null, districts, bastions, params }) {
   if (!params || !Number.isFinite(params.samples) || params.samples < 32) {
@@ -370,8 +371,4 @@ function angleInInterval(t, a0, a1) {
   const end = wrapAngle(a1);
   if (start <= end) return t >= start && t < end;
   return t >= start || t < end; // wrap interval
-}
-
-function clamp(x, lo, hi) {
-  return Math.max(lo, Math.min(hi, x));
 }
