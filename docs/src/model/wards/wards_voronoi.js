@@ -26,7 +26,7 @@ import {
   pointInPoly,
   pointInPolyOrOn,
   polygonSignedArea,
-  polygonCentroid,
+  centroid,
   closestPointOnSegment,
   pointSegmentDistance,
 } from "../../geom/poly.js";
@@ -116,7 +116,7 @@ function buildBoundarySeeds({ footprintPoly, count, inset }) {
   const poly = Array.isArray(footprintPoly) ? footprintPoly : [];
   if (poly.length < 3 || count <= 0) return [];
 
-  const c = polygonCentroid(poly);
+  const c = centroid(poly);
   const perim = polyPerimeter(poly);
   if (!Number.isFinite(perim) || perim <= 1e-6) return [];
 
@@ -208,7 +208,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
       poly = null;
     }
 
-    const centroid = poly ? polygonCentroid(poly) : null;
+    const centroid = poly ? centroid(poly) : null;
     const area = poly ? Math.abs(polygonSignedArea(poly)) : null;
 
     wards.push({
@@ -334,7 +334,7 @@ function projectPointToPolyInterior(p, poly) {
   const nearest = nearestPointOnPoly(p, poly);
 
   // Estimate inward direction by moving towards polygon centroid.
-  const c = polygonCentroid(poly);
+  const c = centroid(poly);
   const dx = c.x - nearest.x;
   const dy = c.y - nearest.y;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -446,7 +446,7 @@ function tryClipToFootprint(cellPoly, footprintPoly, p) {
 
   // We assume the footprint is roughly star-shaped around its centroid, which is
   // true for your “stretched but bounded” outerBoundary.
-  const centre = polygonCentroid(footprintPoly);
+  const centre = centroid(footprintPoly);
 
   // Densify first so edges do not “cut chords” outside concave/curvy boundaries.
   // This is deterministic and avoids requiring a full polygon intersection algorithm.
