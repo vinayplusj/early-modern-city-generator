@@ -15,9 +15,7 @@
 // - Deterministic pattern placement for a given (seed, canvas size, tokens).
 // - Draws only outside the polygon (evenodd clip).
 
-function isFinitePoint(p) {
-  return p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isFinitePoint } from "../../geom/primitives.js";
 
 function polyIsValid(poly) {
   return Array.isArray(poly) && poly.length >= 3 && poly.every(isFinitePoint);
