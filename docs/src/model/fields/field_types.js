@@ -2,6 +2,7 @@
 // Shared, dependency-free types and helpers for deterministic scalar fields over CityMesh.
 //
 // This file is intentionally small and stable. It should not import from other modules.
+export { clamp01 } from "../../geom/primitives.js";
 
 export const FieldDomain = Object.freeze({
   FACE: "face",
@@ -28,12 +29,6 @@ export const FieldDomain = Object.freeze({
 
 export function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-export function clamp01(x) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  return x;
 }
 
 /**
