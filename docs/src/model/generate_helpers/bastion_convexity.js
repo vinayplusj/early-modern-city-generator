@@ -15,7 +15,7 @@
 
 import { clampPointInsideAlongRay } from "../../geom/radial_ray_clamp.js";
 import { dist, clamp01 } from "../../geom/primitives.js";
-import { polygonSignedArea } from "../../geom/poly.js";
+import { signedArea } from "../../geom/poly.js";
 import { assert } from "../util/assert.js";
 
 // Note: max interior angle is enforced only at movable vertices (S0, T, S1), not at base corners (B0, B1).
@@ -60,7 +60,7 @@ function majoritySignFromCross(cross, epsCross) {
 }
 
 function expectedTurnSign(poly, epsArea, epsCross) {
-  const a = polygonSignedArea(poly);
+  const a = signedArea(poly);
   if (Math.abs(a) >= epsArea) return (a >= 0) ? 1 : -1;
   const { cross } = computeTurnsCross(poly);
   return majoritySignFromCross(cross, epsCross);
