@@ -8,17 +8,13 @@
 // - Optional radial clamping against an inner and/or outer hull.
 
 import { buildWarpField, warpPolylineRadial } from "./warp_apply.js";
-import { dist, dist2, add, sub, mul, perp, normalize } from "../../geom/primitives.js";
+import { dist, dist2, add, sub, mul, perp, normalize, lerp } from "../../geom/primitives.js";
 
 function clampNumber(x, lo, hi) {
   if (!Number.isFinite(x)) return x;
   if (Number.isFinite(lo) && x < lo) return lo;
   if (Number.isFinite(hi) && x > hi) return hi;
   return x;
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
 }
 
 function wrapAngle(t) {
