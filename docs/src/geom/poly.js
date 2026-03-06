@@ -1,9 +1,9 @@
 import { add, sub, mul, dist, lerp, clamp, vec, safeNormalize } from "./primitives.js";
 // Compatibility wrappers (Phase 2)
-export function polygonSignedArea(poly) { return signedArea(poly); }
-export function polygonAreaAbs(poly) { return Math.abs(polygonSignedArea(poly)); }
 
-function signedArea(poly) {
+export function polygonAreaAbs(poly) { return Math.abs(signedArea(poly)); }
+
+export function signedArea(poly) {
   let a = 0;
   for (let i = 0; i < poly.length; i++) {
     const p = poly[i];
