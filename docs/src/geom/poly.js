@@ -4,6 +4,16 @@ export function polygonSignedArea(poly) { return signedArea(poly); }
 export function polygonAreaAbs(poly) { return Math.abs(polygonSignedArea(poly)); }
 export function polygonCentroid(poly) { return centroid(poly); }
 
+function signedArea(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return 0.5 * a;
+} 
+
 export function centroid(poly) {
   let a = 0, cx = 0, cy = 0;
   for (let i = 0; i < poly.length; i++) {
