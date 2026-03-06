@@ -160,13 +160,13 @@ export function makeGraphViewFromCityMesh(cityMesh, opts = {}) {
 
     // Compute polygon area (use node coords); useful as stable hinting later.
     const poly = nodeIds.map((nid) => nodes[nid]).filter(Boolean);
-    const areaAbs = (poly.length >= 3) ? areaAbs(poly) : 0;
+    const areaAbsV = (poly.length >= 3) ? areaAbs(poly) : 0;
 
     cells[f.id] = {
       id: f.id,
       nodeIds,
       edgeIds,
-      areaAbs,
+      areaAbs: areaAbsV,
       disabled: false,
     };
   }
