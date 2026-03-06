@@ -24,14 +24,15 @@ import { bastionCentroid } from "../generate_helpers/bastion_geom.js";
 import { repairBastionsStrictConvex } from "../generate_helpers/bastion_convex_repair.js";
 import { slideRepairBastions } from "../generate_helpers/bastion_slide_repair.js";
 import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
-import { loopPerimeter, polyAreaSigned } from "../../geom/loop_metrics.js";
-import { ensureWinding } from "../../geom/poly.js";
+import { loopPerimeter } from "../../geom/loop_metrics.js";
+import { ensureWinding , polygonSignedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
 
+const polyAreaSigned = polygonSignedArea;
 /**
  * @param {object} args
  * @returns {object}
