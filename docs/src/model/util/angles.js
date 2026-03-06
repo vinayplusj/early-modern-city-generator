@@ -5,6 +5,7 @@
 // Design goals:
 // - Deterministic, allocation-free for hot paths.
 // - No behaviour assumptions about callers beyond radians.
+export { clamp01 } from "../../geom/primitives.js";
 
 export const TAU = Math.PI * 2;
 
@@ -30,15 +31,6 @@ export function angularDistance(a, b) {
  */
 export function angularSpan(a, b) {
   return Math.abs(angularDistance(a, b));
-}
-
-/**
- * Clamp to [0, 1].
- */
-export function clamp01(x) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  return x;
 }
 
 /**
