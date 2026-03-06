@@ -4,10 +4,7 @@
 // Extracted from generate.js without functional changes.
 
 import { buildAnchors } from "./anchors.js";
-
-function isPoint(p) {
-  return Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isPoint } from "../../geom/primitives.js";
 
 function briefPoint(p) {
   if (!p || typeof p !== "object") return p;
