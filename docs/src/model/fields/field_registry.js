@@ -6,13 +6,10 @@
 //
 // This module is intentionally dependency-free.
 import { clamp01 } from "../../geom/primitives.js";
+import { assert } from "../util/assert.js";
 
 const DOMAIN_FACE = "face";
 const DOMAIN_VERTEX = "vertex";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
 
 function computeMinMax(arr) {
   let min = Infinity;
