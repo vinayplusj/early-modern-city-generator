@@ -40,9 +40,12 @@ import {
 import {
   assert,
   computeMinMax,
+  computeFieldStats,
   normaliseSourceIds,
   resolveOptionalSources,
   buildWardIdToFaceIdMap,
+  assertStrictAscendingIntIds,
+  pickFirstPresent,
 } from "../fields/fields_stage_utils.js";
 import { deriveBaseFaceFields } from "../fields/derive_face_fields.js";
 
@@ -149,15 +152,19 @@ export function runFieldsStage(env) {
 
   const plazaSources = resolvePlazaSources({ ctx, meshAccess });
   stageMeta.sources.plaza = plazaSources;
+  assertStrictAscendingIntIds(plazaSources, "plaza");
 
-  const wallPolylineForFields =
-    (ctx.state.warp && ctx.state.warp.wallCurtainForDraw) ||
-    (ctx.state.warp && ctx.state.warp.wallForDraw) ||
-    (ctx.state.fortGeometryWarped && ctx.state.fortGeometryWarped.wallCurtainForDraw) ||
-    (ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw) ||
-    (ctx.state.fortifications && ctx.state.fortifications.wallCurtain) ||
-    (ctx.state.fortifications && ctx.state.fortifications.wall) ||
-    null;
+  const wallPick = pickFirstPresent([
+    ["ctx.state.warp.wallCurtainForDraw", ctx.state.warp && ctx.state.warp.wallCurtainForDraw],
+    ["ctx.state.warp.wallForDraw", ctx.state.warp && ctx.state.warp.wallForDraw],
+    ["ctx.state.fortGeometryWarped.wallCurtainForDraw", ctx.state.fortGeometryWarped && ctx.state.fortGeometryWarped.wallCurtainForDraw],
+    ["ctx.state.fortifications.wallCurtainForDraw", ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw],
+    ["ctx.state.fortifications.wallCurtain", ctx.state.fortifications && ctx.state.fortifications.wallCurtain],
+    ["ctx.state.fortifications.wall", ctx.state.fortifications && ctx.state.fortifications.wall],
+  ]);
+
+  const wallPolylineForFields = wallPick.value;
+  stageMeta.sourceResolution.wall.polylineKeyUsed = wallPick.key;
 
   const wallSampleStepForFields =
     (ctx.params && ctx.params.fields && ctx.params.fields.wallSampleStep) || 20;
@@ -183,6 +190,7 @@ export function runFieldsStage(env) {
   stageMeta.sources.wallSampleStep = wallSampleStepForFields;
   stageMeta.sources.wall = wallRes.ids;
   stageMeta.sourceErrors.wall = wallRes.error;
+  if (wallRes.ids) assertStrictAscendingIntIds(wallRes.ids, "wall");
 
   // Water sources may exist as vertex ids OR as water edge ids (shoreline/river) on the routing graph.
   // Prefer explicit vertex ids; otherwise derive from edge ids deterministically.
@@ -232,9 +240,10 @@ export function runFieldsStage(env) {
         waterVertexIds: waterVertexIdsExplicit || waterVertexIdsDerived,
       }),
   });
-
+  
   stageMeta.sources.water = waterRes.ids;
   stageMeta.sourceErrors.water = waterRes.error;
+  if (waterRes.ids) assertStrictAscendingIntIds(waterRes.ids, "water");
   stageMeta.sources.waterDerivedFromEdges = !!(waterVertexIdsDerived && waterVertexIdsDerived.length);
 
   // ---------------------------------------------
@@ -289,18 +298,24 @@ export function runFieldsStage(env) {
       const rec = fields.get(r.name);
       if (!rec || !rec.values) continue;
 
-      const mm = computeMinMax(rec.values);
+      const stats = computeFieldStats(rec.values);
+      assert(stats.finiteCount > 0, `Field ${r.name} has no finite values.`);
+      assert(stats.min != null && stats.max != null, `Field ${r.name} has null bounds.`);
+      assert(Number.isFinite(stats.min) && Number.isFinite(stats.max), `Field ${r.name} has non-finite bounds: ${stats.min}, ${stats.max}`);
+
       const m = rec.meta || {};
       stageMeta.fieldStats[r.name] = {
-        min: mm.min,
-        max: mm.max,
+        min: stats.min,
+        max: stats.max,
+        finiteCount: stats.finiteCount,
+        nonFiniteCount: stats.nonFiniteCount,
         domain: r.domain || m.domain || null,
         units: r.units || m.units || null,
       };
     }
   }
 
-    // ------------------------------------------------------
+  // ------------------------------------------------------
   // 4) (Optional) Derive face fields by boundary reduction
   // ------------------------------------------------------
   //
