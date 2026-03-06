@@ -10,11 +10,7 @@
 //
 // This module is deliberately small and stable so Stage 140 can stay orchestration-focused.
 
-function clamp01(x) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  return x;
-}
+import { clamp01 } from "../../geom/primitives.js";
 
 function getFieldRec(fields, name) {
   if (!fields || typeof fields.get !== "function") return null;
