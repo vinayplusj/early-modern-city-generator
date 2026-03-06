@@ -17,9 +17,7 @@
 // This implementation uses quantisation (default 1e-6) before hashing.
 // You can tighten/loosen quantisation based on your observed stability.
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function clampInt32(x) {
   return x | 0;
