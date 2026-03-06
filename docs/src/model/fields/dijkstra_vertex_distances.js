@@ -16,9 +16,7 @@
 //
 // No imports; keep dependency-free.
 
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 // ---------- Min-heap (priority queue) ----------
 class MinHeap {
