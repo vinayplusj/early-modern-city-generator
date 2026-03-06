@@ -10,10 +10,7 @@
 // - All widths are in canvas pixels.
 // - Do not hardcode colours elsewhere; reference these tokens.
 // - Patterns (hatch/stipple) should use the returned spacing values for stability.
-
-function clamp(x, lo, hi) {
-  return Math.max(lo, Math.min(hi, x));
-}
+import { clamp } from "../../geom/primitives.js";
 
 function isFiniteNumber(n) {
   return Number.isFinite(n);
