@@ -414,7 +414,64 @@ function polygonCentroid(poly) {
   const f = 1 / (6 * a);
   return { x: cx * f, y: cy * f };
 }
+function densifyPolyline(poly, maxSegLen) {
+  if (!Array.isArray(poly) || poly.length < 2) return poly;
 
+  const out = [];
+  const maxL = Number.isFinite(maxSegLen) ? maxSegLen : 10;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+
+    out.push(a);
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy);
+
+    if (!Number.isFinite(L) || L <= maxL || L <= 1e-9) continue;
+
+    const n = Math.ceil(L / maxL);
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      out.push({ x: a.x + dx * t, y: a.y + dy * t });
+    }
+  }
+
+  return out;
+}
+
+function dropNearDuplicatePoints(poly, eps = 1e-6) {
+  if (!Array.isArray(poly) || poly.length < 3) return poly;
+
+  const out = [];
+  let prev = null;
+  for (const p of poly) {
+    if (!prev) {
+      out.push(p);
+      prev = p;
+      continue;
+    }
+    const dx = p.x - prev.x;
+    const dy = p.y - prev.y;
+    if (dx * dx + dy * dy > eps * eps) {
+      out.push(p);
+      prev = p;
+    }
+  }
+
+  // If the last point duplicates the first, remove the last.
+  if (out.length >= 3) {
+    const a = out[0];
+    const b = out[out.length - 1];
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    if (dx * dx + dy * dy <= eps * eps) out.pop();
+  }
+
+  return out;
+}
 /* ---------------------- Optional clipping (safe stub) --------------------- */
 
 /**
@@ -434,9 +491,19 @@ function tryClipToFootprint(cellPoly, footprintPoly) {
   // true for your “stretched but bounded” outerBoundary.
   const centre = polygonCentroid(footprintPoly);
 
-  // Clamp each vertex along rays to stay inside the footprint.
+  // Densify first so edges do not “cut chords” outside concave/curvy boundaries.
+  // This is deterministic and avoids requiring a full polygon intersection algorithm.
+  const maxSegLen = Number.isFinite(params?.wardClipMaxSegLen) ? params.wardClipMaxSegLen : 10;// world units; keep small enough to respect curved boundary detail
+  const dense = densifyPolyline(cellPoly, maxSegLen);
+
+  // Clamp each point along rays to stay inside the footprint.
   // Margin 0 keeps it tight; increase slightly if you see boundary grazing issues.
-  const clamped = clampPolylineInsidePolyAlongRays(cellPoly, centre, footprintPoly, 0);
+  let clamped = clampPolylineInsidePolyAlongRays(dense, centre, footprintPoly, 0);
+
+  if (!clamped || clamped.length < 3) return null;
+
+  // Remove near-duplicate points introduced by densify + clamp.
+  clamped = dropNearDuplicatePoints(clamped, 1e-6);
 
   if (!clamped || clamped.length < 3) return null;
   return clamped;
