@@ -2,7 +2,6 @@ import { add, sub, mul, dist, lerp, clamp, vec, safeNormalize } from "./primitiv
 // Compatibility wrappers (Phase 2)
 export function polygonSignedArea(poly) { return signedArea(poly); }
 export function polygonAreaAbs(poly) { return Math.abs(polygonSignedArea(poly)); }
-export function polygonCentroid(poly) { return centroid(poly); }
 
 function signedArea(poly) {
   let a = 0;
