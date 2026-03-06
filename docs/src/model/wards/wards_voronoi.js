@@ -21,7 +21,7 @@
 
 import { Delaunay } from "../../../vendor/d3-delaunay-6.0.4.umd-shim.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
-
+import { dist } from "../../geom/primitives.js";
 
 /**
  * @typedef {{x:number, y:number}} Point
@@ -245,12 +245,6 @@ function clampInt(v, lo, hi) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
-}
-
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function computeBBox(poly, pad) {
