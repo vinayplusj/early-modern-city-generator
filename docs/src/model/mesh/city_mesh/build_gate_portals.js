@@ -13,10 +13,7 @@
 //   interiorFaceId: number|null
 // }
 import { isFinitePoint } from "../../../geom/primitives.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../../util/assert.js";
 
 function buildVertexPosMap(cityMesh) {
   const m = new Map();
