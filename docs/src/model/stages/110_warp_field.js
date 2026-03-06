@@ -673,7 +673,6 @@ export function runWarpFieldStage({
       };
     }
   }
-}
 
  // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
