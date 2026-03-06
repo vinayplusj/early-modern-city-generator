@@ -21,15 +21,10 @@
 // - sampleScalar prefers face fields if present.
 // - If only a vertex field exists, it reduces over the face boundary vertices.
 // - sampleVector supports a derived "to_plaza" vector using anchors (no mesh needed).
+import { clamp01 } from "../../geom/primitives.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
-}
-
-function clamp01(x) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  return x;
 }
 
 function isFiniteXY(p) {
