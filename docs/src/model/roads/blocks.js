@@ -12,44 +12,9 @@
 // - Neighbour ordering is angle-sorted with explicit ANGLE_EPS tie breaks.
 // - Face ordering is stable via sort key.
 //
+import { polygonSignedArea, polygonCentroid } from "../../geom/poly.js";
 
 const OUTER_RATIO_MIN = 1.5;
-
-function signedArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return 0.5 * a;
-}
-
-function centroid(poly) {
-  const a = signedArea(poly);
-  const absA = Math.abs(a);
-  if (absA < 1e-12) {
-    let sx = 0;
-    let sy = 0;
-    for (const p of poly) {
-      sx += p.x;
-      sy += p.y;
-    }
-    return { x: sx / poly.length, y: sy / poly.length };
-  }
-
-  let cx = 0;
-  let cy = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    const cross = p.x * q.y - q.x * p.y;
-    cx += (p.x + q.x) * cross;
-    cy += (p.y + q.y) * cross;
-  }
-  const k = 1 / (6 * a);
-  return { x: cx * k, y: cy * k };
-}
 
 function almostEqual(a, b, eps) {
   return Math.abs(a - b) <= eps;
@@ -202,7 +167,7 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
       const poly = cycleIdsToPoints(cyc, nodeById, POINT_EPS);
       if (!poly || poly.length < 3) continue;
 
-      const a = signedArea(poly);
+      const a = polygonSignedArea(poly);
       const absA = Math.abs(a);
       if (absA < AREA_EPS) continue;
 
@@ -241,8 +206,8 @@ export function extractBlocksFromRoadGraph(roadGraph, opts = {}) {
   inner.sort((A, B) => {
     if (A.absArea !== B.absArea) return B.absArea - A.absArea;
 
-    const cA = centroid(A.polygon);
-    const cB = centroid(B.polygon);
+    const cA = polygonCentroid(A.polygon);
+    const cB = polygonCentroid(B.polygon);
 
     if (cA.x !== cB.x) return cA.x - cB.x;
     if (cA.y !== cB.y) return cA.y - cB.y;
