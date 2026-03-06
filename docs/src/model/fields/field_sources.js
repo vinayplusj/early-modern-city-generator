@@ -21,10 +21,7 @@
 // - waterSourceVertexIds() -> Array<vertexId>  (optional, if you expose water snapping)
 //
 // NOTE: We do not require pointToFaceId(p) here.
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function isFiniteXY(p) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y);
