@@ -187,6 +187,11 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 
       if (p.clipToFootprint) {
         poly = tryClipToFootprint(poly, footprintPoly);
+      
+        // Debug-only invariant: detect any remaining boundary-chord segments.
+        if (p.debugWardClip && Array.isArray(poly) && poly.length >= 3) {
+          assertWardEdgesInsideFootprint({ wardId: id, poly, footprintPoly });
+        }
       }
     }
 
@@ -223,6 +228,7 @@ function normaliseParams(params) {
     jitterAngle: numberOr(params?.jitterAngle, 0.25),
     bboxPadding: numberOr(params?.bboxPadding, 250),
     clipToFootprint: Boolean(params?.clipToFootprint ?? false),
+    debugWardClip: Boolean(params?.debugWardClip ?? false),
 
     // NEW: add one deterministic “ring” of seeds near the boundary
     boundarySeedCount: clampInt(params?.boundarySeedCount ?? 0, 0, 400),
@@ -308,7 +314,33 @@ function pointInPoly(p, poly) {
 
   return inside;
 }
+function assertWardEdgesInsideFootprint({ wardId, poly, footprintPoly, maxFails = 3 }) {
+  if (!Array.isArray(poly) || poly.length < 3) return;
+  if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return;
 
+  let fails = 0;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+
+    const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+
+    // Treat boundary as inside (pointInPoly already does boundary-as-inside).
+    if (!pointInPoly(mid, footprintPoly)) {
+      fails += 1;
+
+      // Log a small, deterministic payload. Avoid printing large arrays.
+      console.warn("[EMCG] ward clip invariant failed: edge midpoint outside footprint", {
+        wardId,
+        edgeIndex: i,
+        mid,
+      });
+
+      if (fails >= maxFails) break;
+    }
+  }
+}
 /**
  * Project an outside point to the nearest point on the polygon boundary, then
  * nudge slightly inward along an estimated inward normal.
