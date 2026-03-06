@@ -404,7 +404,7 @@ export function buildCityMeshFromVorGraph(vorGraph, opts = {}) {
 
     const areaSigned = signedArea(polygon);
     const areaAbs = Math.abs(areaSigned);
-    const centroid = centroid(polygon);
+    const centroidPt = centroid(polygon);
 
     const loopId = nextLoopId++;
     for (const heId of loopHalfEdges) {
@@ -417,7 +417,7 @@ export function buildCityMeshFromVorGraph(vorGraph, opts = {}) {
       vertexIds: loopVertexIds,
       polygon,
       areaAbs,
-      centroid,
+      centroid: centroidPt,
     });
   }
 
