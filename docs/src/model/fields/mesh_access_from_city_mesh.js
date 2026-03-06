@@ -12,10 +12,7 @@
 // - It only reads properties/methods.
 // - It throws with clear messages if it cannot infer required structures.
 import { dist2 } from "../../geom/primitives.js";
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "../util/assert.js";
 
 function isFiniteNonNegInt(n) {
   return Number.isFinite(n) && (n | 0) === n && n >= 0;
