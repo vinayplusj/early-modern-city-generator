@@ -221,7 +221,6 @@ export function slideRepairBastions({
         cx,
         cy,
         wantCCW,
-        shoulderSpanToTip: null, // Stage 110 can override via injected placement or params before calling
         outerHullLoop,
       });
       if (debug) console.info("[slideRepair] cand pre", { idx, j, kSample, pre: diag5(candPoly) });
