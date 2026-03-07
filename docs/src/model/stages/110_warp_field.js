@@ -535,7 +535,6 @@ export function runWarpFieldStage({
 	const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters)
 	  ? ctx.params.warpFort.bastionConvexIters
 	  : 121;
-{
 	let bastionConvexSummary = null;
 	
 	{
@@ -569,7 +568,7 @@ export function runWarpFieldStage({
 	    wantCCW,
 	    areaEps: 1e-3,
 	    ensureWinding,
-	    signedArea,
+	    polyAreaSigned: signedArea,,
 	    repairOne: (poly) => {
 	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
 	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
@@ -697,7 +696,7 @@ export function runWarpFieldStage({
     wantCCW,
     areaEps: 1e-3,
     ensureWinding,
-    signedArea,
+    polyAreaSigned: signedArea,,
     repairOne: (poly, opts) => {
       const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
       if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
@@ -719,8 +718,7 @@ export function runWarpFieldStage({
         candidates: warpOutworks.bastionPlacement.maxima ? warpOutworks.bastionPlacement.maxima.length : 0,
       };
     }
-  }
-
+  
  // ---------------- Bastion hull (global convex hull) ----------------
   // Compute convex hull of the FINAL bastion vertices (after any shrinking).
   // This must remain a convex hull; do not clamp the hull itself.
