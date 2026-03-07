@@ -11,7 +11,37 @@ import { signedArea, areaAbs } from "../../geom/poly.js";
 function _validPoly(poly) {
   return Array.isArray(poly) && poly.length >= 3;
 }
+function diag5(poly) {
+  if (!Array.isArray(poly)) return { ok: false, why: "not_array" };
+  if (poly.length !== 5) return { ok: false, why: "not_5", n: poly.length };
 
+  const d = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const cross = (ax, ay, bx, by) => ax * by - ay * bx;
+
+  const baseGap = d(poly[0], poly[4]);
+  const shoulderGap = d(poly[1], poly[3]);
+  const tipS0 = d(poly[2], poly[1]);
+  const tipS1 = d(poly[2], poly[3]);
+
+  let sign = 0;
+  for (let i = 0; i < 5; i++) {
+    const a = poly[i], b = poly[(i + 1) % 5], c = poly[(i + 2) % 5];
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const bcx = c.x - b.x, bcy = c.y - b.y;
+    const z = cross(abx, aby, bcx, bcy);
+    if (!Number.isFinite(z) || Math.abs(z) < 1e-9) return { ok: false, why: "collinear", i, baseGap, shoulderGap, tipS0, tipS1 };
+    const s = z > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return { ok: false, why: "non_convex", i, baseGap, shoulderGap, tipS0, tipS1 };
+  }
+
+  const flags = [];
+  const eps = 1.0;
+  if (shoulderGap < eps) flags.push("shoulders_collapsed");
+  if (baseGap < eps) flags.push("base_collapsed");
+
+  return { ok: flags.length === 0, flags, baseGap, shoulderGap, tipS0, tipS1 };
+}
 /**
  * Slide-repair bastions in-place (returns a new array copy).
  *
@@ -67,7 +97,7 @@ export function slideRepairBastions({
   slideTries,
   margin,
   K,
-
+  debug = false,
   warpPolylineRadial,
   clampPolylineRadial,
   clampPolylineInsidePolyAlongRays,
@@ -126,14 +156,25 @@ export function slideRepairBastions({
       const m = baseM + (Number.isFinite(bastionOuterInset) ? bastionOuterInset : 0);
       clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
     }
-
+    
     const poly2 = ensureWinding(clampedSafe, wantCCW);
-    if (!_validPoly(poly2) || areaAbs(poly2) < 1e-3) {
-      return { ok: false, poly: poly2 };
+    if (!_validPoly(poly2)) {
+      return { ok: false, poly: poly2, reason: "invalid_after_clamp" };
     }
-
+    if (areaAbs(poly2) < 1e-3) {
+      return { ok: false, poly: poly2, reason: "degenerate_area_after_clamp" };
+    }
+    
     const res = repairBastionStrictConvex(poly2, centrePt, outerHullLoop, margin, K);
-    return { ok: Boolean(res?.ok), poly: res?.poly || poly2 };
+    if (res?.ok) {
+      return { ok: true, poly: res.poly };
+    }
+    return {
+      ok: false,
+      poly: res?.poly || poly2,
+      reason: res?.reason || res?.note || "strict_repair_failed",
+      iters: res?.iters,
+    };
   }
 
   // Deterministic order: sort indices
@@ -183,10 +224,16 @@ export function slideRepairBastions({
         shoulderSpanToTip: null, // Stage 110 can override via injected placement or params before calling
         outerHullLoop,
       });
-
+      if (debug) console.info("[slideRepair] cand pre", { idx, j, kSample, pre: diag5(candPoly) });
       const outRes = warpClampRepairOne(candPoly);
-
+      if (debug) console.info("[slideRepair] cand post", {
+        idx, j, kSample,
+        outOk: Boolean(outRes?.ok),
+        outReason: outRes?.reason || outRes?.note || null,
+        post: diag5(outRes?.poly),
+      });
       if (outRes.ok && _validPoly(outRes.poly)) {
+        if (debug) console.info("[slideRepair] ACCEPT", { idx, j, kSample });
         out[idx] = outRes.poly;
         usedMax.add(j);
         repaired = true;
