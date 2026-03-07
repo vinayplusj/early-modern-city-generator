@@ -33,12 +33,13 @@
  *
  * @returns {{ bastionPolysOut: Poly[], convexStats: object }}
  */
+import { signedArea } from "../../geom/poly.js";
+
 export function repairBastionsStrictConvex({
   bastionPolys,
   wantCCW,
   areaEps = 1e-3,
   ensureWinding,
-  polyAreaSigned,
   repairOne,
   repairOpts = {},
 } = {}) {
@@ -66,7 +67,7 @@ export function repairBastionsStrictConvex({
 
     const p0 = ensureWinding(poly, wantCCW);
 
-    const a = polyAreaSigned(p0);
+    const a = signedArea(p0);
     if (!Number.isFinite(a) || Math.abs(a) < areaEps) {
       out[i] = p0;
       stats.degenerate++;
