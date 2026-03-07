@@ -571,6 +571,16 @@ export function runWarpFieldStage({
 	    polyAreaSigned: signedArea,
 	    repairOne: (poly) => {
 	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
+			if (ctx?.params?.warpFort?.debug && (!r || !r.ok)) {
+			  const a = (typeof signedArea === "function") ? signedArea(poly) : null;
+			  console.info("[Warp110] repairBastionStrictConvex FAIL", {
+			    nVerts: Array.isArray(poly) ? poly.length : null,
+			    areaSigned: a,
+			    margin,
+			    K,
+			    reason: r && r.reason ? r.reason : null,
+			  });
+			}
 	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
 	      return (r.ok && Array.isArray(r.poly))
 	        ? { ok: true, poly: r.poly }
