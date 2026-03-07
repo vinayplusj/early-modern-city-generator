@@ -568,7 +568,7 @@ export function runWarpFieldStage({
 	    wantCCW,
 	    areaEps: 1e-3,
 	    ensureWinding,
-	    polyAreaSigned: signedArea,,
+	    polyAreaSigned: signedArea,
 	    repairOne: (poly) => {
 	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
 	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
@@ -696,7 +696,7 @@ export function runWarpFieldStage({
     wantCCW,
     areaEps: 1e-3,
     ensureWinding,
-    polyAreaSigned: signedArea,,
+    polyAreaSigned: signedArea,
     repairOne: (poly, opts) => {
       const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
       if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
