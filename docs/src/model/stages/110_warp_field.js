@@ -712,6 +712,86 @@ export function runWarpFieldStage({
   bastionPolysWarpedSafe = bastionPolysOut;
   warpOutworks.bastionSlideRepair = slideStats;
 		if (ctx?.params?.warpFort?.debug) {
+		  const polys = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
+		
+		  function d(a, b) {
+		    if (!a || !b) return NaN;
+		    return Math.hypot(b.x - a.x, b.y - a.y);
+		  }
+		
+		  function cross(ax, ay, bx, by) { return ax * by - ay * bx; }
+		
+		  function isStrictConvex5(p, wantCCW, eps = 1e-9) {
+		    if (!Array.isArray(p) || p.length !== 5) return { ok: false, why: "not_5" };
+		    let sign = 0;
+		    for (let i = 0; i < 5; i++) {
+		      const a = p[i];
+		      const b = p[(i + 1) % 5];
+		      const c = p[(i + 2) % 5];
+		      const abx = b.x - a.x, aby = b.y - a.y;
+		      const bcx = c.x - b.x, bcy = c.y - b.y;
+		      const z = cross(abx, aby, bcx, bcy);
+		      if (!Number.isFinite(z) || Math.abs(z) < eps) return { ok: false, why: "collinear_turn", i };
+		      const s = z > 0 ? 1 : -1;
+		      if (sign === 0) sign = s;
+		      else if (s !== sign) return { ok: false, why: "non_convex", i };
+		    }
+		    if (wantCCW && sign < 0) return { ok: false, why: "wrong_winding" };
+		    if (!wantCCW && sign > 0) return { ok: false, why: "wrong_winding" };
+		    return { ok: true };
+		  }
+		
+		  const eps = Number.isFinite(ctx?.params?.warpFort?.bastionTriEps) ? ctx.params.warpFort.bastionTriEps : 1.0;
+		
+		  for (let i = 0; i < polys.length; i++) {
+		    const p = polys[i];
+		    if (!Array.isArray(p)) {
+		      console.warn("[Warp110] bastion diag", { i, kind: "not_array" });
+		      continue;
+		    }
+		
+		    const n = p.length;
+		    const a = (typeof signedArea === "function" && n >= 3) ? signedArea(p) : null;
+		
+		    // Only meaningful for 5-point bastions.
+		    let shoulderGap = null;
+		    let baseGap = null;
+		    let tipShoulder0 = null;
+		    let tipShoulder1 = null;
+		
+		    if (n === 5) {
+		      // Expected layout: [B0, S0, T, S1, B1]
+		      baseGap = d(p[0], p[4]);
+		      shoulderGap = d(p[1], p[3]);
+		      tipShoulder0 = d(p[2], p[1]);
+		      tipShoulder1 = d(p[2], p[3]);
+		    }
+		
+		    const convex = isStrictConvex5(p, wantCCW);
+		
+		    // Triangle-like heuristics (pure diagnostics, no behaviour change)
+		    const triFlags = [];
+		    if (n === 5 && Number.isFinite(shoulderGap) && shoulderGap < eps) triFlags.push("shoulders_collapsed");
+		    if (n === 5 && Number.isFinite(baseGap) && baseGap < eps) triFlags.push("base_collapsed");
+		    if (n === 5 && convex.ok === false) triFlags.push(`convex_fail:${convex.why}`);
+		
+		    if (triFlags.length) {
+		      console.warn("[Warp110] bastion TRIANGLE-LIKE", {
+		        i,
+		        n,
+		        areaSigned: a,
+		        baseGap,
+		        shoulderGap,
+		        tipShoulder0,
+		        tipShoulder1,
+		        triFlags,
+		      });
+		    } else {
+		      console.info("[Warp110] bastion ok", { i, n, areaSigned: a, baseGap, shoulderGap });
+		    }
+		  }
+		}
+		if (ctx?.params?.warpFort?.debug) {
 		  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
 		  const nonNull = arr.filter(p => Array.isArray(p) && p.length >= 3).length;
 		  console.info("[Warp110] bastions AFTER slide repair", { n: arr.length, nonNull });
