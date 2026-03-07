@@ -611,11 +611,7 @@ export function runWarpFieldStage({
 	  warpOutworks?.field &&
 	  outerHullLoop &&
 	  Array.isArray(wallCurtainForDraw)
-		if (ctx?.params?.warpFort?.debug) {
-		  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-		  const nonNull = arr.filter(p => Array.isArray(p) && p.length >= 3).length;
-		  console.info("[Warp110] bastions AFTER slide repair", { n: arr.length, nonNull });
-		}
+
 	) {
 	  const placement = warpOutworks.bastionPlacement;
 	  const maxima = placement.maxima;
@@ -689,7 +685,11 @@ export function runWarpFieldStage({
 
   bastionPolysWarpedSafe = bastionPolysOut;
   warpOutworks.bastionSlideRepair = slideStats;
-
+		if (ctx?.params?.warpFort?.debug) {
+		  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
+		  const nonNull = arr.filter(p => Array.isArray(p) && p.length >= 3).length;
+		  console.info("[Warp110] bastions AFTER slide repair", { n: arr.length, nonNull });
+		}
   // Optional: refresh convex summary after sliding (summary-only).
   const refreshed = repairBastionsStrictConvex({
     bastionPolys: bastionPolysWarpedSafe,
