@@ -679,7 +679,7 @@ export function runWarpFieldStage({
     cy,
     wantCCW,
     outerHullLoop,
-
+	debug: Boolean(ctx?.params?.warpFort?.debug),
     warpWall,
     warpOutworks,
     curtainMinField,
