@@ -6,6 +6,7 @@
 //
 // This is dependency-injected: Stage 110 passes in the functions and state it already has.
 // No RNG is used here; order is deterministic.
+import { signedArea, areaAbs } from "../../geom/poly.js";
 
 function _validPoly(poly) {
   return Array.isArray(poly) && poly.length >= 3;
@@ -127,7 +128,7 @@ export function slideRepairBastions({
     }
 
     const poly2 = ensureWinding(clampedSafe, wantCCW);
-    if (!_validPoly(poly2) || Math.abs(polyAreaSigned(poly2)) < 1e-3) {
+    if (!_validPoly(poly2) || areaAbs(poly2) < 1e-3) {
       return { ok: false, poly: poly2 };
     }
 
