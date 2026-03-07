@@ -584,11 +584,24 @@ export function runWarpFieldStage({
 			    reason: r && r.reason ? r.reason : null,
 			  });
 			}
-	      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
-	      return (r.ok && Array.isArray(r.poly))
-	        ? { ok: true, poly: r.poly }
-	        : { ok: false, reason: r.reason || "repair failed" };
-	    },
+			if (!r) {
+			    return { ok: false, reason: "repairBastionStrictConvex returned null" };
+			  }
+			
+			  // Normal success case.
+			  if (r.ok && Array.isArray(r.poly)) {
+			    return { ok: true, poly: r.poly };
+			  }
+			
+			  // Special case: algorithm gave up but explicitly chose to keep the current poly.
+			  // This should not count as a failure, because we still have a valid polygon.
+			  if (r.note === "fallback_keep_current" && Array.isArray(r.poly)) {
+			    return { ok: true, poly: r.poly };
+			  }
+			
+			  // All other failures.
+			  return { ok: false, reason: r.reason || r.note || "repair failed" };
+			},
 	  });
 	
 	  bastionPolysWarpedSafe = bastionPolysOut;
@@ -607,7 +620,7 @@ export function runWarpFieldStage({
 	// ---------------- Sliding repair (before delete/reinsert) ----------------
 	// If a bastion is still failing convexity/angle after repair, try sliding its anchor
 	// to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
-	const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair);
+	const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair ?? true);
 	if (ctx?.params?.warpFort?.debug) {
 	  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
 	  console.info("[Warp110] slideRepair gate", {
