@@ -546,7 +546,7 @@ export function runWarpFieldStage({
 		  const areaSamples = [];
 		  for (let i = 0; i < Math.min(5, arr.length); i++) {
 		    try {
-		      const a = (typeof polyAreaSigned === "function") ? polyAreaSigned(arr[i]) : null;
+		      const a = (typeof signedArea === "function") ? signedArea(arr[i]) : null;
 		      areaSamples.push(a);
 		    } catch (e) {
 		      areaSamples.push("ERR");
@@ -556,7 +556,7 @@ export function runWarpFieldStage({
 		  console.info("[Warp110] bastions BEFORE strict repair", {
 		    n: arr.length,
 		    sampleLens: lens,
-		    polyAreaSignedType: typeof polyAreaSigned,
+		    signedAreaType: typeof signedArea,
 		    areaEps: 1e-3,
 		    margin,
 		    K,
