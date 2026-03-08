@@ -60,3 +60,9 @@ export function clampPointToCanvas(p, w, h, pad = 8) {
     y: clamp(p.y, pad, h - pad),
   };
 }
+
+export function unit(v) {
+  const L = Math.hypot(v.x, v.y);
+  if (!Number.isFinite(L) || L <= 1e-9) return { x: 0, y: 0 };
+  return { x: v.x / L, y: v.y / L };
+}
