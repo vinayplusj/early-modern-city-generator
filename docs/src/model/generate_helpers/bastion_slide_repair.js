@@ -42,6 +42,79 @@ function diag5(poly) {
 
   return { ok: flags.length === 0, flags, baseGap, shoulderGap, tipS0, tipS1 };
 }
+function roundNum(v, d = 3) {
+  return Number.isFinite(v) ? Number(v.toFixed(d)) : v;
+}
+
+function roundPt(p, d = 3) {
+  if (!p) return p;
+  return { x: roundNum(p.x, d), y: roundNum(p.y, d) };
+}
+
+function crossZ(a, b, c) {
+  const e1x = b.x - a.x;
+  const e1y = b.y - a.y;
+  const e2x = c.x - b.x;
+  const e2y = c.y - b.y;
+  return e1x * e2y - e1y * e2x;
+}
+
+function signedAreaLocal(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return 0.5 * a;
+}
+
+function interiorAngleLocal(poly, i) {
+  const n = poly.length;
+  const pPrev = poly[(i - 1 + n) % n];
+  const p = poly[i];
+  const pNext = poly[(i + 1) % n];
+
+  const ax = pPrev.x - p.x;
+  const ay = pPrev.y - p.y;
+  const bx = pNext.x - p.x;
+  const by = pNext.y - p.y;
+
+  const la = Math.hypot(ax, ay);
+  const lb = Math.hypot(bx, by);
+  if (!Number.isFinite(la) || !Number.isFinite(lb) || la <= 1e-9 || lb <= 1e-9) {
+    return NaN;
+  }
+
+  let c = (ax * bx + ay * by) / (la * lb);
+  c = Math.max(-1, Math.min(1, c));
+  return Math.acos(c) * 180 / Math.PI;
+}
+
+function bastionTurnDiagnostics(poly) {
+  if (!Array.isArray(poly) || poly.length !== 5) {
+    return { n: Array.isArray(poly) ? poly.length : null, turns: [] };
+  }
+
+  const turns = [];
+  for (let i = 0; i < 5; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % 5];
+    const c = poly[(i + 2) % 5];
+    turns.push({
+      turnAtVertex: (i + 1) % 5,
+      cross: roundNum(crossZ(a, b, c), 6),
+      angleDeg: roundNum(interiorAngleLocal(poly, (i + 1) % 5), 3),
+    });
+  }
+
+  return {
+    n: 5,
+    signedArea: roundNum(signedAreaLocal(poly), 6),
+    points: poly.map((p, idx) => ({ idx, ...roundPt(p, 3) })),
+    turns,
+  };
+}
 /**
  * Slide-repair bastions in-place (returns a new array copy).
  *
@@ -223,14 +296,59 @@ export function slideRepairBastions({
         wantCCW,
         outerHullLoop,
       });
-      if (debug) console.info("[slideRepair] cand pre", { idx, j, kSample, pre: diag5(candPoly) });
+      if (debug) {
+        console.log("[slideRepair] cand pre", {
+          idx,
+          j,
+          kSample,
+          pre: diag5(candPoly),
+          preDiag: bastionTurnDiagnostics(candPoly),
+        });
+      }
+      
       const outRes = warpClampRepairOne(candPoly);
-      if (debug) console.info("[slideRepair] cand post", {
-        idx, j, kSample,
-        outOk: Boolean(outRes?.ok),
-        outReason: outRes?.reason || outRes?.note || null,
-        post: diag5(outRes?.poly),
-      });
+      
+      if (debug) {
+        console.info("[slideRepair] cand post", {
+          idx,
+          j,
+          kSample,
+          outOk: Boolean(outRes?.ok),
+          outReason: outRes?.reason || outRes?.note || null,
+          post: diag5(outRes?.poly),
+          postDiag: bastionTurnDiagnostics(outRes?.poly),
+        });
+      }
+      
+      if (!outRes?.ok) {
+        console.warn("[slideRepair] cand post FAIL detail", {
+          idx,
+          j,
+          kSample,
+          outReason: outRes?.reason || outRes?.note || null,
+          pre: diag5(candPoly),
+          post: diag5(outRes?.poly),
+          preDiag: bastionTurnDiagnostics(candPoly),
+          postDiag: bastionTurnDiagnostics(outRes?.poly),
+        });
+      
+        const diag = bastionTurnDiagnostics(outRes?.poly);
+        const postQuick = diag5(outRes?.poly);
+        const v1Turn = Array.isArray(diag.turns)
+          ? diag.turns.find(t => t.turnAtVertex === 1)
+          : null;
+      
+        console.warn("[slideRepair] vertex-1 focus", {
+          idx,
+          j,
+          kSample,
+          outReason: outRes?.reason || outRes?.note || null,
+          failVertex: postQuick?.i ?? null,
+          failWhy: postQuick?.why ?? null,
+          vertex1: v1Turn,
+          points: diag.points,
+        });
+      }
       if (outRes.ok && _validPoly(outRes.poly)) {
         if (debug) console.info("[slideRepair] ACCEPT", { idx, j, kSample });
         out[idx] = outRes.poly;
