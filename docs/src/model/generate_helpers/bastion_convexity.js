@@ -195,6 +195,121 @@ function shoulderForBadVertex(vIdx) {
   return null;
 }
 
+function midpoint(a, b) {
+  return { x: 0.5 * (a.x + b.x), y: 0.5 * (a.y + b.y) };
+}
+
+function unitFromTo(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const m = Math.hypot(dx, dy);
+  if (!Number.isFinite(m) || m <= 1e-9) return { x: 0, y: 0, ok: false };
+  return { x: dx / m, y: dy / m, ok: true };
+}
+
+function pointLineDistance(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const den = Math.hypot(abx, aby);
+  if (!Number.isFinite(den) || den <= 1e-9) return 0;
+  return Math.abs(abx * apy - aby * apx) / den;
+}
+
+function enforceBastionShapeFloor(poly5, centrePt, outerPoly, margin, floors) {
+  if (!Array.isArray(poly5) || poly5.length !== 5) return poly5;
+
+  const out = poly5.slice();
+
+  const B0 = out[0];
+  const S0 = out[1];
+  const T  = out[2];
+  const S1 = out[3];
+  const B1 = out[4];
+
+  const M = midpoint(B0, B1);
+  const baseLen = dist(B0, B1);
+
+  if (!(baseLen > 1e-9)) {
+    return clampBastionMovablesInsideOuter(out, centrePt, outerPoly, margin);
+  }
+
+  const minShoulderGap = Math.max(2.5, floors.minShoulderGapFactor * baseLen);
+  const minTipDepth = Math.max(2.0, floors.minTipDepthFactor * baseLen);
+  const minArea = Math.max(1e-3, floors.minAreaFactor * baseLen * baseLen);
+
+  let tipAxis = unitFromTo(M, T);
+  if (!tipAxis.ok) {
+    const c = centroidOf5(out);
+    tipAxis = unitFromTo(M, c);
+  }
+
+  if (tipAxis.ok) {
+    const n = { x: -tipAxis.y, y: tipAxis.x };
+
+    const shoulderGap = dist(S0, S1);
+    if (shoulderGap < minShoulderGap) {
+      const half = 0.5 * minShoulderGap;
+      const forward = floors.shoulderForwardFactor * minTipDepth;
+
+      out[1] = {
+        x: M.x + tipAxis.x * forward - n.x * half,
+        y: M.y + tipAxis.y * forward - n.y * half,
+      };
+      out[3] = {
+        x: M.x + tipAxis.x * forward + n.x * half,
+        y: M.y + tipAxis.y * forward + n.y * half,
+      };
+    }
+
+    const tipDepth = pointLineDistance(out[2], out[0], out[4]);
+    if (tipDepth < minTipDepth) {
+      out[2] = {
+        x: M.x + tipAxis.x * minTipDepth,
+        y: M.y + tipAxis.y * minTipDepth,
+      };
+    }
+  }
+
+  let clamped = clampBastionMovablesInsideOuter(out, centrePt, outerPoly, margin);
+
+  const areaAbs = Math.abs(signedArea(clamped));
+  if (areaAbs < minArea) {
+    const B0c = clamped[0];
+    const B1c = clamped[4];
+    const Mc = midpoint(B0c, B1c);
+    const baseLen2 = dist(B0c, B1c);
+
+    if (baseLen2 > 1e-9) {
+      let axis2 = unitFromTo(Mc, clamped[2]);
+      if (!axis2.ok) axis2 = unitFromTo(Mc, centroidOf5(clamped));
+      if (axis2.ok) {
+        const n2 = { x: -axis2.y, y: axis2.x };
+        const half = 0.5 * minShoulderGap;
+        const tipDepth2 = Math.max(minTipDepth, 0.22 * baseLen2);
+        const shoulderForward = floors.shoulderForwardFactor * tipDepth2;
+
+        clamped[1] = {
+          x: Mc.x + axis2.x * shoulderForward - n2.x * half,
+          y: Mc.y + axis2.y * shoulderForward - n2.y * half,
+        };
+        clamped[2] = {
+          x: Mc.x + axis2.x * tipDepth2,
+          y: Mc.y + axis2.y * tipDepth2,
+        };
+        clamped[3] = {
+          x: Mc.x + axis2.x * shoulderForward + n2.x * half,
+          y: Mc.y + axis2.y * shoulderForward + n2.y * half,
+        };
+
+        clamped = clampBastionMovablesInsideOuter(clamped, centrePt, outerPoly, margin);
+      }
+    }
+  }
+
+  return clamped;
+}
 /**
  * Strict convexity + [minAngle,maxAngle] repair for a single 5-point bastion.
  *
@@ -216,7 +331,12 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
   const bastionBaseLen = dist(poly5[0], poly5[4]);
   const epsCross = Math.max(1e-3, (bastionBaseLen * bastionBaseLen) * 1e-4);
   const epsArea = Math.max(1e-6, (bastionBaseLen * bastionBaseLen) * 1e-6);
-
+  const shapeFloors = {
+    minShoulderGapFactor: 0.22,
+    minTipDepthFactor: 0.18,
+    minAreaFactor: 0.030,
+    shoulderForwardFactor: 0.55,
+  };
   let cur = clampBastionMovablesInsideOuter(poly5, centrePt, outerPoly, margin);
 
   const M = { x: (cur[0].x + cur[4].x) / 2, y: (cur[0].y + cur[4].y) / 2 };
@@ -240,20 +360,24 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
         // Bad at shoulder: shrink tip inward.
         cur[2] = moveTowardPoint(cur[2], M, 0.12);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 0 || vIdx === 4) {
         // Bad at base corner: pull adjacent shoulder inward.
         const sIdx = shoulderForBadVertex(vIdx); // 1 or 3
         cur[sIdx] = moveTowardPoint(cur[sIdx], M, 0.18);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 2) {
         // Bad at tip: move one shoulder inward (deterministic tie-break).
         const c = centroidOf5(cur);
         const pick = farthestShoulderIndex(cur, c); // 1 or 3
         cur[pick] = moveTowardPoint(cur[pick], M, 0.18);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else {
         cur[2] = moveTowardPoint(cur[2], M, 0.12);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       }
 
       cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
@@ -274,15 +398,19 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
       if (vIdx === 2) {
         cur[2] = moveTowardPoint(cur[2], M, 0.18);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 1 || vIdx === 0) {
         cur[1] = moveTowardPoint(cur[1], M, 0.22);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 3 || vIdx === 4) {
         cur[3] = moveTowardPoint(cur[3], M, 0.22);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else {
         cur[2] = moveTowardPoint(cur[2], M, 0.18);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       }
 
       cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
@@ -295,15 +423,19 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
       if (vIdx === 2) {
         cur[2] = moveAwayFromPoint(cur[2], M, 0.10);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 1 || vIdx === 0) {
         cur[1] = moveAwayFromPoint(cur[1], M, 0.10);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else if (vIdx === 3 || vIdx === 4) {
         cur[3] = moveAwayFromPoint(cur[3], M, 0.10);
         cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       } else {
         cur[2] = moveAwayFromPoint(cur[2], M, 0.10);
         cur[2] = clampPointInsideOuter(cur[2], centrePt, outerPoly, margin);
+        cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
       }
 
       cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
@@ -316,6 +448,7 @@ export function repairBastionStrictConvex(poly5, centrePt, outerPoly, margin, K)
   cur[1] = moveTowardPoint(cur[1], M, 0.28);
   cur[3] = moveTowardPoint(cur[3], M, 0.28);
   cur = clampBastionMovablesInsideOuter(cur, centrePt, outerPoly, margin);
+  cur = enforceBastionShapeFloor(cur, centrePt, outerPoly, margin, shapeFloors);
 
   // Final validation.
   const exp2 = expectedTurnSign(cur, epsArea, epsCross);
