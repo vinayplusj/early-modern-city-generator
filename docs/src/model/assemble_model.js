@@ -35,9 +35,10 @@ export function assembleModel({
   mesh,
   vorGraph,
 
-  // 4.7 hooks (outer boundary binding + gate portals)
+  // Canonical boundary/portal hooks
   boundaryBinding,
   gatePortals,
+  boundaryExits,
 
   // Anchors
   centre,
@@ -55,6 +56,8 @@ export function assembleModel({
   primaryRoadsMeta,
   primaryRoadsSnappedNodes,
   primaryRoadsGateForRoad,
+  primaryGatePortal,
+  primaryBoundaryExit,
   ring,
   ring2,
   secondaryRoads,
@@ -137,6 +140,7 @@ export function assembleModel({
     // 4.7 hooks
     boundaryBinding: boundaryBinding ?? null,
     gatePortals: Array.isArray(gatePortals) ? gatePortals : null,
+    boundaryExits: Array.isArray(boundaryExits) ? boundaryExits : null,
 
     // Anchors
     centre,
@@ -154,6 +158,8 @@ export function assembleModel({
     primaryRoadsMeta: primaryRoadsMetaArr,
     primaryRoadsSnappedNodes: primaryRoadsSnapsObj,
     primaryRoadsGateForRoad: primaryRoadsGatePoint,
+    primaryGatePortal: primaryGatePortal ?? null,
+primaryBoundaryExit: primaryBoundaryExit ?? null,
     ring,
     ring2,
     secondaryRoads: secondaryRoadsArr,
