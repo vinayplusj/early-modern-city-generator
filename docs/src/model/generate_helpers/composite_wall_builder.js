@@ -206,9 +206,18 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
     const arc1 = circularArcInclusive(curtainClean, curI, s.iStart);
     for (let k = 0; k < arc1.length; k++) out.push(arc1[k]);
 
-    // Add bastion insert chain, excluding endpoints (to avoid duplicates).
-    const ins = s.insert;
-    for (let k = 1; k < ins.length - 1; k++) out.push(ins[k]);
+  // Add full bastion insert chain including endpoints.
+  // B0 and B1 must remain explicit in the stitched wall to prevent
+  // shortcutting from the curtain directly to S0/S1 and creating inward spikes.
+  if (typeof window !== "undefined" && window.__bastionDebug) {
+    console.log("[compositeWall] inserted bastion chain", {
+      bi: s.bi,
+      iStart: s.iStart,
+      iEnd: s.iEnd,
+      insertN: ins.length,
+      insertPts: ins.map((p, idx) => ({ idx, x: +p.x.toFixed(3), y: +p.y.toFixed(3) })),
+    });
+  }
 
     // Continue from s.iEnd
     curI = s.iEnd;
