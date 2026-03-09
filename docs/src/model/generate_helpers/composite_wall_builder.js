@@ -209,6 +209,12 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
   // Add full bastion insert chain including endpoints.
   // B0 and B1 must remain explicit in the stitched wall to prevent
   // shortcutting from the curtain directly to S0/S1 and creating inward spikes.
+  const ins = s.insert;
+  for (let k = 0; k < ins.length; k++) out.push(ins[k]);
+    
+    // Add full bastion insert chain including endpoints.
+  // B0 and B1 must remain explicit in the stitched wall to prevent
+  // shortcutting from the curtain directly to S0/S1 and creating inward spikes.
   if (typeof window !== "undefined" && window.__bastionDebug) {
     console.log("[compositeWall] inserted bastion chain", {
       bi: s.bi,
