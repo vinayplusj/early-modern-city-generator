@@ -28,6 +28,7 @@ import { loopPerimeter } from "../../geom/loop_metrics.js";
 import { ensureWinding , signedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
+import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
@@ -905,6 +906,14 @@ export function runWarpFieldStage({
 	    compositeWallN: Array.isArray(compositeWall) ? compositeWall.length : null,
 	    willUseComposite: Array.isArray(compositeWall) && compositeWall.length >= 3,
 	  });
+	debugCompositeWallSplices({
+	  wallCurtainForDraw,
+	  bastionPolys: bastionPolysWarpedSafe,
+	  compositeWall,
+	  cx,
+	  onlyEast: true,
+	  enabled: Boolean(warpDebugEnabled),
+	});
 	}
   if (Array.isArray(compositeWall) && compositeWall.length >= 3) {
     wallForDraw = compositeWall;
