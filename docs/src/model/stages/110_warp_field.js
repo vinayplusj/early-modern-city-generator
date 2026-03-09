@@ -32,6 +32,7 @@ import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
+import { pruneBastionsByCurtainIntervals } from "../generate_helpers/bastion_interval_prune.js";
 
 /**
  * @param {object} args
@@ -895,20 +896,45 @@ export function runWarpFieldStage({
 
   // Prefer a composite final wall built from the FINAL warped curtain + FINAL bastions.
   // This keeps bastionHullWarpedSafe for debug only.
-  const compositeWall = buildCompositeWallFromCurtainAndBastions(
-    wallCurtainForDraw,
-    bastionPolysWarpedSafe
-  );
+	const compositeWall = buildCompositeWallFromCurtainAndBastions(
+	  wallCurtainForDraw,
+	  bastionPolysForComposite
+	);
+	  // ---------------------------------------------------------------------------
+  // Deterministically prune bastions that reserve overlapping or too-close
+  // curtain intervals before composite-wall assembly.
+  // This prevents neighbouring bastions (such as bi:2 and bi:3) from crowding
+  // the same sector and creating reflex splice kinks.
+  // ---------------------------------------------------------------------------
+  let bastionPolysForComposite = bastionPolysWarpedSafe;
+
+  if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8 &&
+      Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length > 1) {
+    const minGapSamples = Number.isFinite(ctx?.params?.warpFort?.bastionCompositeGapSamples)
+      ? Math.max(0, ctx.params.warpFort.bastionCompositeGapSamples | 0)
+      : 3;
+
+    const pruneRes = pruneBastionsByCurtainIntervals({
+      curtain: wallCurtainForDraw,
+      bastions: bastionPolysWarpedSafe,
+      minGapSamples,
+      debug: Boolean(warpDebugEnabled),
+    });
+
+    if (Array.isArray(pruneRes?.bastionsOut) && pruneRes.bastionsOut.length) {
+      bastionPolysForComposite = pruneRes.bastionsOut;
+    }
+  }
 	if (ctx?.params?.warpFort?.debug) {
 	  console.info("[Warp110] compositeWall decision", {
 	    wallCurtainForDrawN: Array.isArray(wallCurtainForDraw) ? wallCurtainForDraw.length : null,
-	    bastionPolysN: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe.length : null,
+	    bastionPolysN: Array.isArray(bastionPolysForComposite) ? bastionPolysForComposite.length : null,
 	    compositeWallN: Array.isArray(compositeWall) ? compositeWall.length : null,
 	    willUseComposite: Array.isArray(compositeWall) && compositeWall.length >= 3,
 	  });
 	debugCompositeWallSplices({
 	  wallCurtainForDraw,
-	  bastionPolys: bastionPolysWarpedSafe,
+	  bastionPolys: bastionPolysForComposite,
 	  compositeWall,
 	  cx,
 	  onlyEast: true,
@@ -927,7 +953,10 @@ export function runWarpFieldStage({
     warpWall: warpWall ?? null,
     warpOutworks: warpOutworks ?? null,
     wallForDraw: (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null,
-    wallCurtainForDraw: (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) ? wallCurtainForDraw : null,
+    wallCurtainForDraw:
+	  (Array.isArray(compositeWall) && compositeWall.length >= 3)
+	    ? null
+	    : ((Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) ? wallCurtainForDraw : null),
     bastionPolysWarpedSafe: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : null,
     bastionHullWarpedSafe: (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) ? bastionHullWarpedSafe : null,
   };
