@@ -226,7 +226,7 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
   }
 
     // Continue from s.iEnd
-    curI = s.iEnd;
+    curI = (s.iEnd + 1) % curtainClean.length;
   }
 
   // Close the loop by adding remaining curtain arc from curI back to startIndex (inclusive),
