@@ -116,15 +116,30 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
     // We define the bastion arc in the chain direction 0->4.
     // It should replace the shorter curtain arc between attachments.
     const useForward = (fwdEdges <= revEdges);
-
+    
+    const iStart = useForward ? i0 : i1;
+    const iEnd = useForward ? i1 : i0;
+    
+    // Reverse the bastion chain when needed so the interior arc direction
+    // matches the curtain walk direction.
+    const polyForWalk = useForward ? b : b.slice().reverse();
+    
+    // Snap the splice endpoints to the exact curtain vertices used for replacement.
+    // This avoids off-curve jogs from raw B0/B1 that are merely near the curtain.
+    const insert = [
+      curtainClean[iStart],
+      polyForWalk[1],
+      polyForWalk[2],
+      polyForWalk[3],
+      curtainClean[iEnd],
+    ];
+    
     splices.push({
       bi,
       poly: b,
-      iStart: useForward ? i0 : i1,
-      iEnd:   useForward ? i1 : i0,
-      // Arc to insert must start at curtain[iStart] and end at curtain[iEnd].
-      // If we reversed direction, also reverse the chain so endpoints match.
-      insert: useForward ? b : b.slice().reverse(),
+      iStart,
+      iEnd,
+      insert,
     });
   }
 
@@ -206,11 +221,10 @@ export function buildCompositeWallFromCurtainAndBastions(curtain, bastionPolys) 
     const arc1 = circularArcInclusive(curtainClean, curI, s.iStart);
     for (let k = 0; k < arc1.length; k++) out.push(arc1[k]);
 
-  // Add full bastion insert chain including endpoints.
-  // B0 and B1 must remain explicit in the stitched wall to prevent
-  // shortcutting from the curtain directly to S0/S1 and creating inward spikes.
+  // Add snapped bastion insert chain.
+  // Skip ins[0] because arc1 already ended at curtainClean[iStart].
   const ins = s.insert;
-  for (let k = 0; k < ins.length; k++) out.push(ins[k]);
+  for (let k = 1; k < ins.length; k++) out.push(ins[k]);
     
     // Add full bastion insert chain including endpoints.
   // B0 and B1 must remain explicit in the stitched wall to prevent
