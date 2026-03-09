@@ -893,7 +893,7 @@ export function runWarpFieldStage({
   // This is the only geometry that is guaranteed to match the orange bastions.
   // ---------------------------------------------------------------------------
   let wallForDraw = wallFinal;
-
+  let bastionPolysForComposite = bastionPolysWarpedSafe;
   // Prefer a composite final wall built from the FINAL warped curtain + FINAL bastions.
   // This keeps bastionHullWarpedSafe for debug only.
 	const compositeWall = buildCompositeWallFromCurtainAndBastions(
@@ -906,7 +906,7 @@ export function runWarpFieldStage({
   // This prevents neighbouring bastions (such as bi:2 and bi:3) from crowding
   // the same sector and creating reflex splice kinks.
   // ---------------------------------------------------------------------------
-  let bastionPolysForComposite = bastionPolysWarpedSafe;
+
 
   if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8 &&
       Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length > 1) {
