@@ -2,7 +2,7 @@
 Early Modern Fantasy City Generator (roughly 1500–1800), inspired by [Watabou’s city generator](https://watabou.github.io/city-generator/), but with early modern shapes, planning, and defences.
 Link to [WIP generator](https://vinayplusj.github.io/early-modern-city-generator/)
 
-Created in javascript as that is the language I am familiar with through my career in digital analytics. 
+Procedural generator with deterministic geometry, fortifications, ward generation, and a live browser run. Created in javascript as that is the language I am familiar with through my career in digital analytics. 
 
 Future Plans by Milestone Number
 ---
