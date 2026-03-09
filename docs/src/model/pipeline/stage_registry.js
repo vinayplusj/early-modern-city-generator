@@ -26,6 +26,7 @@ import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
 import { runFieldsStage } from "../stages/075_fields.js";
 import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
+import { buildBoundaryExits } from "../boundary/build_boundary_exits.js";
 import { runWardFieldMetricsStage } from "../stages/085_ward_field_metrics.js";
 
 export const PIPELINE_STAGES = [
@@ -407,6 +408,26 @@ export const PIPELINE_STAGES = [
       if (rm.gatePortals.length !== fortGeom.gatesWarped.length) {
         throw new Error("[EMCG] Stage 120 gatePortals length mismatch with gatesWarped.");
       }
+      
+      ctx.state.gatePortals = rm.gatePortals;
+      const outerBoundary = ctx.state.outerBoundary;
+      if (!Array.isArray(outerBoundary) || outerBoundary.length < 3) {
+        throw new Error("[EMCG] Stage 120 requires ctx.state.outerBoundary (Stage 30 output) for boundaryExits.");
+      }
+      
+      ctx.state.boundaryExits = buildBoundaryExits({
+        outerBoundary,
+        centre: fort.centre,
+        gates: fortGeom.gatesWarped,
+        gatePortals: ctx.state.gatePortals,
+      });
+      
+      if (!Array.isArray(ctx.state.boundaryExits)) {
+        throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
+      }
+      if (ctx.state.boundaryExits.length !== fortGeom.gatesWarped.length) {
+        throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
+      }
     },
   },
 
@@ -475,13 +496,22 @@ export const PIPELINE_STAGES = [
         waterKind: ctx.params.waterKind,
         primaryGateWarped: anchors?.primaryGate || null,
         gatesWarped: anchors?.gates || [],
+        gatePortals: ctx.state.gatePortals || [],
+        boundaryExits: ctx.state.boundaryExits || [],
       });
       
       if (!primaryOut || typeof primaryOut !== "object") {
         throw new Error("[EMCG] Stage 140 produced invalid output (expected object).");
       }
       
-      const { primaryRoads, primaryRoadsMeta, snappedNodes, gateForRoad } = primaryOut;
+      const {
+        primaryRoads,
+        primaryRoadsMeta,
+        snappedNodes,
+        gateForRoad,
+        primaryGatePortal,
+        primaryBoundaryExit,
+      } = primaryOut;
       
       if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
         throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
@@ -493,6 +523,8 @@ export const PIPELINE_STAGES = [
       ctx.state.primaryRoadsMeta = Array.isArray(primaryRoadsMeta) ? primaryRoadsMeta : [];
       ctx.state.primaryRoadsSnappedNodes = snappedNodes || { gate: null, plaza: null, citadel: null, docks: null };
       ctx.state.primaryRoadsGateForRoad = gateForRoad || null;
+      ctx.state.primaryGatePortal = primaryGatePortal || null;
+      ctx.state.primaryBoundaryExit = primaryBoundaryExit || null;
     },
   },
 
