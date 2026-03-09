@@ -953,10 +953,12 @@ export function runWarpFieldStage({
     warpWall: warpWall ?? null,
     warpOutworks: warpOutworks ?? null,
     wallForDraw: (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null,
-    wallCurtainForDraw:
-	  (Array.isArray(compositeWall) && compositeWall.length >= 3)
-	    ? null
-	    : ((Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) ? wallCurtainForDraw : null),
+	wallCurtainForDraw:
+	  (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
+	    ? wallCurtainForDraw
+	    : null,
+	drawPlainCurtain:
+  		!(Array.isArray(compositeWall) && compositeWall.length >= 3),
     bastionPolysWarpedSafe: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : null,
     bastionHullWarpedSafe: (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) ? bastionHullWarpedSafe : null,
   };
