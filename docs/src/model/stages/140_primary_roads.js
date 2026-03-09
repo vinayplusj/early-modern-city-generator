@@ -86,6 +86,8 @@ export function runPrimaryRoadsStage({
   waterKind,
   primaryGateWarped,
   gatesWarped,
+  gatePortals,
+  boundaryExits,
 }) {
   // ---------------- Road weight + blocking (FIELDS ONLY) ----------------
   const costInputs = buildRoutingCostInputs(ctx);
@@ -153,7 +155,28 @@ export function runPrimaryRoadsStage({
   const gateForRoad = (isFinitePoint(primaryGateWarped))
     ? primaryGateWarped
     : (Array.isArray(gatesWarped) && isFinitePoint(gatesWarped[0]) ? gatesWarped[0] : null);
-  
+  const primaryGateId =
+    Array.isArray(gatesWarped) &&
+    isFinitePoint(primaryGateWarped)
+      ? gatesWarped.findIndex(g =>
+          isFinitePoint(g) &&
+          Math.hypot(g.x - primaryGateWarped.x, g.y - primaryGateWarped.y) <= 1e-6
+        )
+      : -1;
+
+  const primaryGatePortal =
+    Array.isArray(gatePortals) &&
+    primaryGateId >= 0 &&
+    primaryGateId < gatePortals.length
+      ? gatePortals[primaryGateId]
+      : null;
+
+  const primaryBoundaryExit =
+    Array.isArray(boundaryExits) &&
+    primaryGateId >= 0 &&
+    primaryGateId < boundaryExits.length
+      ? boundaryExits[primaryGateId]
+      : null;  
   // Snap in a fixed order regardless of parameter values (do not reorder lightly).
   const nGate = gateForRoad ? snapPointToGraph({ point: gateForRoad, ...snapCfg }) : null;
   const nPlaza = isFinitePoint(anchors?.plaza) ? snapPointToGraph({ point: anchors.plaza, ...snapCfg }) : null;
@@ -218,6 +241,8 @@ export function runPrimaryRoadsStage({
         nodePath: null,
         edgeIds: [],
         polyline,
+        portalGateId: null,
+        boundaryExitId: null,
       };
     }
 
@@ -239,9 +264,11 @@ export function runPrimaryRoadsStage({
         toPoint,
         startNode,
         goalNode,
-        nodePath: null,
-        edgeIds: [],
+        nodePath,
+        edgeIds,
         polyline,
+        portalGateId: null,
+        boundaryExitId: null,
       };
     }
 
@@ -269,7 +296,7 @@ export function runPrimaryRoadsStage({
 
   // Gate → Plaza
   if (gateForRoad && isFinitePoint(anchors?.plaza)) {
-    intents.push(routeIntent({
+    const meta = routeIntent({
       intentId: "gate_plaza",
       from: "gate",
       to: "plaza",
@@ -277,7 +304,13 @@ export function runPrimaryRoadsStage({
       toPoint: anchors.plaza,
       startNode: nGate,
       goalNode: nPlaza,
-    }));
+    });
+  
+    if (meta) {
+      meta.portalGateId = primaryGatePortal?.gateId ?? null;
+      meta.boundaryExitId = primaryBoundaryExit?.exitId ?? null;
+      intents.push(meta);
+    }
   }
 
   // Plaza → Citadel
@@ -343,5 +376,7 @@ export function runPrimaryRoadsStage({
     primaryRoadsMeta,
     gateForRoad,
     snappedNodes,
+    primaryGatePortal: primaryGatePortal || null,
+    primaryBoundaryExit: primaryBoundaryExit || null,
   };
 }
