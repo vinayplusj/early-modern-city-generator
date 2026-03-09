@@ -121,6 +121,12 @@ export function runPipeline(ctx) {
   if (!S.primaryRoads || !Array.isArray(S.primaryRoads) || S.primaryRoads.length === 0) {
     throw new Error("[EMCG] Missing ctx.state.primaryRoads (Stage 140 output).");
   }
+  if (!Array.isArray(S.gatePortals)) {
+    throw new Error("[EMCG] Missing ctx.state.gatePortals (Stage 120 canonical output).");
+  }
+  if (!Array.isArray(S.boundaryExits)) {
+    throw new Error("[EMCG] Missing ctx.state.boundaryExits (Stage 120 canonical output).");
+  }
   if (!S.routingMesh.boundaryBinding) {
     throw new Error("[EMCG] Missing ctx.state.routingMesh.boundaryBinding (Stage 70 output).");
   }
@@ -133,10 +139,13 @@ export function runPipeline(ctx) {
   // Roads and avenue
   const roads = S.primaryRoads;
   const avenue = (roads.length >= 2) ? roads[1] : [anchors.plaza, anchors.citadel];
-  // Stage 140 enriched outputs (optional, forward-compatible with Milestone 5)
+  // Stage 140 enriched outputs (canonical boundary / portal hooks)
   const primaryRoadsMeta = Array.isArray(S.primaryRoadsMeta) ? S.primaryRoadsMeta : null;
   const primaryRoadsSnappedNodes = S.primaryRoadsSnappedNodes || null;
   const primaryRoadsGateForRoad = S.primaryRoadsGateForRoad || null;
+  const primaryGatePortal = S.primaryGatePortal || null;
+  const primaryBoundaryExit = S.primaryBoundaryExit || null;
+  const boundaryExits = Array.isArray(S.boundaryExits) ? S.boundaryExits : null;
 
   // Draw geometry should come from Stage 110.
   const wallCurtainForDraw = warp.wallCurtainForDraw ?? null;
@@ -194,7 +203,8 @@ export function runPipeline(ctx) {
     vorGraph: S.routingMesh.graph,
     mesh: S.routingMesh,
     boundaryBinding: S.routingMesh.boundaryBinding ?? null,
-    gatePortals: S.routingMesh.gatePortals ?? null,
+    gatePortals: S.gatePortals ?? S.routingMesh.gatePortals ?? null,
+    boundaryExits,
     
     // Anchors
     citadel: S.citadel ?? null,
@@ -211,6 +221,8 @@ export function runPipeline(ctx) {
     primaryRoadsMeta,
     primaryRoadsSnappedNodes,
     primaryRoadsGateForRoad,
+    primaryGatePortal,
+    primaryBoundaryExit,
     ring: S.rings.ring,
     ring2: S.rings.ring2,
     secondaryRoads: S.secondaryRoadsLegacy ?? null,
