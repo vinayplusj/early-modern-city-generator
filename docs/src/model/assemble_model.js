@@ -137,7 +137,6 @@ export function assembleModel({
       ? { ...mesh, vorGraph: mesh.vorGraph ?? vorGraph ?? null }
       : { vorGraph: vorGraph ?? null },
 
-    // 4.7 hooks
     boundaryBinding: boundaryBinding ?? null,
     gatePortals: Array.isArray(gatePortals) ? gatePortals : null,
     boundaryExits: Array.isArray(boundaryExits) ? boundaryExits : null,
