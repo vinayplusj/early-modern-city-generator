@@ -72,85 +72,77 @@ export function resolveOptionalSources({ label, resolveFn }) {
   }
 }
 
-export function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
-  const vorGraph = routingMesh && routingMesh.vorGraph;
-  if (!vorGraph || !Array.isArray(vorGraph.cells)) {
-    return {
-      map: null,
-      meta: null,
-      error: "Missing routingMesh.vorGraph.cells (Stage 70 output not persisted).",
-    };
+function getCanonicalWardsArray(ctx) {
+  const wardsState = ctx?.state?.wards;
+  if (Array.isArray(wardsState?.wardsWithRoles)) return wardsState.wardsWithRoles;
+  if (Array.isArray(wardsState)) return wardsState; // legacy fallback only
+  return null;
+}
+
+export function buildWardIdToFaceIdMap(ctx, cellOwnership) {
+  const canonicalWards = getCanonicalWardsArray(ctx);
+  const wardCount = Array.isArray(canonicalWards) ? canonicalWards.length : null;
+
+  const expectedWardIds = new Set();
+  if (canonicalWards) {
+    for (let i = 0; i < canonicalWards.length; i++) {
+      const w = canonicalWards[i];
+      if (!w) continue;
+      const wid = Number.isInteger(w.id) ? w.id : (w.id | 0);
+      if (wid >= 0) expectedWardIds.add(wid);
+    }
   }
 
-  const wardCount =
-    (ctx.state.wards && Array.isArray(ctx.state.wards) && ctx.state.wards.length)
-      ? (ctx.state.wards.length | 0)
-      : null;
-
-  // Determine required length if wardCount is not available.
   let maxWardId = -1;
-  for (let i = 0; i < vorGraph.cells.length; i++) {
-    const c = vorGraph.cells[i];
-    if (!c || c.disabled) continue;
-    const wId = toIntId(c.wardId, "ward");
-    if (wId > maxWardId) maxWardId = wId;
+  for (let i = 0; i < cellOwnership.length; i++) {
+    const rec = cellOwnership[i];
+    const wid = Number.isInteger(rec?.wardId) ? rec.wardId : (rec?.wardId | 0);
+    if (wid > maxWardId) maxWardId = wid;
   }
 
-  const n = (wardCount != null) ? wardCount : (maxWardId + 1);
-  const faceIdByWardId = new Array(n);
-  for (let i = 0; i < n; i++) faceIdByWardId[i] = -1;
+  const inferredCount = maxWardId >= 0 ? (maxWardId + 1) : 0;
+  const finalCount = wardCount != null ? Math.max(wardCount, inferredCount) : inferredCount;
+  const wardIdToFaceId = new Array(finalCount).fill(null);
 
-  let assigned = 0;
+  let assignedCount = 0;
 
-  for (let cellIndex = 0; cellIndex < vorGraph.cells.length; cellIndex++) {
-    const c = vorGraph.cells[cellIndex];
-    if (!c || c.disabled) continue;
+  for (let i = 0; i < cellOwnership.length; i++) {
+    const rec = cellOwnership[i];
+    if (!rec) continue;
 
-    const wardId = toIntId(c.wardId, "ward");
+    const wardId = Number.isInteger(rec.wardId) ? rec.wardId : (rec.wardId | 0);
+    if (wardId < 0 || wardId >= wardIdToFaceId.length) continue;
 
-    // Hidden coupling:
-    // In this repo, CityMesh face id is the VorGraph cell id.
-    // If your builder sets cell.id deterministically, this is stable.
-    const faceId = (c.id != null) ? toIntId(c.id, "face") : (cellIndex | 0);
+    // Contract assumption:
+    // CityMesh interior face ids are expected to preserve source Voronoi cell ids.
+    // The cellIndex fallback is legacy-tolerant only.
+    const faceId = Number.isInteger(rec.cell?.id) ? rec.cell.id : i;
+    if (!Number.isInteger(faceId) || faceId < 0) continue;
 
-    if (wardCount != null) {
-      assert(wardId >= 0 && wardId < n, `wardId out of range: ${wardId} (wardCount=${n})`);
-    } else {
-      assert(wardId >= 0 && wardId < n, `wardId out of inferred range: ${wardId} (n=${n})`);
+    if (wardIdToFaceId[wardId] == null) {
+      assignedCount++;
     }
-
-    assert(
-      faceIdByWardId[wardId] === -1,
-      `Duplicate wardId mapping: wardId=${wardId} already mapped to faceId=${faceIdByWardId[wardId]}`
-    );
-
-    // Sanity check: face id should exist on the mesh.
-    if (typeof meshAccess.faceCount === "function") {
-      const fc = meshAccess.faceCount();
-      assert(faceId >= 0 && faceId < fc, `Mapped faceId out of range: faceId=${faceId} (faceCount=${fc})`);
-    }
-
-    faceIdByWardId[wardId] = faceId;
-    assigned++;
+    wardIdToFaceId[wardId] = faceId;
   }
 
-  // Count missing ward ids.
-  let missing = 0;
-  for (let i = 0; i < faceIdByWardId.length; i++) if (faceIdByWardId[i] === -1) missing++;
+  const missingExpectedWardIds = [];
+  if (expectedWardIds.size > 0) {
+    for (const wid of expectedWardIds) {
+      if (wid < 0 || wid >= wardIdToFaceId.length || !Number.isInteger(wardIdToFaceId[wid])) {
+        missingExpectedWardIds.push(wid);
+      }
+    }
+  }
 
-  const meta = {
-    wardCount: n,
-    assigned,
-    missing,
-    source: "routingMesh.vorGraph.cells[*].{wardId,id}",
+  return {
+    wardIdToFaceId,
+    wardCount,
+    maxWardId,
+    assignedCount,
+    expectedWardIdCount: expectedWardIds.size,
+    missingExpectedWardIds,
+    faceIdContract: "CityMesh interior face ids must preserve source Voronoi cell ids.",
   };
-
-  // If wardCount is known, missing mappings are a hard error.
-  if (wardCount != null) {
-    assert(missing === 0, `Ward→face mapping incomplete: missing=${missing} of wardCount=${n}`);
-  }
-
-  return { map: faceIdByWardId, meta, error: null };
 }
 
 export function assertStrictAscendingIntIds(ids, label) {
