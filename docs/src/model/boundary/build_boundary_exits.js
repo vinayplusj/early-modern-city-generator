@@ -97,11 +97,13 @@ export function buildBoundaryExits({
 
     if (!best) continue;
 
+  const portal = gatePortals[gateId] ?? null;
+
     exits.push({
       exitId: exits.length,
       kind: "gate_radial",
       gateId,
-      portalGateId: gateId,
+      portalGateId: portal?.gateId ?? gateId,
       point: best.point,
       outerBoundarySegIndex: best.outerBoundarySegIndex,
       t: best.t,
