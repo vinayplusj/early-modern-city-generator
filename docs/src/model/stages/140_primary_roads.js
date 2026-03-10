@@ -264,8 +264,8 @@ export function runPrimaryRoadsStage({
         toPoint,
         startNode,
         goalNode,
-        nodePath,
-        edgeIds,
+        nodePath: null,
+        edgeIds: [],
         polyline,
         portalGateId: null,
         boundaryExitId: null,
@@ -288,6 +288,8 @@ export function runPrimaryRoadsStage({
       nodePath,
       edgeIds,
       polyline: safePolyline,
+      portalGateId: null,
+      boundaryExitId: null,
     };
   }
 
