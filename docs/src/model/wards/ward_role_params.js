@@ -17,31 +17,37 @@ export function setRole(wards, id, role) {
   }
 }
 
-/**
- * Normalise params for assignWardRoles().
- * Keep defaults and bounds identical to ward_roles.js.
- */
-export function normaliseParams(params) {
-  const p = params || {};
-
-  // Defaults (must match previous behaviour)
-  const innerCountRaw = Number(p.innerCount);
-  const maxPlugAddsRaw = Number(p.maxPlugAdds);
-
-  const out = {
-    innerCount: Number.isFinite(innerCountRaw) ? innerCountRaw : 2,
-    maxPlugAdds: Number.isFinite(maxPlugAddsRaw) ? maxPlugAddsRaw : 0,
-    outsideBands: p.outsideBands || null,
-    outerHullClosureMode:
-      typeof p.outerHullClosureMode === "string" ? p.outerHullClosureMode : "off",
-  };
-
-  // Clamp where applicable (preserve prior defensive behaviour)
-  if (out.innerCount < 0) out.innerCount = 0;
-  if (out.innerCount > 50) out.innerCount = 50;
-
-  if (out.maxPlugAdds < 0) out.maxPlugAdds = 0;
-  if (out.maxPlugAdds > 10) out.maxPlugAdds = 10;
-
-  return out;
+function clampInt(value, min, max, fallback) {
+  const n = Number.isFinite(value) ? Math.floor(value) : fallback;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
+
+function normaliseOutsideBands(value) {
+  if (value === 3 || value === "3") return 3;
+  if (value === 2 || value === "2") return 2;
+  return 1;
+}
+
+function normaliseOuterHullClosureMode(value) {
+  return value === "promote-enclosed" ? "promote-enclosed" : "default";
+}
+
+export function normaliseParams(params = {}) {
+  return {
+    innerCount: clampInt(params.innerCount, 1, 12, 3),
+    maxPlugAdds: clampInt(params.maxPlugAdds, 0, 12, 2),
+    outsideBands: normaliseOutsideBands(params.outsideBands),
+    outerHullClosureMode: normaliseOuterHullClosureMode(params.outerHullClosureMode),
+
+    // Milestone 4.8 adoption path.
+    // Disabled by default; only active when explicitly requested by caller.
+    useFieldsForCoreOrdering: params.useFieldsForCoreOrdering === true,
+    coreOrderingFieldName:
+      typeof params.coreOrderingFieldName === "string" && params.coreOrderingFieldName.trim()
+        ? params.coreOrderingFieldName.trim()
+        : "distPlaza01",
+  };
+}
+
+export default normaliseParams;
