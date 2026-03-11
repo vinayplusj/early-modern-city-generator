@@ -132,21 +132,30 @@ export function assignWardRoles({ wards, centre, params, fields, fieldsMeta, mes
   if (useFieldsForCoreOrdering) {
     // Prefer Stage 085 ward metrics when available.
     let usedWardMetric = false;
-
+    
+    // Allow ward-level field keys here.
+    // For now, the expected keys are Stage 085 outputs such as:
+    //   distPlaza01, distWall01, distWater01
+    const wardMetricFieldName =
+      typeof coreOrderingFieldName === "string" &&
+      /^dist[A-Z].*01$/.test(coreOrderingFieldName)
+        ? coreOrderingFieldName
+        : "distPlaza01";
+    
     for (let i = 0; i < wardsCopy.length; i++) {
       const w = wardsCopy[i];
-      const v01 = getWardField01(w, "distPlaza01");
+      const v01 = getWardField01(w, wardMetricFieldName);
       if (v01 != null) {
         w.distToCentreLegacy = w.distToCentre;
         w.distToCentre = v01;
         usedWardMetric = true;
       }
     }
-
+    
     if (usedWardMetric) {
       wardsCopy._coreOrderingField = {
-        requested: "ward.field.distPlaza01",
-        used: "ward.field.distPlaza01",
+        requested: coreOrderingFieldName,
+        used: `ward.field.${wardMetricFieldName}`,
         mode: "ward_metric_01",
         hasWardIdToFaceId: !!(fieldsMeta && Array.isArray(fieldsMeta.wardIdToFaceId)),
       };
