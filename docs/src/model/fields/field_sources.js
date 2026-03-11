@@ -236,11 +236,20 @@ export function getWaterSourceVertexIds(args) {
 
   if (typeof ma.waterSourceVertexIds === "function") {
     ids = ma.waterSourceVertexIds();
-  } else if (Array.isArray(args.waterVertexIds)) {
+  } else if (Array.isArray(args.waterVertexIds) && args.waterVertexIds.length > 0) {
     ids = args.waterVertexIds;
+  } else if (args.graph && Array.isArray(args.waterEdgeIds) && args.waterEdgeIds.length > 0) {
+    ids = deriveVertexIdsFromGraphEdgeIds({
+      graph: args.graph,
+      edgeIds: args.waterEdgeIds,
+      label: "water edge",
+    });
   }
 
-  assert(Array.isArray(ids) && ids.length > 0, "Water sources are not available. Provide meshAccess.waterSourceVertexIds() or pass waterVertexIds explicitly.");
+  assert(
+    Array.isArray(ids) && ids.length > 0,
+    "Water sources are not available. Provide meshAccess.waterSourceVertexIds(), pass waterVertexIds explicitly, or provide graph + waterEdgeIds."
+  );
   return dedupeSortIntIds(ids, "vertex");
 }
 
