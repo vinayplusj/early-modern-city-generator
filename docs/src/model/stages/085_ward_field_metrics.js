@@ -17,23 +17,33 @@ function get01Safe(fields, name, idx) {
 export function runWardFieldMetricsStage(env) {
   assert(env && env.ctx && env.ctx.state, "runWardFieldMetricsStage: missing env.ctx.state.");
   const ctx = env.ctx;
-
-  const wards = ctx.state.wards;
+  
+  const wardsState = ctx.state.wards;
+  const wards = Array.isArray(wardsState?.wardsWithRoles) ? wardsState.wardsWithRoles : null;
   const fields = ctx.state.fields;
   const fieldsMeta = ctx.state.fieldsMeta;
-
-  if (!wards || !Array.isArray(wards) || !fields || !fieldsMeta) {
+  
+  if (!wardsState || !wards || !fields || !fieldsMeta) {
     ctx.state.wardFieldMeta = {
       stage: "085_ward_field_metrics",
       skipped: true,
-      reason: "Missing wards or fields or fieldsMeta.",
+      reason: !wardsState
+        ? "Missing ctx.state.wards bundle."
+        : !wards
+          ? "Missing ctx.state.wards.wardsWithRoles array."
+          : !fields
+            ? "Missing ctx.state.fields."
+            : "Missing ctx.state.fieldsMeta.",
     };
     return;
   }
 
-  const wardIdToFaceId = Array.isArray(fieldsMeta.wardIdToFaceId) ? fieldsMeta.wardIdToFaceId : null;
-
-  const preferFace = wardIdToFaceId &&
+  const wardIdToFaceId = Array.isArray(fieldsMeta.wardIdToFaceId)
+    ? fieldsMeta.wardIdToFaceId
+    : null;
+  
+  const preferFace =
+    !!wardIdToFaceId &&
     fields.has("distance_to_plaza_face");
 
   let mapped = 0;
@@ -45,7 +55,7 @@ export function runWardFieldMetricsStage(env) {
 
     let faceId = null;
     if (preferFace) {
-      const wid = (w.id | 0);
+      const wid = Number.isInteger(w.id) ? w.id : (w.id | 0);
       if (wid >= 0 && wid < wardIdToFaceId.length) {
         const fid = wardIdToFaceId[wid];
         if (Number.isInteger(fid) && fid >= 0) faceId = fid;
@@ -79,6 +89,7 @@ export function runWardFieldMetricsStage(env) {
 
   ctx.state.wardFieldMeta = {
     stage: "085_ward_field_metrics",
+    wardSource: "ctx.state.wards.wardsWithRoles",
     preferFace,
     mapped,
     missing,
