@@ -179,12 +179,12 @@ export function runFieldsStage(env) {
     (ctx.state.anchors && ctx.state.anchors.plaza) ? ctx.state.anchors.plaza : null;
   
   const wallPick = pickFirstPresent([
-    ["ctx.state.fortifications.wallCurtain", ...],
-    ["ctx.state.fortifications.wall", ...],
-    ["ctx.state.fortifications.wallCurtainForDraw", ...],
-    ["ctx.state.fortGeometryWarped.wallCurtainForDraw", ...],
-    ["ctx.state.warp.wallCurtainForDraw", ...],
-    ["ctx.state.warp.wallForDraw", ...],
+    ["ctx.state.fortifications.wallCurtain", ctx.state.fortifications && ctx.state.fortifications.wallCurtain],
+    ["ctx.state.fortifications.wall", ctx.state.fortifications && ctx.state.fortifications.wall],
+    ["ctx.state.fortifications.wallCurtainForDraw", ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw],
+    ["ctx.state.fortGeometryWarped.wallCurtainForDraw", ctx.state.fortGeometryWarped && ctx.state.fortGeometryWarped.wallCurtainForDraw],
+    ["ctx.state.warp.wallCurtainForDraw", ctx.state.warp && ctx.state.warp.wallCurtainForDraw],
+    ["ctx.state.warp.wallForDraw", ctx.state.warp && ctx.state.warp.wallForDraw],
   ]);
 
   const wallPolylineForFields = wallPick.value;
