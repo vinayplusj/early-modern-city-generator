@@ -79,77 +79,96 @@ function getCanonicalWardsArray(ctx) {
   return null;
 }
 
-function getCanonicalWardsArray(ctx) {
-  const wardsState = ctx?.state?.wards;
-  if (Array.isArray(wardsState?.wardsWithRoles)) return wardsState.wardsWithRoles;
-  if (Array.isArray(wardsState)) return wardsState; // legacy fallback only
-  return null;
-}
+export function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
+  try {
+    const canonicalWards = getCanonicalWardsArray(ctx);
+    const wardCount = Array.isArray(canonicalWards) ? canonicalWards.length : null;
 
-export function buildWardIdToFaceIdMap(ctx, cellOwnership) {
-  const canonicalWards = getCanonicalWardsArray(ctx);
-  const wardCount = Array.isArray(canonicalWards) ? canonicalWards.length : null;
-
-  const expectedWardIds = new Set();
-  if (canonicalWards) {
-    for (let i = 0; i < canonicalWards.length; i++) {
-      const w = canonicalWards[i];
-      if (!w) continue;
-      const wid = Number.isInteger(w.id) ? w.id : (w.id | 0);
-      if (wid >= 0) expectedWardIds.add(wid);
-    }
-  }
-
-  let maxWardId = -1;
-  for (let i = 0; i < cellOwnership.length; i++) {
-    const rec = cellOwnership[i];
-    const wid = Number.isInteger(rec?.wardId) ? rec.wardId : (rec?.wardId | 0);
-    if (wid > maxWardId) maxWardId = wid;
-  }
-
-  const inferredCount = maxWardId >= 0 ? (maxWardId + 1) : 0;
-  const finalCount = wardCount != null ? Math.max(wardCount, inferredCount) : inferredCount;
-  const wardIdToFaceId = new Array(finalCount).fill(null);
-
-  let assignedCount = 0;
-
-  for (let i = 0; i < cellOwnership.length; i++) {
-    const rec = cellOwnership[i];
-    if (!rec) continue;
-
-    const wardId = Number.isInteger(rec.wardId) ? rec.wardId : (rec.wardId | 0);
-    if (wardId < 0 || wardId >= wardIdToFaceId.length) continue;
-
-    // Contract assumption:
-    // CityMesh interior face ids are expected to preserve source Voronoi cell ids.
-    // The cellIndex fallback is legacy-tolerant only.
-    const faceId = Number.isInteger(rec.cell?.id) ? rec.cell.id : i;
-    if (!Number.isInteger(faceId) || faceId < 0) continue;
-
-    if (wardIdToFaceId[wardId] == null) {
-      assignedCount++;
-    }
-    wardIdToFaceId[wardId] = faceId;
-  }
-
-  const missingExpectedWardIds = [];
-  if (expectedWardIds.size > 0) {
-    for (const wid of expectedWardIds) {
-      if (wid < 0 || wid >= wardIdToFaceId.length || !Number.isInteger(wardIdToFaceId[wid])) {
-        missingExpectedWardIds.push(wid);
+    const expectedWardIds = new Set();
+    if (canonicalWards) {
+      for (let i = 0; i < canonicalWards.length; i++) {
+        const w = canonicalWards[i];
+        if (!w) continue;
+        const wid = Number.isInteger(w.id) ? w.id : (w.id | 0);
+        if (wid >= 0) expectedWardIds.add(wid);
       }
     }
-  }
 
-  return {
-    wardIdToFaceId,
-    wardCount,
-    maxWardId,
-    assignedCount,
-    expectedWardIdCount: expectedWardIds.size,
-    missingExpectedWardIds,
-    faceIdContract: "CityMesh interior face ids must preserve source Voronoi cell ids.",
-  };
+    const cellOwnership =
+      (routingMesh && Array.isArray(routingMesh.cellOwnership)) ? routingMesh.cellOwnership :
+      (routingMesh && Array.isArray(routingMesh.ownership)) ? routingMesh.ownership :
+      [];
+
+    if (!Array.isArray(cellOwnership) || cellOwnership.length === 0) {
+      return {
+        map: null,
+        meta: null,
+        error: "Missing routingMesh.cellOwnership (or routingMesh.ownership).",
+      };
+    }
+
+    let maxWardId = -1;
+    for (let i = 0; i < cellOwnership.length; i++) {
+      const rec = cellOwnership[i];
+      if (!rec) continue;
+      const wid = Number.isInteger(rec?.wardId) ? rec.wardId : (rec?.wardId | 0);
+      if (wid > maxWardId) maxWardId = wid;
+    }
+
+    const inferredCount = maxWardId >= 0 ? (maxWardId + 1) : 0;
+    const finalCount = wardCount != null ? Math.max(wardCount, inferredCount) : inferredCount;
+    const wardIdToFaceId = new Array(finalCount).fill(null);
+
+    let assignedCount = 0;
+
+    for (let i = 0; i < cellOwnership.length; i++) {
+      const rec = cellOwnership[i];
+      if (!rec) continue;
+
+      const wardId = Number.isInteger(rec.wardId) ? rec.wardId : (rec.wardId | 0);
+      if (wardId < 0 || wardId >= wardIdToFaceId.length) continue;
+
+      const cellIndex = i;
+
+      // Contract assumption:
+      // CityMesh interior face ids are expected to preserve source Voronoi cell ids.
+      // The cellIndex fallback is legacy-tolerant only.
+      const faceId = Number.isInteger(rec.cell?.id) ? rec.cell.id : cellIndex;
+      if (!Number.isInteger(faceId) || faceId < 0) continue;
+
+      if (wardIdToFaceId[wardId] == null) assignedCount++;
+      wardIdToFaceId[wardId] = faceId;
+    }
+
+    const missingExpectedWardIds = [];
+    if (expectedWardIds.size > 0) {
+      for (const wid of expectedWardIds) {
+        if (wid < 0 || wid >= wardIdToFaceId.length || !Number.isInteger(wardIdToFaceId[wid])) {
+          missingExpectedWardIds.push(wid);
+        }
+      }
+    }
+
+    return {
+      map: wardIdToFaceId,
+      meta: {
+        wardCount,
+        maxWardId,
+        assignedCount,
+        expectedWardIdCount: expectedWardIds.size,
+        missingExpectedWardIds,
+        wardSource: "ctx.state.wards.wardsWithRoles",
+        faceIdContract: "CityMesh interior face ids must preserve source Voronoi cell ids.",
+      },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      map: null,
+      meta: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export function assertStrictAscendingIntIds(ids, label) {
