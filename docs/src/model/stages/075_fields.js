@@ -136,7 +136,28 @@ export function runFieldsStage(env) {
   const wardFaceMapRes = buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess });
   stageMeta.wardToFace = wardFaceMapRes.meta;
   stageMeta.wardToFaceError = wardFaceMapRes.error;
-
+  const wardMap = Array.isArray(wardFaceMapRes.map) ? wardFaceMapRes.map : null;
+  const canonicalWards =
+    ctx.state.wards && Array.isArray(ctx.state.wards.wardsWithRoles)
+      ? ctx.state.wards.wardsWithRoles
+      : null;
+  
+  if (canonicalWards && wardMap) {
+    let missingWardFaceCount = 0;
+    for (let i = 0; i < canonicalWards.length; i++) {
+      const w = canonicalWards[i];
+      if (!w) continue;
+      const wid = Number.isInteger(w.id) ? w.id : (w.id | 0);
+      const fid = (wid >= 0 && wid < wardMap.length) ? wardMap[wid] : null;
+      if (!Number.isInteger(fid) || fid < 0) missingWardFaceCount++;
+    }
+  
+    stageMeta.wardToFaceCompleteness = {
+      canonicalWardCount: canonicalWards.length,
+      missingWardFaceCount,
+      complete: missingWardFaceCount === 0,
+    };
+  }
   stageMeta.fieldStats = {};
   stageMeta.fieldNorm = {
     schema: "field_norm_v1",
@@ -158,12 +179,12 @@ export function runFieldsStage(env) {
     (ctx.state.anchors && ctx.state.anchors.plaza) ? ctx.state.anchors.plaza : null;
   
   const wallPick = pickFirstPresent([
-    ["ctx.state.warp.wallCurtainForDraw", ctx.state.warp && ctx.state.warp.wallCurtainForDraw],
-    ["ctx.state.warp.wallForDraw", ctx.state.warp && ctx.state.warp.wallForDraw],
-    ["ctx.state.fortGeometryWarped.wallCurtainForDraw", ctx.state.fortGeometryWarped && ctx.state.fortGeometryWarped.wallCurtainForDraw],
-    ["ctx.state.fortifications.wallCurtainForDraw", ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw],
-    ["ctx.state.fortifications.wallCurtain", ctx.state.fortifications && ctx.state.fortifications.wallCurtain],
-    ["ctx.state.fortifications.wall", ctx.state.fortifications && ctx.state.fortifications.wall],
+    ["ctx.state.fortifications.wallCurtain", ...],
+    ["ctx.state.fortifications.wall", ...],
+    ["ctx.state.fortifications.wallCurtainForDraw", ...],
+    ["ctx.state.fortGeometryWarped.wallCurtainForDraw", ...],
+    ["ctx.state.warp.wallCurtainForDraw", ...],
+    ["ctx.state.warp.wallForDraw", ...],
   ]);
 
   const wallPolylineForFields = wallPick.value;
