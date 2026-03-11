@@ -79,6 +79,13 @@ function getCanonicalWardsArray(ctx) {
   return null;
 }
 
+function getCanonicalWardsArray(ctx) {
+  const wardsState = ctx?.state?.wards;
+  if (Array.isArray(wardsState?.wardsWithRoles)) return wardsState.wardsWithRoles;
+  if (Array.isArray(wardsState)) return wardsState; // legacy fallback only
+  return null;
+}
+
 export function buildWardIdToFaceIdMap(ctx, cellOwnership) {
   const canonicalWards = getCanonicalWardsArray(ctx);
   const wardCount = Array.isArray(canonicalWards) ? canonicalWards.length : null;
