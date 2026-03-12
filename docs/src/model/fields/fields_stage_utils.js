@@ -9,7 +9,7 @@
 // the same id space for faces.
 
 import { assert } from "../util/assert.js";
-
+import { toIntId } from "../util/ids.js";
 export { assert };
 
 export function computeMinMax(arr) {
@@ -22,18 +22,6 @@ export function computeMinMax(arr) {
   }
   if (min === Infinity) return { min: null, max: null };
   return { min, max };
-}
-
-export function toIntId(id, label) {
-  if (typeof id === "number") {
-    assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
-    return id | 0;
-  }
-  if (typeof id === "string") {
-    assert(/^-?\d+$/.test(id), `Non-integer ${label} id string: "${id}"`);
-    return Number(id) | 0;
-  }
-  throw new Error(`Unsupported ${label} id type: ${typeof id}`);
 }
 
 export function normaliseSourceIds(ids, label) {
