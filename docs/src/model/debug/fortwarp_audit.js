@@ -4,6 +4,7 @@
 // Behaviour must remain identical to the legacy inline helpers in generate.js.
 
 import { pointInPolyOrOn } from "../../geom/poly.js";
+import { convexHull } from "../../geom/hull.js";
 
 function sampleOnRing(thetas, values, theta) {
   const n = thetas.length;
@@ -184,5 +185,74 @@ export function auditPolyContainment({
     console.warn("[FortWarp Audit]", name, "POLY CONTAINMENT FAIL", { outside, total });
   } else {
     console.info("[FortWarp Audit]", name, "POLY CONTAINMENT OK", { total });
+  }
+}
+
+
+export function buildBastionHull(polys) {
+  if (!Array.isArray(polys) || polys.length === 0) return null;
+
+  const pts = [];
+  for (const poly of polys) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    for (const p of poly) {
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
+    }
+  }
+
+  if (pts.length < 3) return null;
+
+  const h = convexHull(pts);
+  return (Array.isArray(h) && h.length >= 3) ? h : null;
+}
+
+export function runFortWarpAudits({
+  warpDebugEnabled,
+  auditWallDeterministicOutsideInnerHull,
+  wallCurtainForDraw,
+  innerHull,
+  cx,
+  cy,
+  warpWall,
+  bastionPolysWarpedSafe,
+  warpOutworks,
+  outerHullLoop,
+  bastionPlacement,
+}) {
+  if (!warpDebugEnabled) return;
+
+  auditWallDeterministicOutsideInnerHull({
+    debugEnabled: warpDebugEnabled,
+    wallCurtainForDraw,
+    innerHull,
+    centre: { x: cx, y: cy },
+    margin: Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2,
+  });
+
+  auditRadialClamp({
+    name: "BASTIONS",
+    polys: bastionPolysWarpedSafe,
+    minField: warpOutworks?.minField,
+    maxField: warpOutworks?.maxField,
+    cx,
+    cy,
+    minMargin: warpOutworks?.clampMinMargin,
+    maxMargin: warpOutworks?.clampMaxMargin,
+    debugEnabled: true,
+  });
+
+  auditPolyContainment({
+    name: "BASTIONS",
+    polys: bastionPolysWarpedSafe,
+    containerPoly: outerHullLoop,
+    debugEnabled: true,
+  });
+
+  if (bastionPlacement) {
+    console.log("[bastionPlacement]", {
+      want: bastionPlacement.want,
+      minSpacing: bastionPlacement.minSpacing,
+      top3: bastionPlacement.maxima.slice(0, 3),
+    });
   }
 }
