@@ -2,6 +2,7 @@
 //
 // Parameter normalisation and role mutation helpers.
 // Extracted from ward_roles.js. Extraction only. No behaviour changes intended.
+import { clampInt } from "../util/ids.js";
 
 /**
  * Deterministic role assignment by ward id.
@@ -15,12 +16,6 @@ export function setRole(wards, id, role) {
       return;
     }
   }
-}
-
-function clampInt(value, min, max, fallback) {
-  const n = Number.isFinite(value) ? Math.floor(value) : fallback;
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
 }
 
 function normaliseOutsideBands(value) {
