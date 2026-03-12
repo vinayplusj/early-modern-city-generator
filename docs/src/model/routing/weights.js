@@ -19,9 +19,7 @@
 //
 // If you do not set flags yet, you still get deterministic distance-only routing.
 
-function isFiniteNumber(x) {
-  return Number.isFinite(x);
-}
+import { isFiniteNumber } from "../util/numbers.js";
 
 function clampNonNegative(x) {
   if (!isFiniteNumber(x) || x < 0) return 0;
