@@ -8,7 +8,7 @@ import {
 } from "./util.js";
 import { isFiniteNumber, almostEqual } from "../../util/numbers.js";
 import { applyDeterministicEdgeFlags } from "./water_flags.js";
-
+import { isFinitePoint } from "../../geom/primitives.js";
 /**
  * Build a planar graph from ward polygons.
  */
