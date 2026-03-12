@@ -2,13 +2,12 @@
 
 import {
   isFiniteNumber,
-  isFinitePoint,
   quantKey,
   wardPoly,
   ensureAdjSize,
   sortAdjacencyDeterministic,
 } from "./util.js";
-
+import { isFiniteNumber, almostEqual } from "../../util/numbers.js";
 import { applyDeterministicEdgeFlags } from "./water_flags.js";
 
 /**
