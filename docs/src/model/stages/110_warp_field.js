@@ -3,21 +3,23 @@
 //
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
 
-import { warpPolylineRadial, buildWarpField } from "../warp.js";
+import { warpPolylineRadial } from "../warp.js";
 import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
 import { convexHull } from "../../geom/hull.js";
 import {
   buildFortWarp,
   clampPolylineRadial,
   resampleClosedPolyline,
-  sampleClosedPolylineByArcLength,
-  computeCurtainClearanceProfile,
-  pickClearanceMaximaWithSpacing,
 } from "../generate_helpers/warp_stage.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
 import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
-import { clampCurtainPostConditions } from "../generate_helpers/curtain_post_clamp.js";
+import {
+  clampCurtainPostConditions,
+  deriveFinalCurtainFromPostClamp,
+  rebindWarpWallToFinalCurtain,
+  buildCurtainMinField,
+} from "../generate_helpers/curtain_post_clamp.js";
 import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
 import { nearestSampleIndex, nearestMaximaIndex } from "../generate_helpers/warpfield_slots.js";
 import { bastionCentroid } from "../generate_helpers/bastion_geom.js";
@@ -29,9 +31,10 @@ import { ensureWinding , signedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
-import { assert } from "../util/assert.js";
-import { median } from "../util/stats.js";
-import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
+import {
+  deriveBastionPlacementFromCurtain,
+  warpBastionPolysThroughFields,
+} from "../generate_helpers/warpfield_pipeline.js";
 import { pruneBastionsByCurtainIntervals } from "../generate_helpers/bastion_interval_prune.js";
 
 /**
@@ -210,308 +213,72 @@ export function runWarpFieldStage({
     midMargin,
   });
 
-  // Curtain wall (pre-bastion) for clamp + debug.
-  // This is the FINAL curtain polyline that downstream attachments should follow.
-  const wallCurtainForDrawRaw = wallWarpedSafe || wallWarped || wallBaseDense;
-  const wallCurtainForDraw = (Array.isArray(wallCurtainForDrawRaw) && wallCurtainForDrawRaw.length >= 3)
-    ? resampleClosedPolyline(wallCurtainForDrawRaw, curtainVertexN)
-    : wallCurtainForDrawRaw;
-  const curtainArea = (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
-    ? signedArea(wallCurtainForDraw)
-    : 1;
-  
-  const wantCCW = curtainArea > 0;
+  const {
+    wallCurtainForDrawRaw,
+    wallCurtainForDraw,
+    curtainArea,
+    wantCCW,
+  } = deriveFinalCurtainFromPostClamp({
+    wallWarpedSafe,
+    wallWarped,
+    wallBaseDense,
+    curtainVertexN,
+  });
 	
-  // ---------------- Bastion placement candidates (clearance maxima) ----------------
-  // Compute once per run. Deterministic. Used later for soft reinsertion.
   let bastionPlacement = null;
-  
-  if (outerHullLoop && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8) {
-  
-    // Sampling step in map units. Lower => more accurate but more expensive.
-    const sampleStep =
-      Number.isFinite(ctx?.params?.warpFort?.placementSampleStep)
-        ? Math.max(2, ctx.params.warpFort.placementSampleStep)
-        : 10;
-  
-    const { pts: curtainPtsS, s: sArr, totalLen } =
-      sampleClosedPolylineByArcLength(wallCurtainForDraw, sampleStep);
-  
-    // Clearance measured outward from curtain toward outer hull.
-    const outwardMode = ctx?.params?.warpFort?.placementOutwardMode || "normal";
-    const { clearance } = computeCurtainClearanceProfile({
-      curtainPts: curtainPtsS,
-      centre: centrePt,
+
+  {
+    const placementRes = deriveBastionPlacementFromCurtain({
+      ctx,
+      wallCurtainForDraw,
       outerHullLoop,
-      outwardMode,
+      centrePt,
+      cx,
+      cy,
+      warpFortParams,
+      warpOutworks,
+      targetN,
+      bastionNDesired,
+      wantCCW,
+      bastionPolysUsed,
+      warpDebugEnabled,
     });
-  
-    // Determine target count and spacing.
-    const soft = ctx?.params?.bastionSoft || null;
-    const budget = Number.isFinite(soft?.reinsertBudget) ? Math.max(0, soft.reinsertBudget | 0) : 0;
-    // ---- Fixed clearance from bastion tips to outer hull ----
-    // Goal: leave enough space for moatworks (ditch + glacis) plus a margin.
-    // Stage 120 uses: ditchWidth = fortR * 0.035, glacisWidth = fortR * 0.08.
-	const fortRParam =
-	  (Number.isFinite(ctx?.params?.warpFort?.bandOuter) && ctx.params.warpFort.bandOuter > 0)
-	    ? ctx.params.warpFort.bandOuter
-	    : (Number.isFinite(warpFortParams?.bandOuter) ? warpFortParams.bandOuter : null);
-	
-	// Deterministic geometric fallback: median curtain radius from centre.
-	let fortRGeom = null;
-	if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8) {
-	  const rs = [];
-	  for (let i = 0; i < wallCurtainForDraw.length; i++) {
-	    const p = wallCurtainForDraw[i];
-	    if (!p) continue;
-	    rs.push(Math.hypot(p.x - cx, p.y - cy));
-	  }
-	  fortRGeom = median(rs);
-	}
-	
-	const fortR =
-	  (Number.isFinite(fortRParam) && fortRParam > 0)
-	    ? fortRParam
-	    : fortRGeom;
-	
-	assert(
-	  Number.isFinite(fortR) && fortR > 0,
-	  `warpFort.bandOuter invalid; fortRParam=${fortRParam}, fortRGeom=${fortRGeom}`
-	);
-	if (warpOutworks) {
-	  warpOutworks._fortR = { param: fortRParam, geom: fortRGeom, used: fortR };
-	}
-    const ditchWidthEst  = Number.isFinite(fortR) ? fortR * 0.030 : 0;
-    const glacisWidthEst = Number.isFinite(fortR) ? fortR * 0.070  : 0;
-  
-    const bastionOuterClearance =
-      Number.isFinite(ctx?.params?.warpFort?.bastionOuterClearance)
-        ? Math.max(0, ctx.params.warpFort.bastionOuterClearance)
-        : (ditchWidthEst + glacisWidthEst) * 1.20; // fixed default + safety margin
-	assert(Number.isFinite(bastionOuterClearance), `bastionOuterClearance non-finite: ${bastionOuterClearance}`);
-	assert(bastionOuterClearance > 0, `bastionOuterClearance is zero; fortR=${fortR}, ditchWidthEst=${ditchWidthEst}, glacisWidthEst=${glacisWidthEst}`);
-	if (warpDebugEnabled) console.log("[bastionOuterClearance]", { fortRParam, fortRGeom, fortR, ditchWidthEst, glacisWidthEst, bastionOuterClearance });
-    // Minimum spacing along the curtain perimeter (map units).
-    // Defaults: ~ one bastion per (perimeter/targetN) but with a conservative lower bound.
-    const minSpacing =
-      Number.isFinite(ctx?.params?.warpFort?.placementMinSpacing)
-        ? Math.max(0, ctx.params.warpFort.placementMinSpacing)
-        : (targetN > 0 ? Math.max(20, 0.65 * (totalLen / targetN)) : 0);
-  
-    // Pick enough candidates to support reinsertion: targetN + budget + small cushion.
-    const want = Math.max(0, targetN + budget + 3);
-  
-    const maxima = pickClearanceMaximaWithSpacing({
-      s: sArr,
-      clearance,
-      targetN: want,
-      minSpacing,
-      neighbourhood: 2,
-      totalLen,
-    });
-    // ---- Local spacing per maxima (arc-length to neighbours) ----
-    // We want each bastion sized independently based on its own available spacing.
-    const maximaByS = maxima.slice().sort((a, b) => a.s - b.s);
-    const localSpacingByK = new Map();
 
-    for (let j = 0; j < maximaByS.length; j++) {
-      const prev = maximaByS[(j - 1 + maximaByS.length) % maximaByS.length];
-      const cur  = maximaByS[j];
-      const next = maximaByS[(j + 1) % maximaByS.length];
-
-      const dPrev = (cur.s - prev.s + totalLen) % totalLen;
-      const dNext = (next.s - cur.s + totalLen) % totalLen;
-
-      const localSpacing = Math.min(dPrev, dNext);
-      localSpacingByK.set(cur.i, localSpacing);
-    }  
-    bastionPlacement = {
-      curtainPtsS,
-      sArr,
-      clearance,
-      sampleStep,
-      totalLen,
-      outwardMode,
-      bastionOuterClearance,
-      localSpacingByK,
-      minSpacing,
-      want,
-      maxima, // array of { i, s, c }
-    };
-  
-    if (warpOutworks) warpOutworks.bastionPlacement = bastionPlacement;
-    if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = bastionsBuiltFromMaxima;
-    
-    // Replace upstream bastion polys if we have maxima.
-    if (bastionPlacement?.maxima?.length && bastionNDesired > 0) {
-      const maximaTop = bastionPlacement.maxima.slice(0, bastionNDesired);
-    
-      // Build new bastion polygons directly from maxima sample indices.
-      const built = maximaTop
-        .map(m => m.i)
-        .filter(k => Number.isFinite(k) && k >= 0 && k < bastionPlacement.curtainPtsS.length)
-        .map(k => buildPentBastionAtSampleIndex({
-		  k,
-		  placement: bastionPlacement,
-		  cx,
-		  cy,
-		  wantCCW,
-		  shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
-		outerHullLoop,
-		}));
-
-      if (built.length > 0) {
-        bastionPolysUsed.length = 0;
-        for (const poly of built) bastionPolysUsed.push(poly);
-      
-        bastionsBuiltFromMaxima = true; // must be the function-scope variable
-        if (warpOutworks) warpOutworks.bastionsBuiltFromMaxima = true;
-        if (warpOutworks) warpOutworks.bastionsBuiltCount = built.length;
-      }
-    }
+    bastionPlacement = placementRes.bastionPlacement;
+    bastionsBuiltFromMaxima = placementRes.bastionsBuiltFromMaxima;
   }
-  // -------------------------------------------------------------------------
-  // Make warpWall.wallWarped equal the final curtain used for draw + downstream.
-  // Preserve the original (pre-final) as wallWarpedRaw for debugging.
-  // -------------------------------------------------------------------------
-  if (warpWall) {
-    // Preserve original output from buildFortWarp (already warped + any internal clamps).
-    if (!warpWall.wallWarpedRaw) {
-      warpWall.wallWarpedRaw = warpWall.wallWarped || null;
-    }
-    // Overwrite: this is the final curtain after deterministic hard clamps.
-    // Downstream features (ditches, attachments) should use this.
-    warpWall.wallWarped = wallCurtainForDraw;
-  
-    if (warpDebugEnabled) {
-      console.log("[warpWall] overwrite wallWarped -> wallCurtainForDraw", {
-        rawLen: warpWall.wallWarpedRaw?.length ?? null,
-        finalLen: warpWall.wallWarped?.length ?? null,
-        sameRef: warpWall.wallWarpedRaw === warpWall.wallWarped,
-      });
-    }
-  }
+  // sync helper mutates warpWall in place so downstream attachments follow the final curtain.
+  rebindWarpWallToFinalCurtain({
+    warpWall,
+    wallBaseDense,
+    wallCurtainForDraw,
+    cx,
+    cy,
+    warpDebugEnabled,
+  });
 
-  if (warpDebugEnabled && warpWall && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
-    const base0 = wallBaseDense[0];
-  
-    const raw0 = warpWall?.wallWarpedRaw?.[0];
-  
-    const final0 = warpWall?.wallWarped?.[0];
-  }
-  
-  // -------------------------------------------------------------------------
-  // Replace the curtain warp field with a "final" field that maps
-  // the original curtain input (wallBaseDense) directly to the final curtain
-  // (wallCurtainForDraw). This keeps all attachments (ditches, etc.) in sync.
-  // No smoothing pass.
-  // -------------------------------------------------------------------------
-  
-  const finalCurtainParams = (warpWall?.params)
-    ? {
-        ...warpWall.params,
-        debug: false,
-        _clampField: true,
-        ignoreBand: true,
-        smoothRadius: 0,
-        maxStep: 1e9,
-        maxIn: 1e9,
-        maxOut: 1e9,
-      }
-    : null;
-  
-  const finalCurtainField =
-    (Array.isArray(wallBaseDense) && wallBaseDense.length >= 3 &&
-     Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3 &&
-     finalCurtainParams)
-      ? buildWarpField({
-          centre: { x: cx, y: cy },
-          wallPoly: wallBaseDense,
-          targetPoly: wallCurtainForDraw,
-          districts: null,
-          bastions: [],
-          params: finalCurtainParams,
-        })
-      : null;
-  
-  if (warpWall && finalCurtainField) {
-    // Keep the originals for debug and regression checks.
-    warpWall.fieldOriginal = warpWall.field;
-    warpWall.paramsOriginal = warpWall.params;
-
-    // Replace the field AND the warped curtain polyline.
-    // Downstream attachments (ditches, glacis, etc.) that read warpWall.wallWarped
-    // will now follow the final, post-clamp curtain.
-    warpWall.field = finalCurtainField;
-    warpWall.params = finalCurtainParams;
-  }
   if (warpDebugEnabled && warpWall?.field && Array.isArray(wallBaseDense) && wallBaseDense[0]) {
     const p = wallBaseDense[0];
     const q = warpPolylineRadial([p], { x: cx, y: cy }, warpWall.field, warpWall.params)[0];
   }
-    
 
-  // Build a radial field for the curtain wall itself, so bastions can be clamped OUTSIDE it.
-  // This is the "min clamp" for bastions (ensures points stay away from the wall base).
-  const curtainMinField =
-    (warpOutworks?.params && Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
-      ? buildWarpField({
-          centre: { x: cx, y: cy },
-          wallPoly: wallCurtainForDraw,
-          targetPoly: wallCurtainForDraw,
-          districts: null,
-          bastions: [],
-          params: { ...warpOutworks.params, debug: false },
-        })
-      : null;
+  const curtainMinField = buildCurtainMinField({
+    warpOutworks,
+    wallCurtainForDraw,
+    cx,
+    cy,
+  });
   
-  // Apply outworks warp to bastion polygons (two-target system).
-  let bastionPolysWarpedSafe = bastionPolysUsed;
-  
-  if (warpOutworks?.field && Array.isArray(bastionPolysUsed)) {
-
-  const hasCurtainWarp = Boolean(warpWall?.field && warpWall?.params) && !bastionsBuiltFromMaxima;
-  
-  bastionPolysWarpedSafe = bastionPolysUsed.map((poly) => {
-      if (!Array.isArray(poly) || poly.length < 3) return poly;
-      // Preserve base endpoints for 5-point bastions: [B0, S0, T, S1, B1]
-      const B0 = (poly.length === 5) ? poly[0] : null;
-      const B1 = (poly.length === 5) ? poly[4] : null;
-    
-    // 1) Warp bastions by the curtain wall warp first (so attachments follow the warped curtain).
-  const warpedByCurtain = hasCurtainWarp
-    ? warpPolylineRadial(poly, centrePt, warpWall.field, warpWall.params)
-    : poly;
-
-    // 2) Then warp by the outworks field (outer hull shaping).
-    const warpedByOutworks = bastionsBuiltFromMaxima
-      ? warpedByCurtain // do not shear maxima-built geometry on first pass
-      : warpPolylineRadial(warpedByCurtain, centrePt, warpOutworks.field, warpOutworks.params);
-
-    // 3) Clamp into the allowed radial band.
-      const clamped = clampPolylineRadial(
-        warpedByOutworks,
-        centrePt,
-        curtainMinField,
-        null, // do not enforce radial max for bastions
-        2,
-        warpOutworks.clampMaxMargin
-      );
-
-      // Hard invariant: outworks must remain inside the outer hull polygon.
-      // Deterministic “shrink-to-fit” along centre rays.
-      let clampedSafe = clamped;
-
-      if (outerHullLoop) {
-        const baseM = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
-        const m = baseM + bastionOuterInset;
-        clampedSafe = clampPolylineInsidePolyAlongRays(clampedSafe, centrePt, outerHullLoop, m);
-      }
-      
-      return clampedSafe;
-
-    });
-  }
+  let bastionPolysWarpedSafe = warpBastionPolysThroughFields({
+    warpOutworks,
+    warpWall,
+    bastionPolysUsed,
+    centrePt,
+    curtainMinField,
+    outerHullLoop,
+    bastionOuterInset,
+    bastionsBuiltFromMaxima,
+  });
 
   // ---------------------------------------------------------------------------
 
