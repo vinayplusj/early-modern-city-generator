@@ -16,6 +16,7 @@
 // Hashing floats bit-exact is risky across minor numeric differences.
 // This implementation uses quantisation (default 1e-6) before hashing.
 // You can tighten/loosen quantisation based on your observed stability.
+import { isFiniteNumber } from "../util/numbers.js";
 
 import { assert } from "../util/assert.js";
 
@@ -25,10 +26,6 @@ function clampInt32(x) {
 
 function toUint32(x) {
   return x >>> 0;
-}
-
-function isFiniteNumber(x) {
-  return Number.isFinite(x);
 }
 
 /**
