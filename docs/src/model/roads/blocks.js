@@ -13,12 +13,9 @@
 // - Face ordering is stable via sort key.
 //
 import { signedArea, centroid } from "../../geom/poly.js";
+import { almostEqual } from "../util/numbers.js";
 
 const OUTER_RATIO_MIN = 1.5;
-
-function almostEqual(a, b, eps) {
-  return Math.abs(a - b) <= eps;
-}
 
 function angleBetween(from, to) {
   return Math.atan2(to.y - from.y, to.x - from.x);
