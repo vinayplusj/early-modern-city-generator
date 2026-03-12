@@ -21,18 +21,7 @@
 import { dijkstraVertexDistances } from "./dijkstra_vertex_distances.js";
 import { FieldDomain } from "./field_types.js";
 import { assert } from "../util/assert.js";
-
-function toIntId(id, label) {
-  if (typeof id === "number") {
-    assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
-    return id | 0;
-  }
-  if (typeof id === "string") {
-    assert(/^-?\d+$/.test(id), `Non-integer ${label} id string: "${id}"`);
-    return (Number(id) | 0);
-  }
-  throw new Error(`Unsupported ${label} id type: ${typeof id}`);
-}
+import { toIntId } from "../util/ids.js";
 
 function buildVertexIdIndex(meshAccess) {
   const n = meshAccess.getVertexCount();
