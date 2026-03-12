@@ -1,6 +1,8 @@
 // docs/src/model/water_on_mesh/routing.js
 
-import { isFiniteNumber, finitePoint, dist2, uniqueConsecutiveNodes, stitchPolylines } from "./util.js";
+import { isFiniteNumber, finitePoint, uniqueConsecutiveNodes, stitchPolylines } from "./util.js";
+import { isFiniteNumber } from "../util/numbers.js";
+import { dist2 } from "../../geom/primitives.js";
 
 export function makeLengthOnlyWeightFn(graph) {
   return (edgeId) => {
