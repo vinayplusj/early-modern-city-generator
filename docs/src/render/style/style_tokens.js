@@ -12,9 +12,7 @@
 // - Patterns (hatch/stipple) should use the returned spacing values for stability.
 import { clamp } from "../../geom/primitives.js";
 
-function isFiniteNumber(n) {
-  return Number.isFinite(n);
-}
+import { isFiniteNumber } from "../../model/util/numbers.js";
 
 /**
  * Compute global width tokens based on baseR.
