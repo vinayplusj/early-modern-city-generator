@@ -8,6 +8,7 @@
 
 import { dist2 } from "./primitives.js";
 import { signedArea } from "./poly.js";
+import { almostEqual } from "../model/util/numbers.js";
 
 export function clipPolyConvex(subjectPoly, clipPoly) {
   if (!Array.isArray(subjectPoly) || subjectPoly.length < 3) return [];
@@ -137,8 +138,4 @@ function dedupeNear(poly, eps) {
     out.pop();
   }
   return out;
-}
-
-function almostEqual(a, b) {
-  return Math.abs(a - b) <= 1e-9;
 }
