@@ -10,6 +10,9 @@ import { buildPentBastionAtSampleIndex } from "./bastion_builder.js";
 import { computeLocalSpacingByMaxima, selectTopMaxima } from "./warpfield_slots.js";
 import { warpPolylineRadial } from "../warp.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
+import { buildCompositeWallFromCurtainAndBastions } from "./composite_wall_builder.js";
+import { pruneBastionsByCurtainIntervals } from "./bastion_interval_prune.js";
+import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 
@@ -218,4 +221,107 @@ export function warpBastionPolysThroughFields({
   });
 
   return bastionPolysWarpedSafe;
+}
+
+
+export function resolveCompositeWallForDraw({
+  ctx,
+  warpDebugEnabled,
+  wallFinal,
+  wallCurtainForDraw,
+  bastionPolysWarpedSafe,
+  cx,
+  compositeDebugOnlyEast = true,
+}) {
+  let wallForDraw = wallFinal;
+  let bastionPolysForComposite = bastionPolysWarpedSafe;
+
+  if (
+    Array.isArray(wallCurtainForDraw) &&
+    wallCurtainForDraw.length >= 8 &&
+    Array.isArray(bastionPolysWarpedSafe) &&
+    bastionPolysWarpedSafe.length > 1
+  ) {
+    const minGapSamples = Number.isFinite(ctx?.params?.warpFort?.bastionCompositeGapSamples)
+      ? Math.max(0, ctx.params.warpFort.bastionCompositeGapSamples | 0)
+      : 3;
+
+    const pruneRes = pruneBastionsByCurtainIntervals({
+      curtain: wallCurtainForDraw,
+      bastions: bastionPolysWarpedSafe,
+      minGapSamples,
+      debug: Boolean(warpDebugEnabled),
+    });
+
+    if (Array.isArray(pruneRes?.bastionsOut) && pruneRes.bastionsOut.length) {
+      bastionPolysForComposite = pruneRes.bastionsOut;
+    }
+  }
+
+  const compositeWall = buildCompositeWallFromCurtainAndBastions(
+    wallCurtainForDraw,
+    bastionPolysForComposite
+  );
+
+  if (ctx?.params?.warpFort?.debug) {
+    console.info("[Warp110] compositeWall decision", {
+      wallCurtainForDrawN: Array.isArray(wallCurtainForDraw) ? wallCurtainForDraw.length : null,
+      bastionPolysN: Array.isArray(bastionPolysForComposite) ? bastionPolysForComposite.length : null,
+      compositeWallN: Array.isArray(compositeWall) ? compositeWall.length : null,
+      willUseComposite: Array.isArray(compositeWall) && compositeWall.length >= 3,
+    });
+
+    debugCompositeWallSplices({
+      wallCurtainForDraw,
+      bastionPolys: bastionPolysForComposite,
+      compositeWall,
+      cx,
+      onlyEast: compositeDebugOnlyEast,
+      enabled: Boolean(warpDebugEnabled),
+    });
+  }
+
+  const useComposite = Array.isArray(compositeWall) && compositeWall.length >= 3;
+
+  if (useComposite) {
+    wallForDraw = compositeWall;
+  } else if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) {
+    wallForDraw = wallCurtainForDraw;
+  }
+
+  return {
+    compositeWall,
+    wallForDraw,
+    bastionPolysForComposite,
+    drawPlainCurtain: !useComposite,
+  };
+}
+
+export function buildStage110Return({
+  warpWall,
+  warpOutworks,
+  wallForDraw,
+  wallCurtainForDraw,
+  compositeWall,
+  bastionPolysWarpedSafe,
+  bastionHullWarpedSafe,
+}) {
+  return {
+    warpWall: warpWall ?? null,
+    warpOutworks: warpOutworks ?? null,
+    wallForDraw:
+      (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null,
+    wallCurtainForDraw:
+      (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
+        ? wallCurtainForDraw
+        : null,
+    drawPlainCurtain:
+      !(Array.isArray(compositeWall) && compositeWall.length >= 3),
+    bastionPolysWarpedSafe:
+      Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : null,
+    bastionHullWarpedSafe:
+      (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3)
+        ? bastionHullWarpedSafe
+        : null,
+  };
 }
