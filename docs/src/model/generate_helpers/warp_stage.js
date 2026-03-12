@@ -10,13 +10,8 @@
 import { buildWarpField, warpPolylineRadial } from "./warp_apply.js";
 import { dist, dist2, add, sub, mul, perp, normalize, lerp } from "../../geom/primitives.js";
 import { clampNumber } from "../util/numbers.js";
+import { wrapAngle } from "../util/circular.js";
 
-function wrapAngle(t) {
-  const twoPi = Math.PI * 2;
-  let a = t % twoPi;
-  if (a < 0) a += twoPi;
-  return a;
-}
 export function sampleClosedPolylineByArcLength(poly, step) {
   if (!Array.isArray(poly) || poly.length < 3) return { pts: [], s: [], totalLen: 0 };
   const ds = Number(step);
