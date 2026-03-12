@@ -1,11 +1,11 @@
 // docs/src/model/mesh/voronoi_planar_graph/snap.js
 
 import {
-  isFiniteNumber,
   isFinitePoint,
   quantKey,
   sortAdjacencyDeterministic,
 } from "./util.js";
+import { isFiniteNumber, almostEqual } from "../../util/numbers.js";
 
 function buildNodeIndexById(nodes) {
   const m = new Map();
