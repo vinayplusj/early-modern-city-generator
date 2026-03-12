@@ -7,6 +7,7 @@
 // This is dependency-injected: Stage 110 passes in the functions and state it already has.
 // No RNG is used here; order is deterministic.
 import { signedArea, areaAbs } from "../../geom/poly.js";
+import { repairBastionsStrictConvex } from "./bastion_convex_repair.js";
 
 function _validPoly(poly) {
   return Array.isArray(poly) && poly.length >= 3;
@@ -365,4 +366,195 @@ export function slideRepairBastions({
   stats.usedMaxima = usedMax.size;
 
   return { bastionPolysOut: out, slideStats: stats };
+}
+
+
+export function runSlideRepairPass({
+  ctx,
+  warpDebugEnabled,
+  bastionPolysWarpedSafe,
+  wantCCW,
+  centrePt,
+  outerHullLoop,
+  margin,
+  K,
+  warpOutworks,
+  wallCurtainForDraw,
+  warpWall,
+  curtainMinField,
+  bastionOuterInset,
+  bastionsBuiltFromMaxima,
+  warpPolylineRadial,
+  clampPolylineRadial,
+  clampPolylineInsidePolyAlongRays,
+  ensureWinding,
+  repairBastionStrictConvex,
+  polyAreaSigned = signedArea,
+}) {
+  let polysOut = bastionPolysWarpedSafe;
+  let convexStats = null;
+
+  const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair ?? true);
+  if (ctx?.params?.warpFort?.debug) {
+    const arr = Array.isArray(polysOut) ? polysOut : [];
+    console.info("[Warp110] slideRepair gate", {
+      enableSlideRepair,
+      bastionPolysN: arr.length,
+      hasPlacement: Boolean(warpOutworks?.bastionPlacement),
+    });
+  }
+
+  if (
+    enableSlideRepair &&
+    warpOutworks?.bastionPlacement?.maxima?.length &&
+    warpOutworks.bastionPlacement.curtainPtsS?.length &&
+    warpOutworks.bastionPlacement.sArr?.length &&
+    warpOutworks?.field &&
+    outerHullLoop &&
+    Array.isArray(wallCurtainForDraw)
+  ) {
+    const placement = warpOutworks.bastionPlacement;
+    const maxima = placement.maxima;
+    const L = placement.totalLen;
+
+    const slideTries = Number.isFinite(ctx?.params?.warpFort?.slideMaxTries)
+      ? Math.max(1, ctx.params.warpFort.slideMaxTries | 0)
+      : 3;
+
+    const failedIndices = [];
+    for (let i = 0; i < polysOut.length; i++) {
+      const poly = polysOut[i];
+      if (!Array.isArray(poly) || poly.length !== 5) continue;
+
+      const poly2 = ensureWinding(poly, wantCCW);
+      if (Math.abs(polyAreaSigned(poly2)) < 1e-3) {
+        failedIndices.push(i);
+        continue;
+      }
+
+      const res = repairBastionStrictConvex(poly2.slice(), centrePt, outerHullLoop, margin, K);
+      if (!res || !res.ok) failedIndices.push(i);
+    }
+
+    if (failedIndices.length && warpDebugEnabled) {
+      console.log("[slideRepair] failedIndices", failedIndices);
+    }
+
+    const { bastionPolysOut, slideStats } = slideRepairBastions({
+      bastionPolys: polysOut,
+      failedIndices,
+      placement,
+      maxima,
+      L,
+      centrePt,
+      cx: centrePt.x,
+      cy: centrePt.y,
+      wantCCW,
+      outerHullLoop,
+      debug: Boolean(ctx?.params?.warpFort?.debug),
+      warpWall,
+      warpOutworks,
+      curtainMinField,
+      bastionOuterInset,
+      bastionsBuiltFromMaxima,
+      slideTries,
+      margin,
+      K,
+      warpPolylineRadial,
+      clampPolylineRadial,
+      clampPolylineInsidePolyAlongRays,
+      ensureWinding,
+      signedArea: polyAreaSigned,
+      repairBastionStrictConvex,
+      bastionCentroid,
+      nearestSampleIndex,
+      nearestMaximaIndex,
+      buildPentBastionAtSampleIndex: (args) => buildPentBastionAtSampleIndex({
+        ...args,
+        shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
+      }),
+    });
+
+    polysOut = bastionPolysOut;
+    warpOutworks.bastionSlideRepair = slideStats;
+
+    if (ctx?.params?.warpFort?.debug) {
+      const polys = Array.isArray(polysOut) ? polysOut : [];
+      const eps = Number.isFinite(ctx?.params?.warpFort?.bastionTriEps) ? ctx.params.warpFort.bastionTriEps : 1.0;
+
+      for (let i = 0; i < polys.length; i++) {
+        const p = polys[i];
+        if (!Array.isArray(p)) {
+          console.warn("[Warp110] bastion diag", { i, kind: "not_array" });
+          continue;
+        }
+
+        const n = p.length;
+        const a = (typeof polyAreaSigned === "function" && n >= 3) ? polyAreaSigned(p) : null;
+
+        let shoulderGap = null;
+        let baseGap = null;
+        let tipShoulder0 = null;
+        let tipShoulder1 = null;
+
+        if (n === 5) {
+          baseGap = Math.hypot(p[4].x - p[0].x, p[4].y - p[0].y);
+          shoulderGap = Math.hypot(p[3].x - p[1].x, p[3].y - p[1].y);
+          tipShoulder0 = Math.hypot(p[1].x - p[2].x, p[1].y - p[2].y);
+          tipShoulder1 = Math.hypot(p[3].x - p[2].x, p[3].y - p[2].y);
+        }
+
+        const convex = diag5(p);
+        const triFlags = [];
+        if (n === 5 && Number.isFinite(shoulderGap) && shoulderGap < eps) triFlags.push("shoulders_collapsed");
+        if (n === 5 && Number.isFinite(baseGap) && baseGap < eps) triFlags.push("base_collapsed");
+        if (n === 5 && convex.ok === false) triFlags.push(`convex_fail:${convex.why}`);
+
+        if (triFlags.length) {
+          console.warn("[Warp110] bastion TRIANGLE-LIKE", {
+            i, n, areaSigned: a, baseGap, shoulderGap, tipShoulder0, tipShoulder1, triFlags,
+          });
+        } else {
+          console.info("[Warp110] bastion ok", { i, n, areaSigned: a, baseGap, shoulderGap });
+        }
+      }
+    }
+
+    if (ctx?.params?.warpFort?.debug) {
+      const arr = Array.isArray(polysOut) ? polysOut : [];
+      const nonNull = arr.filter(p => Array.isArray(p) && p.length >= 3).length;
+      console.info("[Warp110] bastions AFTER slide repair", { n: arr.length, nonNull });
+    }
+
+    const refreshed = repairBastionsStrictConvex({
+      bastionPolys: polysOut,
+      wantCCW,
+      areaEps: 1e-3,
+      ensureWinding,
+      polyAreaSigned,
+      repairOne: (poly) => {
+        const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
+        if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
+        return (r.ok && Array.isArray(r.poly))
+          ? { ok: true, poly: r.poly }
+          : { ok: false, reason: r.reason || "repair failed" };
+      },
+      repairOpts: {},
+    });
+
+    convexStats = refreshed.convexStats;
+  }
+
+  if (warpOutworks && warpOutworks.bastionPlacement) {
+    const soft = ctx?.params?.bastionSoft || null;
+    const targetN = Number.isFinite(soft?.targetN) ? soft.targetN : null;
+
+    warpOutworks.bastionPlacement.final = {
+      targetN,
+      finalCount: Array.isArray(polysOut) ? polysOut.length : 0,
+      candidates: warpOutworks.bastionPlacement.maxima ? warpOutworks.bastionPlacement.maxima.length : 0,
+    };
+  }
+
+  return { bastionPolysOut: polysOut, convexStats };
 }
