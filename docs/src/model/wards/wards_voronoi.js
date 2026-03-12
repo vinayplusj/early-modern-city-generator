@@ -30,7 +30,7 @@ import {
   closestPointOnSegment,
   pointSegmentDistance,
 } from "../../geom/poly.js";
-
+import { clampInt } from "../util/ids.js";
 /**
  * @typedef {{x:number, y:number}} Point
  * @typedef {{id:number, seed:Point, poly:Point[]|null, centroid:Point|null, area:number|null, distToCentre:number}} Ward
@@ -247,12 +247,6 @@ function normaliseParams(params) {
 
 function numberOr(v, d) {
   return Number.isFinite(v) ? v : d;
-}
-
-function clampInt(v, lo, hi) {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return lo;
-  return Math.max(lo, Math.min(hi, n));
 }
 
 function computeBBox(poly, pad) {
