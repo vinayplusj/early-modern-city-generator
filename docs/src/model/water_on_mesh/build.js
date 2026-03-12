@@ -1,11 +1,11 @@
 // docs/src/model/water_on_mesh/build.js
 
-import { clampInt, polylineLengthSq } from "./util.js";
+import { polylineLengthSq } from "./util.js";
 import { resamplePolylineUniform } from "./resample.js";
 import { makeLengthOnlyWeightFn, snapPolylineToNodes, routeNodesAsPolyline } from "./routing.js";
 import { applyWaterFlagsToEdges } from "./flags.js";
 import { isFiniteNumber } from "../util/numbers.js";
-
+import { clampInt } from "../util/ids.js";
 import { snapPointToGraph as snapPointToGraphDefault } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra as dijkstraDefault, pathNodesToPolyline as pathNodesToPolylineDefault } from "../routing/shortest_path.js";
 
