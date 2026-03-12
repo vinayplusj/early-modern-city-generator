@@ -8,6 +8,7 @@ import { isFiniteNumber } from "../util/numbers.js";
 import { clampInt } from "../util/ids.js";
 import { snapPointToGraph as snapPointToGraphDefault } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra as dijkstraDefault, pathNodesToPolyline as pathNodesToPolylineDefault } from "../routing/shortest_path.js";
+import { isFinitePoint } from "../../geom/primitives.js";
 
 /**
  * Behaviour-preserving split of the original buildWaterOnMesh.
