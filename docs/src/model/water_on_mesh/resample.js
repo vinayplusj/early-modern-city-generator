@@ -1,6 +1,7 @@
 // docs/src/model/water_on_mesh/resample.js
 
-import { finitePoint, clampInt } from "./util.js";
+import { finitePoint} from "./util.js";
+import { clampInt } from ".././util/ids.js";
 
 export function resamplePolylineUniform(points, targetCount) {
   if (!Array.isArray(points) || points.length < 2) return points || [];
