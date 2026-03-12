@@ -11,28 +11,23 @@ import {
   resampleClosedPolyline,
 } from "../generate_helpers/warp_stage.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
-import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
 import {
   clampCurtainPostConditions,
   deriveFinalCurtainFromPostClamp,
   rebindWarpWallToFinalCurtain,
   buildCurtainMinField,
 } from "../generate_helpers/curtain_post_clamp.js";
-import { buildPentBastionAtSampleIndex } from "../generate_helpers/bastion_builder.js";
-import { nearestSampleIndex, nearestMaximaIndex } from "../generate_helpers/warpfield_slots.js";
-import { bastionCentroid } from "../generate_helpers/bastion_geom.js";
-import { repairBastionsStrictConvex } from "../generate_helpers/bastion_convex_repair.js";
-import { slideRepairBastions } from "../generate_helpers/bastion_slide_repair.js";
-import { clampPolylineInsidePolyAlongRays} from "../../geom/radial_ray_clamp.js";
+import { runStrictConvexRepairPass } from "../generate_helpers/bastion_convex_repair.js";
+import { runSlideRepairPass } from "../generate_helpers/bastion_slide_repair.js";
 import { loopPerimeter } from "../../geom/loop_metrics.js";
 import { ensureWinding , signedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import {
   deriveBastionPlacementFromCurtain,
-  warpBastionPolysThroughFields,
   resolveCompositeWallForDraw,
   buildStage110Return,
+  runBastionWarpPass,
 } from "../generate_helpers/warpfield_pipeline.js";
 
 /**
@@ -298,288 +293,53 @@ export function runWarpFieldStage({
     });
   }
 	// ---------------- Strict convexity repair (post-warp, post-shrink) ----------------
-	const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
-	const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters)
-	  ? ctx.params.warpFort.bastionConvexIters
-	  : 121;
-	let bastionConvexSummary = null;
-	
-	{
-	  if (ctx?.params?.warpFort?.debug) {
-		  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-		  const lens = arr.slice(0, 5).map(p => Array.isArray(p) ? p.length : null);
-		
-		  // Sample signed areas for first few polys (this is the most common “flattening” root cause).
-		  const areaSamples = [];
-		  for (let i = 0; i < Math.min(5, arr.length); i++) {
-		    try {
-		      const a = (typeof signedArea === "function") ? signedArea(arr[i]) : null;
-		      areaSamples.push(a);
-		    } catch (e) {
-		      areaSamples.push("ERR");
-		    }
-		  }
-		
-		  console.info("[Warp110] bastions BEFORE strict repair", {
-		    n: arr.length,
-		    sampleLens: lens,
-		    signedAreaType: typeof signedArea,
-		    areaEps: 1e-3,
+		const margin = Number.isFinite(warpOutworks?.clampMaxMargin) ? warpOutworks.clampMaxMargin : 10;
+		const K = Number.isFinite(ctx?.params?.warpFort?.bastionConvexIters)
+		  ? ctx.params.warpFort.bastionConvexIters
+		  : 121;
+		let bastionConvexSummary = null;
+		{
+		  const convexRes = runStrictConvexRepairPass({
+		    ctx,
+		    bastionPolysWarpedSafe,
+		    wantCCW,
+		    centrePt,
+		    outerHullLoop,
 		    margin,
 		    K,
-		    areaSamples,
+		    ensureWinding,
+		    repairBastionStrictConvex,
+		    polyAreaSigned: signedArea,
 		  });
+		  bastionPolysWarpedSafe = convexRes.bastionPolysOut;
+		  bastionConvexSummary = convexRes.convexStats;
 		}
-		const { bastionPolysOut, convexStats } = repairBastionsStrictConvex({
-	    bastionPolys: bastionPolysWarpedSafe,
-	    wantCCW,
-	    areaEps: 1e-3,
-	    ensureWinding,
-	    polyAreaSigned: signedArea,
-	    repairOne: (poly) => {
-	      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
-			if (ctx?.params?.warpFort?.debug && (!r || !r.ok)) {
-			  console.info("[Warp110] repairBastionStrictConvex raw return", r);
-			}
-			if (ctx?.params?.warpFort?.debug && (!r || !r.ok)) {
-			  const a = (typeof signedArea === "function") ? signedArea(poly) : null;
-			  console.info("[Warp110] repairBastionStrictConvex FAIL", {
-			    nVerts: Array.isArray(poly) ? poly.length : null,
-			    areaSigned: a,
-			    margin,
-			    K,
-			    reason: r && r.reason ? r.reason : null,
-			  });
-			}
-			if (!r) {
-			    return { ok: false, reason: "repairBastionStrictConvex returned null" };
-			  }
-			
-			  // Normal success case.
-			  if (r.ok && Array.isArray(r.poly)) {
-			    return { ok: true, poly: r.poly };
-			  }
-			
-			  // Special case: algorithm gave up but explicitly chose to keep the current poly.
-			  // This should not count as a failure, because we still have a valid polygon.
-			  if (r.note === "fallback_keep_current" && Array.isArray(r.poly)) {
-			    return { ok: true, poly: r.poly };
-			  }
-			
-			  // All other failures.
-			  return { ok: false, reason: r.reason || r.note || "repair failed" };
-			},
-	  });
-	
-	  bastionPolysWarpedSafe = bastionPolysOut;
-	  bastionConvexSummary = convexStats;
-		if (ctx?.params?.warpFort?.debug) {
-		  const outArr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-		  const nonNull = outArr.filter(p => Array.isArray(p) && p.length >= 3).length;
-		
-		  console.info("[Warp110] bastions AFTER strict repair", {
-		    nOut: outArr.length,
-		    nonNull,
-		    convexStats: bastionConvexSummary || null,
-		  });
-		}
-	}
 	// ---------------- Sliding repair (before delete/reinsert) ----------------
-	// If a bastion is still failing convexity/angle after repair, try sliding its anchor
-	// to nearby clearance maxima slots and rebuild a fresh pentagonal bastion there.
-	const enableSlideRepair = Boolean(ctx?.params?.warpFort?.enableSlideRepair ?? true);
-	if (ctx?.params?.warpFort?.debug) {
-	  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-	  console.info("[Warp110] slideRepair gate", {
-	    enableSlideRepair,
-	    bastionPolysN: arr.length,
-	    hasPlacement: Boolean(warpOutworks?.bastionPlacement),
-	  });
-	}
-	if (
-	  enableSlideRepair &&
-	  warpOutworks?.bastionPlacement?.maxima?.length &&
-	  warpOutworks.bastionPlacement.curtainPtsS?.length &&
-	  warpOutworks.bastionPlacement.sArr?.length &&
-	  warpOutworks?.field &&
-	  outerHullLoop &&
-	  Array.isArray(wallCurtainForDraw)
-
-	) {
-	  const placement = warpOutworks.bastionPlacement;
-	  const maxima = placement.maxima;
-	  const L = placement.totalLen;
-	
-	  const slideTries = Number.isFinite(ctx?.params?.warpFort?.slideMaxTries)
-	    ? Math.max(1, ctx.params.warpFort.slideMaxTries | 0)
-	    : 3;
-	
-	  // Compute failing indices deterministically (do not rely on convexStats array).
-	  // We re-check each 5-point bastion using the same strict convex repair function.
-	  const failedIndices = [];
-	  for (let i = 0; i < bastionPolysWarpedSafe.length; i++) {
-	    const poly = bastionPolysWarpedSafe[i];
-	    if (!Array.isArray(poly) || poly.length !== 5) continue;
-
-    const poly2 = ensureWinding(poly, wantCCW);
-    if (Math.abs(signedArea(poly2)) < 1e-3) {
-      failedIndices.push(i);
-      continue;
-    }
-
-    const res = repairBastionStrictConvex(poly2.slice(), centrePt, outerHullLoop, margin, K);
-    if (!res || !res.ok) failedIndices.push(i);
-  }
-
-  if (failedIndices.length && warpDebugEnabled) {
-    console.log("[slideRepair] failedIndices", failedIndices);
-  }
-
-  const { bastionPolysOut, slideStats } = slideRepairBastions({
-    bastionPolys: bastionPolysWarpedSafe,
-    failedIndices,
-    placement,
-    maxima,
-    L,
-    centrePt,
-    cx,
-    cy,
-    wantCCW,
-    outerHullLoop,
-	debug: Boolean(ctx?.params?.warpFort?.debug),
-    warpWall,
-    warpOutworks,
-    curtainMinField,
-    bastionOuterInset,
-    bastionsBuiltFromMaxima,
-
-    slideTries,
-    margin,
-    K,
-
-    // Dependencies
-    warpPolylineRadial,
-    clampPolylineRadial,
-    clampPolylineInsidePolyAlongRays,
-    ensureWinding,
-    signedArea,
-    repairBastionStrictConvex,
-
-    bastionCentroid,
-    nearestSampleIndex,
-    nearestMaximaIndex,
-
-    // Wrap builder so we preserve your shoulderSpanToTip param.
-    buildPentBastionAtSampleIndex: (args) => buildPentBastionAtSampleIndex({
-      ...args,
-      shoulderSpanToTip: ctx?.params?.warpFort?.bastionShoulderSpanToTip,
-    }),
-  });
-
-  bastionPolysWarpedSafe = bastionPolysOut;
-  warpOutworks.bastionSlideRepair = slideStats;
-		if (ctx?.params?.warpFort?.debug) {
-		  const polys = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-		
-		  function d(a, b) {
-		    if (!a || !b) return NaN;
-		    return Math.hypot(b.x - a.x, b.y - a.y);
-		  }
-		
-		  function cross(ax, ay, bx, by) { return ax * by - ay * bx; }
-		
-		  function isStrictConvex5(p, wantCCW, eps = 1e-9) {
-		    if (!Array.isArray(p) || p.length !== 5) return { ok: false, why: "not_5" };
-		    let sign = 0;
-		    for (let i = 0; i < 5; i++) {
-		      const a = p[i];
-		      const b = p[(i + 1) % 5];
-		      const c = p[(i + 2) % 5];
-		      const abx = b.x - a.x, aby = b.y - a.y;
-		      const bcx = c.x - b.x, bcy = c.y - b.y;
-		      const z = cross(abx, aby, bcx, bcy);
-		      if (!Number.isFinite(z) || Math.abs(z) < eps) return { ok: false, why: "collinear_turn", i };
-		      const s = z > 0 ? 1 : -1;
-		      if (sign === 0) sign = s;
-		      else if (s !== sign) return { ok: false, why: "non_convex", i };
-		    }
-		    if (wantCCW && sign < 0) return { ok: false, why: "wrong_winding" };
-		    if (!wantCCW && sign > 0) return { ok: false, why: "wrong_winding" };
-		    return { ok: true };
-		  }
-		
-		  const eps = Number.isFinite(ctx?.params?.warpFort?.bastionTriEps) ? ctx.params.warpFort.bastionTriEps : 1.0;
-		
-		  for (let i = 0; i < polys.length; i++) {
-		    const p = polys[i];
-		    if (!Array.isArray(p)) {
-		      console.warn("[Warp110] bastion diag", { i, kind: "not_array" });
-		      continue;
-		    }
-		
-		    const n = p.length;
-		    const a = (typeof signedArea === "function" && n >= 3) ? signedArea(p) : null;
-		
-		    // Only meaningful for 5-point bastions.
-		    let shoulderGap = null;
-		    let baseGap = null;
-		    let tipShoulder0 = null;
-		    let tipShoulder1 = null;
-		
-		    if (n === 5) {
-		      // Expected layout: [B0, S0, T, S1, B1]
-		      baseGap = d(p[0], p[4]);
-		      shoulderGap = d(p[1], p[3]);
-		      tipShoulder0 = d(p[2], p[1]);
-		      tipShoulder1 = d(p[2], p[3]);
-		    }
-		
-		    const convex = isStrictConvex5(p, wantCCW);
-		
-		    // Triangle-like heuristics (pure diagnostics, no behaviour change)
-		    const triFlags = [];
-		    if (n === 5 && Number.isFinite(shoulderGap) && shoulderGap < eps) triFlags.push("shoulders_collapsed");
-		    if (n === 5 && Number.isFinite(baseGap) && baseGap < eps) triFlags.push("base_collapsed");
-		    if (n === 5 && convex.ok === false) triFlags.push(`convex_fail:${convex.why}`);
-		
-		    if (triFlags.length) {
-		      console.warn("[Warp110] bastion TRIANGLE-LIKE", {
-		        i,
-		        n,
-		        areaSigned: a,
-		        baseGap,
-		        shoulderGap,
-		        tipShoulder0,
-		        tipShoulder1,
-		        triFlags,
-		      });
-		    } else {
-		      console.info("[Warp110] bastion ok", { i, n, areaSigned: a, baseGap, shoulderGap });
-		    }
-		  }
+		{
+		  const slideRes = runSlideRepairPass({
+		    ctx,
+		    warpDebugEnabled,
+		    bastionPolysWarpedSafe,
+		    wantCCW,
+		    centrePt,
+		    outerHullLoop,
+		    margin,
+		    K,
+		    warpOutworks,
+		    wallCurtainForDraw,
+		    warpWall,
+		    curtainMinField,
+		    bastionOuterInset,
+		    bastionsBuiltFromMaxima,
+		    warpPolylineRadial,
+		    clampPolylineRadial,
+		    ensureWinding,
+		    repairBastionStrictConvex,
+		    polyAreaSigned: signedArea,
+		  });
+		  bastionPolysWarpedSafe = slideRes.bastionPolysOut;
+		  if (slideRes.convexStats) bastionConvexSummary = slideRes.convexStats;
 		}
-		if (ctx?.params?.warpFort?.debug) {
-		  const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
-		  const nonNull = arr.filter(p => Array.isArray(p) && p.length >= 3).length;
-		  console.info("[Warp110] bastions AFTER slide repair", { n: arr.length, nonNull });
-		}
-  // Optional: refresh convex summary after sliding (summary-only).
-  const refreshed = repairBastionsStrictConvex({
-    bastionPolys: bastionPolysWarpedSafe,
-    wantCCW,
-    areaEps: 1e-3,
-    ensureWinding,
-    polyAreaSigned: signedArea,
-    repairOne: (poly, opts) => {
-      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
-      if (!r) return { ok: false, reason: "repairBastionStrictConvex returned null" };
-      return (r.ok && Array.isArray(r.poly)) ? { ok: true, poly: r.poly } : { ok: false, reason: r.reason || "repair failed" };
-    },
-    repairOpts: {}, // already bound above via closure values
-  });
-
-  bastionConvexSummary = refreshed.convexStats;
-}
     // Debug: record final count and whether we have enough placement candidates.
     if (warpOutworks && warpOutworks.bastionPlacement) {
       const soft = ctx?.params?.bastionSoft || null;
