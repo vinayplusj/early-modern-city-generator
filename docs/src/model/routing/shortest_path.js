@@ -16,9 +16,7 @@
 // - Graph adjacency lists should already be sorted by (to, edgeId). This module does not rely
 //   on that for correctness, but it helps stable behaviour.
 
-function isFiniteNumber(x) {
-  return Number.isFinite(x);
-}
+import { isFiniteNumber } from "../util/numbers.js";
 
 function assertGraph(graph) {
   if (!graph || typeof graph !== "object") {
