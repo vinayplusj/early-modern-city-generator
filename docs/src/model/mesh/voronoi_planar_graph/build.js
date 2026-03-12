@@ -1,7 +1,6 @@
 // docs/src/model/mesh/voronoi_planar_graph/build.js
 
 import {
-  isFiniteNumber,
   quantKey,
   wardPoly,
   ensureAdjSize,
