@@ -17,6 +17,7 @@
 // No imports; keep dependency-free.
 
 import { assert } from "../util/assert.js";
+import { toIntId } from "../util/ids.js";
 
 // ---------- Min-heap (priority queue) ----------
 class MinHeap {
@@ -83,19 +84,6 @@ class MinHeap {
       i = m;
     }
   }
-}
-
-// ---------- Helpers ----------
-function toIntId(id, label) {
-  if (typeof id === "number") {
-    assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
-    return id | 0;
-  }
-  if (typeof id === "string") {
-    assert(/^-?\d+$/.test(id), `Non-integer ${label} id string: "${id}"`);
-    return (Number(id) | 0);
-  }
-  throw new Error(`Unsupported ${label} id type: ${typeof id}`);
 }
 
 /**
