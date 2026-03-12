@@ -4,15 +4,13 @@
 // Stage 110: Warp field (FortWarp) + bastion polygon warping.
 
 import { warpPolylineRadial } from "../warp.js";
-import { auditRadialClamp, auditPolyContainment } from "../debug/fortwarp_audit.js";
-import { convexHull } from "../../geom/hull.js";
+import { buildBastionHull, runFortWarpAudits } from "../debug/fortwarp_audit.js";
 import {
   buildFortWarp,
   clampPolylineRadial,
   resampleClosedPolyline,
 } from "../generate_helpers/warp_stage.js";
 import { repairBastionStrictConvex } from "../generate_helpers/bastion_convexity.js";
-import { buildCompositeWallFromCurtainAndBastions } from "../generate_helpers/composite_wall_builder.js"; 
 import { shrinkOutworksToFit } from "../generate_helpers/outworks_shrink_fit.js";
 import {
   clampCurtainPostConditions,
@@ -30,12 +28,12 @@ import { loopPerimeter } from "../../geom/loop_metrics.js";
 import { ensureWinding , signedArea} from "../../geom/poly.js";
 import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hints.js";
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
-import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
 import {
   deriveBastionPlacementFromCurtain,
   warpBastionPolysThroughFields,
+  resolveCompositeWallForDraw,
+  buildStage110Return,
 } from "../generate_helpers/warpfield_pipeline.js";
-import { pruneBastionsByCurtainIntervals } from "../generate_helpers/bastion_interval_prune.js";
 
 /**
  * @param {object} args
@@ -594,139 +592,48 @@ export function runWarpFieldStage({
       };
     }
   
- // ---------------- Bastion hull (global convex hull) ----------------
-  // Compute convex hull of the FINAL bastion vertices (after any shrinking).
-  // This must remain a convex hull; do not clamp the hull itself.
-  let bastionHullWarpedSafe = null;
+  const bastionHullWarpedSafe = buildBastionHull(bastionPolysWarpedSafe);
 
-  if (Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length) {
-    const pts = [];
-    for (const poly of bastionPolysWarpedSafe) {
-      if (!Array.isArray(poly) || poly.length < 3) continue;
-      for (const p of poly) {
-        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
-      }
-
-    }
-
-    if (pts.length >= 3) {
-      const h = convexHull(pts);
-      if (Array.isArray(h) && h.length >= 3) {
-        bastionHullWarpedSafe = h;
-      }
-    }
-  }
-
-  // Debug audits (preserve same log behaviour).
-  if (warpDebugEnabled) {
-  auditWallDeterministicOutsideInnerHull({
-    debugEnabled: warpDebugEnabled,
+  runFortWarpAudits({
+    warpDebugEnabled,
+    auditWallDeterministicOutsideInnerHull,
     wallCurtainForDraw,
     innerHull,
-    centre: { x: cx, y: cy },
-    margin: Number.isFinite(warpWall?.clampMinMargin) ? warpWall.clampMinMargin : 2,
+    cx,
+    cy,
+    warpWall,
+    bastionPolysWarpedSafe,
+    warpOutworks,
+    outerHullLoop,
+    bastionPlacement,
   });
 
-    auditRadialClamp({
-      name: "BASTIONS",
-      polys: bastionPolysWarpedSafe,
-      minField: warpOutworks?.minField,
-      maxField: warpOutworks?.maxField,
-      cx,
-      cy,
-      minMargin: warpOutworks?.clampMinMargin,
-      maxMargin: warpOutworks?.clampMaxMargin,
-      debugEnabled: true,
-    });
-    auditPolyContainment({
-      name: "BASTIONS",
-      polys: bastionPolysWarpedSafe,
-      containerPoly: outerHullLoop, // the same loop used for enforcement
-      debugEnabled: true,
-});
-
-  }
-
-    if (warpDebugEnabled && bastionPlacement) {
-    console.log("[bastionPlacement]", {
-      want: bastionPlacement.want,
-      minSpacing: bastionPlacement.minSpacing,
-      top3: bastionPlacement.maxima.slice(0, 3),
-    });
-  }
   // ---------------------------------------------------------------------------
   // Final composite wall for rendering:
   // Build from FINAL warped bastion polygons (after clamp + shrink + reclamp).
   // This is the only geometry that is guaranteed to match the orange bastions.
   // ---------------------------------------------------------------------------
-  let wallForDraw = wallFinal;
-  let bastionPolysForComposite = bastionPolysWarpedSafe;
-  // Prefer a composite final wall built from the FINAL warped curtain + FINAL bastions.
-  // This keeps bastionHullWarpedSafe for debug only.
-	const compositeWall = buildCompositeWallFromCurtainAndBastions(
-	  wallCurtainForDraw,
-	  bastionPolysForComposite
-	);
-	  // ---------------------------------------------------------------------------
-  // Deterministically prune bastions that reserve overlapping or too-close
-  // curtain intervals before composite-wall assembly.
-  // This prevents neighbouring bastions (such as bi:2 and bi:3) from crowding
-  // the same sector and creating reflex splice kinks.
-  // ---------------------------------------------------------------------------
+  const {
+    compositeWall,
+    wallForDraw,
+  } = resolveCompositeWallForDraw({
+    ctx,
+    warpDebugEnabled,
+    wallFinal,
+    wallCurtainForDraw,
+    bastionPolysWarpedSafe,
+    cx,
+    compositeDebugOnlyEast: true,
+  });
 
 
-  if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 8 &&
-      Array.isArray(bastionPolysWarpedSafe) && bastionPolysWarpedSafe.length > 1) {
-    const minGapSamples = Number.isFinite(ctx?.params?.warpFort?.bastionCompositeGapSamples)
-      ? Math.max(0, ctx.params.warpFort.bastionCompositeGapSamples | 0)
-      : 3;
-
-    const pruneRes = pruneBastionsByCurtainIntervals({
-      curtain: wallCurtainForDraw,
-      bastions: bastionPolysWarpedSafe,
-      minGapSamples,
-      debug: Boolean(warpDebugEnabled),
-    });
-
-    if (Array.isArray(pruneRes?.bastionsOut) && pruneRes.bastionsOut.length) {
-      bastionPolysForComposite = pruneRes.bastionsOut;
-    }
-  }
-	if (ctx?.params?.warpFort?.debug) {
-	  console.info("[Warp110] compositeWall decision", {
-	    wallCurtainForDrawN: Array.isArray(wallCurtainForDraw) ? wallCurtainForDraw.length : null,
-	    bastionPolysN: Array.isArray(bastionPolysForComposite) ? bastionPolysForComposite.length : null,
-	    compositeWallN: Array.isArray(compositeWall) ? compositeWall.length : null,
-	    willUseComposite: Array.isArray(compositeWall) && compositeWall.length >= 3,
-	  });
-	debugCompositeWallSplices({
-	  wallCurtainForDraw,
-	  bastionPolys: bastionPolysForComposite,
-	  compositeWall,
-	  cx,
-	  onlyEast: true,
-	  enabled: Boolean(warpDebugEnabled),
-	});
-	}
-  if (Array.isArray(compositeWall) && compositeWall.length >= 3) {
-    wallForDraw = compositeWall;
-  } else if (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3) {
-    // Fallback to warped curtain (better than pre-warp wallFinal)
-    wallForDraw = wallCurtainForDraw;
-  }
-
-
-  return {
-    warpWall: warpWall ?? null,
-    warpOutworks: warpOutworks ?? null,
-    wallForDraw: (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null,
-	wallCurtainForDraw:
-	  (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
-	    ? wallCurtainForDraw
-	    : null,
-	drawPlainCurtain:
-  		!(Array.isArray(compositeWall) && compositeWall.length >= 3),
-    bastionPolysWarpedSafe: Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : null,
-    bastionHullWarpedSafe: (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3) ? bastionHullWarpedSafe : null,
-  };
+  return buildStage110Return({
+    warpWall,
+    warpOutworks,
+    wallForDraw,
+    wallCurtainForDraw,
+    compositeWall,
+    bastionPolysWarpedSafe,
+    bastionHullWarpedSafe,
+  });
 }
