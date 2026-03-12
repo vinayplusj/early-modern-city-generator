@@ -106,3 +106,90 @@ export function repairBastionsStrictConvex({
 export function checkBastionsStrictConvex(args = {}) {
   return repairBastionsStrictConvex(args);
 }
+
+
+export function runStrictConvexRepairPass({
+  ctx,
+  bastionPolysWarpedSafe,
+  wantCCW,
+  centrePt,
+  outerHullLoop,
+  margin,
+  K,
+  ensureWinding,
+  repairBastionStrictConvex,
+  polyAreaSigned = signedArea,
+}) {
+  if (ctx?.params?.warpFort?.debug) {
+    const arr = Array.isArray(bastionPolysWarpedSafe) ? bastionPolysWarpedSafe : [];
+    const lens = arr.slice(0, 5).map(p => Array.isArray(p) ? p.length : null);
+
+    const areaSamples = [];
+    for (let i = 0; i < Math.min(5, arr.length); i++) {
+      try {
+        const a = (typeof polyAreaSigned === "function") ? polyAreaSigned(arr[i]) : null;
+        areaSamples.push(a);
+      } catch (e) {
+        areaSamples.push("ERR");
+      }
+    }
+
+    console.info("[Warp110] bastions BEFORE strict repair", {
+      n: arr.length,
+      sampleLens: lens,
+      signedAreaType: typeof polyAreaSigned,
+      areaEps: 1e-3,
+      margin,
+      K,
+      areaSamples,
+    });
+  }
+
+  const { bastionPolysOut, convexStats } = repairBastionsStrictConvex({
+    bastionPolys: bastionPolysWarpedSafe,
+    wantCCW,
+    areaEps: 1e-3,
+    ensureWinding,
+    polyAreaSigned,
+    repairOne: (poly) => {
+      const r = repairBastionStrictConvex(poly, centrePt, outerHullLoop, margin, K);
+
+      if (ctx?.params?.warpFort?.debug && (!r || !r.ok)) {
+        console.info("[Warp110] repairBastionStrictConvex raw return", r);
+      }
+      if (ctx?.params?.warpFort?.debug && (!r || !r.ok)) {
+        const a = (typeof polyAreaSigned === "function") ? polyAreaSigned(poly) : null;
+        console.info("[Warp110] repairBastionStrictConvex FAIL", {
+          nVerts: Array.isArray(poly) ? poly.length : null,
+          areaSigned: a,
+          margin,
+          K,
+          reason: r && r.reason ? r.reason : null,
+        });
+      }
+      if (!r) {
+        return { ok: false, reason: "repairBastionStrictConvex returned null" };
+      }
+      if (r.ok && Array.isArray(r.poly)) {
+        return { ok: true, poly: r.poly };
+      }
+      if (r.note === "fallback_keep_current" && Array.isArray(r.poly)) {
+        return { ok: true, poly: r.poly };
+      }
+      return { ok: false, reason: r.reason || r.note || "repair failed" };
+    },
+  });
+
+  if (ctx?.params?.warpFort?.debug) {
+    const outArr = Array.isArray(bastionPolysOut) ? bastionPolysOut : [];
+    const nonNull = outArr.filter(p => Array.isArray(p) && p.length >= 3).length;
+
+    console.info("[Warp110] bastions AFTER strict repair", {
+      nOut: outArr.length,
+      nonNull,
+      convexStats: convexStats || null,
+    });
+  }
+
+  return { bastionPolysOut, convexStats };
+}
