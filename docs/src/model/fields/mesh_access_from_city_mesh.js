@@ -13,10 +13,7 @@
 // - It throws with clear messages if it cannot infer required structures.
 import { dist2 } from "../../geom/primitives.js";
 import { assert } from "../util/assert.js";
-
-function isFiniteNonNegInt(n) {
-  return Number.isFinite(n) && (n | 0) === n && n >= 0;
-}
+import { toIntId, isFiniteNonNegInt } from "../util/ids.js";
 
 function getArrayLen(obj, propName) {
   const v = obj[propName];
@@ -30,19 +27,6 @@ function tryCallCountFn(obj, fnName) {
   const n = fn.call(obj);
   if (!Number.isFinite(n)) return null;
   return n | 0;
-}
-
-function toIntId(id, label) {
-  if (typeof id === "number") {
-    assert(Number.isFinite(id), `Non-finite ${label} id: ${id}`);
-    return id | 0;
-  }
-  if (typeof id === "string") {
-    // Accept strictly-integer strings only.
-    assert(/^-?\d+$/.test(id), `Non-integer ${label} id string: "${id}"`);
-    return (Number(id) | 0);
-  }
-  throw new Error(`Unsupported ${label} id type: ${typeof id}`);
 }
 
 function getXYFromVertex(v) {
