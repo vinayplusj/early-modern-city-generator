@@ -7,13 +7,6 @@ export function finitePoint(p) {
   return p && isFiniteNumber(p.x) && isFiniteNumber(p.y);
 }
 
-export function clampInt(n, lo, hi) {
-  if (!Number.isInteger(n)) return lo;
-  if (n < lo) return lo;
-  if (n > hi) return hi;
-  return n;
-}
-
 export function uniqueConsecutiveNodes(nodes) {
   const out = [];
   let prev = null;
