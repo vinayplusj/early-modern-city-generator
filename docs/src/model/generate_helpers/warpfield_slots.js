@@ -78,3 +78,33 @@ export function nearestMaximaIndex(maxima, s0, L) {
 
   return bestI;
 }
+
+
+export function computeLocalSpacingByMaxima(maxima, totalLen) {
+  const out = new Map();
+
+  if (!Array.isArray(maxima) || maxima.length === 0 || !Number.isFinite(totalLen) || totalLen <= 0) {
+    return out;
+  }
+
+  const maximaByS = maxima.slice().sort((a, b) => a.s - b.s);
+
+  for (let j = 0; j < maximaByS.length; j++) {
+    const prev = maximaByS[(j - 1 + maximaByS.length) % maximaByS.length];
+    const cur = maximaByS[j];
+    const next = maximaByS[(j + 1) % maximaByS.length];
+
+    const dPrev = (cur.s - prev.s + totalLen) % totalLen;
+    const dNext = (next.s - cur.s + totalLen) % totalLen;
+
+    out.set(cur.i, Math.min(dPrev, dNext));
+  }
+
+  return out;
+}
+
+export function selectTopMaxima(maxima, count) {
+  if (!Array.isArray(maxima) || maxima.length === 0) return [];
+  if (!Number.isFinite(count) || count <= 0) return [];
+  return maxima.slice(0, Math.max(0, count | 0));
+}
