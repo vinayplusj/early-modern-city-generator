@@ -14,11 +14,7 @@
 // - Multiple disjoint components are supported; we keep the largest as polygon for now.
 
 import { centroid, pointInPolyOrOn } from "../geom/poly.js";
-
-function wrapAngle(a) {
-  const t = a % (Math.PI * 2);
-  return t < 0 ? t + Math.PI * 2 : t;
-}
+import { wrapAngle } from "./util/circular.js";
 
 function titleCase(s) {
   const t = String(s || "").replace(/_/g, " ");
