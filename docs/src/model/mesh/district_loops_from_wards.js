@@ -11,7 +11,7 @@
 import { centroid, pointInPolyOrOn, signedArea } from "../../geom/poly.js";
 import { isPoint } from "../../geom/primitives.js";
 import { loopMetrics } from "../../geom/loop_metrics.js";
-import { buildLoopsFromPolys } from "./loops_from_polys.js";
+import { buildLoopsFromPolys, mergeOutlineFromPolys, polyArea } from "./loops_from_polys.js";
 
 export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
   const wardArr = Array.isArray(wards) ? wards : [];
@@ -160,4 +160,52 @@ export function buildDistrictLoopsFromWards(wards, memberWardIds, opts = {}) {
     warnings,
     preferPointInside,
   };
+}
+
+export function deriveDistrictLoopsFromWardPolys(memberWards) {
+  const polys = [];
+  for (const w of memberWards || []) {
+    const poly = w?.poly;
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    polys.push(poly);
+  }
+
+  if (polys.length === 0) {
+    return { outer: null, holes: [], loops: [], eps: 0 };
+  }
+
+  const { loops, eps } = mergeOutlineFromPolys(polys);
+  if (!loops || loops.length === 0) {
+    return { outer: null, holes: [], loops: [], eps };
+  }
+
+  let outerIdx = -1;
+  let outer = null;
+  let bestAbsArea = -Infinity;
+
+  for (let i = 0; i < loops.length; i++) {
+    const l = loops[i];
+    if (!Array.isArray(l) || l.length < 3) continue;
+    const a = Math.abs(polyArea(l));
+    if (a > bestAbsArea) {
+      bestAbsArea = a;
+      outerIdx = i;
+      outer = l;
+    }
+  }
+
+  if (!outer || outer.length < 3) {
+    return { outer: null, holes: [], loops, eps };
+  }
+
+  const holes = [];
+  for (let i = 0; i < loops.length; i++) {
+    if (i === outerIdx) continue;
+    const l = loops[i];
+    if (!Array.isArray(l) || l.length < 3) continue;
+    const c = centroid(l);
+    if (c && pointInPolyOrOn(c, outer, 1e-6)) holes.push(l);
+  }
+
+  return { outer, holes, loops, eps };
 }
