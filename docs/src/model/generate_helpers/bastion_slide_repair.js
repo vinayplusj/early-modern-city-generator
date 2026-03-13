@@ -9,7 +9,7 @@
 import { signedArea, areaAbs } from "../../geom/poly.js";
 import { repairBastionsStrictConvex } from "./bastion_convex_repair.js";
 import { bastionCentroid } from "./bastion_geom.js";
-import { nearestSampleIndex } from "./warpfield_slots.js";
+import { nearestSampleIndex, nearestMaximaIndex } from "./warpfield_slots.js";
 
 function _validPoly(poly) {
   return Array.isArray(poly) && poly.length >= 3;
