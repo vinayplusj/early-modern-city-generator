@@ -6,8 +6,6 @@
 import { offsetRadial } from "../../geom/offset.js";
 import { snapGatesToWall } from "../generate_helpers/snap.js";
 import { resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
-import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
-import { buildBoundaryExits } from "../boundary/build_boundary_exits.js";
 
 /**
  * @param {object} args
@@ -37,9 +35,6 @@ export function runWarpDependentFortGeometryStage({
   warpWall,
   gates,
   primaryGate,
-  fortCentre,
-  outerBoundary,
-  routingMesh,
 }) {
   const fortR = (warpWall && warpWall.params && Number.isFinite(warpWall.params.bandOuter))
     ? warpWall.params.bandOuter
@@ -100,47 +95,7 @@ export function runWarpDependentFortGeometryStage({
     ? snapGatesToWall([primaryGate], cx, cy, wallForGateSnap)[0]
     : primaryGate;
 
-  const rings = { ring, ring2 };
-  const anchorsPatch = {
-    gates: gatesWarped,
-    primaryGate: primaryGateWarped,
-  };
-
-  let gatePortals = null;
-  let boundaryExits = null;
-
-  if (routingMesh && routingMesh.cityMesh && routingMesh.boundaryBinding) {
-    gatePortals = buildGatePortals({
-      cityMesh: routingMesh.cityMesh,
-      boundaryBinding: routingMesh.boundaryBinding,
-      gates: gatesWarped,
-    });
-
-    if (!Array.isArray(gatePortals)) {
-      throw new Error("[EMCG] Stage 120 produced invalid gatePortals (expected array).");
-    }
-    if (gatePortals.length !== gatesWarped.length) {
-      throw new Error("[EMCG] Stage 120 gatePortals length mismatch with gatesWarped.");
-    }
-  }
-
-  if (Array.isArray(outerBoundary) && outerBoundary.length >= 3) {
-    boundaryExits = buildBoundaryExits({
-      outerBoundary,
-      centre: fortCentre,
-      gates: gatesWarped,
-      gatePortals: gatePortals || [],
-    });
-
-    if (!Array.isArray(boundaryExits)) {
-      throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
-    }
-    if (boundaryExits.length !== gatesWarped.length) {
-      throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
-    }
-  }
-
-  return {
+  const fortGeometryWarped = {
     fortR,
     ditchWidth,
     glacisWidth,
@@ -150,12 +105,59 @@ export function runWarpDependentFortGeometryStage({
     glacisOuter,
     ring,
     ring2,
-    rings,
     wallForGateSnap,
     gatesWarped,
     primaryGateWarped,
-    anchorsPatch,
-    gatePortals,
-    boundaryExits,
   };
+
+  const rings = { ring, ring2 };
+
+  if (!ctx?.state?.routingMesh?.cityMesh || !ctx?.state?.routingMesh?.boundaryBinding) {
+    throw new Error("[EMCG] Stage 120 requires routingMesh.cityMesh and routingMesh.boundaryBinding (Stage 70 output).");
+  }
+
+  const gatePortals = buildGatePortals({
+    cityMesh: ctx.state.routingMesh.cityMesh,
+    boundaryBinding: ctx.state.routingMesh.boundaryBinding,
+    gates: gatesWarped,
+  });
+  if (!Array.isArray(gatePortals)) {
+    throw new Error("[EMCG] Stage 120 produced invalid gatePortals (expected array).");
+  }
+  if (gatePortals.length !== gatesWarped.length) {
+    throw new Error("[EMCG] Stage 120 gatePortals length mismatch with gatesWarped.");
+  }
+
+  const outerBoundary = ctx?.state?.outerBoundary;
+  if (!Array.isArray(outerBoundary) || outerBoundary.length < 3) {
+    throw new Error("[EMCG] Stage 120 requires ctx.state.outerBoundary (Stage 30 output) for boundaryExits.");
+  }
+
+  const boundaryExits = buildBoundaryExits({
+    outerBoundary,
+    centre: ctx?.state?.fortifications?.centre || { x: cx, y: cy },
+    gates: gatesWarped,
+    gatePortals,
+  });
+  if (!Array.isArray(boundaryExits)) {
+    throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
+  }
+  if (boundaryExits.length !== gatesWarped.length) {
+    throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
+  }
+
+  if (ctx?.state) {
+    ctx.state.rings = rings;
+    if (ctx.state.anchors) {
+      ctx.state.anchors.gates = gatesWarped;
+      ctx.state.anchors.primaryGate = primaryGateWarped;
+    }
+    if (ctx.state.routingMesh) {
+      ctx.state.routingMesh.gatePortals = gatePortals;
+    }
+    ctx.state.gatePortals = gatePortals;
+    ctx.state.boundaryExits = boundaryExits;
+  }
+
+  return fortGeometryWarped;
 }
