@@ -26,6 +26,13 @@ export function runOutworksStage({
   warpOutworks,
   warpDebugEnabled,
 }) {
+  if (!Array.isArray(bastionPolysWarpedSafe)) {
+    throw new Error("[EMCG] Stage 150 requires bastionPolysWarpedSafe (Stage 110 output).");
+  }
+  if (!Array.isArray(wallForOutworks) || wallForOutworks.length < 3) {
+    throw new Error("[EMCG] Stage 150 requires wallForOutworks polyline (Stage 110 output).");
+  }
+
   let ravelins = (gatesWarped || [])
     .filter((g) => !(primaryGateWarped && g.idx === primaryGateWarped.idx))
     .map((g) =>
