@@ -25,8 +25,6 @@ import { runRoadGraphAndBlocksStage } from "../stages/170_road_graph_and_blocks.
 import { runDebugInvariantsStage } from "../stages/900_debug_invariants.js";
 import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.js";
 import { runFieldsStage } from "../stages/075_fields.js";
-import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
-import { buildBoundaryExits } from "../boundary/build_boundary_exits.js";
 import { runWardFieldMetricsStage } from "../stages/085_ward_field_metrics.js";
 
 export const PIPELINE_STAGES = [
@@ -80,17 +78,9 @@ export const PIPELINE_STAGES = [
         warpDebugEnabled,
       });
 
-      ctx.state.newTown = nt;
-
-      // Canonical outputs used later
-      ctx.state.primaryGate = nt.primaryGate;
-      ctx.state.bastionWarpInputs = {
-        bastionsForWarp: nt.bastionsForWarp,
-        bastionPolys: nt.bastionPolys,
-      };
-
-      // Preserve existing ctx write (legacy)
-      ctx.primaryGate = nt.primaryGate;
+ctx.state.newTown = nt;
+ctx.state.primaryGate = nt.primaryGate;
+ctx.state.bastionWarpInputs = nt.bastionWarpInputs;
     },
   },
 
@@ -194,32 +184,20 @@ export const PIPELINE_STAGES = [
       if (!outerBoundary) throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
       if (!waterModel) throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
 
-      const meshOut = runRoutingMeshStage({
-        ctx,
-        wardsWithRoles: wards.wardsWithRoles,
-        anchors,
-        waterKind: env.waterKind,
-        waterModel,
-        outerBoundary,
-        cx: env.cx,
-        cy: env.cy,
-        baseR: env.baseR,
-      });
-      
-      ctx.state.routingMesh = {
-        cityMesh: meshOut.cityMesh,
-        graph: meshOut.graph,
-        waterModel: meshOut.waterModel,
+const meshOut = runRoutingMeshStage({
+  ctx,
+  wardsWithRoles: wards.wardsWithRoles,
+  anchors,
+  waterKind: env.waterKind,
+  waterModel,
+  outerBoundary,
+  cx: env.cx,
+  cy: env.cy,
+  baseR: env.baseR,
+});
 
-        // Needed for Milestone 4.8+ adoption:
-        // vorGraph.cells carry { wardId } which CityMesh faces do not retain.
-        vorGraph: meshOut.vorGraph,
-
-        // Option 1 hook for Milestone 5 exterior roads and biome fills
-        boundaryBinding: meshOut.boundaryBinding,
-      };
-      
-      ctx.state.waterModel = meshOut.waterModel;
+ctx.state.routingMesh = meshOut.routingMesh;
+ctx.state.waterModel = meshOut.waterModel;
     },
   },
   
@@ -374,60 +352,27 @@ export const PIPELINE_STAGES = [
       const gatesOriginal = fort.gates;
       const primaryGate = ctx.state.primaryGate ?? null;
 
-      const fortGeom = runWarpDependentFortGeometryStage({
-        ctx,
-        cx: env.cx,
-        cy: env.cy,
-        wallR: fort.wallR,
-        wallBase: fort.wallBase,
-        wallWarped,
-        warpWall,
-        gates: gatesOriginal,
-        primaryGate,
-      });
+const fortGeom = runWarpDependentFortGeometryStage({
+  ctx,
+  cx: env.cx,
+  cy: env.cy,
+  wallR: fort.wallR,
+  wallBase: fort.wallBase,
+  wallWarped,
+  warpWall,
+  gates: gatesOriginal,
+  primaryGate,
+  fortCentre: fort.centre,
+  outerBoundary: ctx.state.outerBoundary,
+  routingMesh: ctx.state.routingMesh,
+});
 
-      ctx.state.fortGeometryWarped = fortGeom;
-      ctx.state.rings = { ring: fortGeom.ring, ring2: fortGeom.ring2 };
-
-      // Keep anchors canonical updated
-      ctx.state.anchors.gates = fortGeom.gatesWarped;
-      ctx.state.anchors.primaryGate = fortGeom.primaryGateWarped;
-      const rm = ctx.state.routingMesh;
-      if (!rm || !rm.cityMesh || !rm.boundaryBinding) {
-        throw new Error("[EMCG] Stage 120 requires routingMesh.cityMesh and routingMesh.boundaryBinding (Stage 70 output).");
-      }
-      
-      rm.gatePortals = buildGatePortals({
-        cityMesh: rm.cityMesh,
-        boundaryBinding: rm.boundaryBinding,
-        gates: fortGeom.gatesWarped,
-      });
-      if (!Array.isArray(rm.gatePortals)) {
-        throw new Error("[EMCG] Stage 120 produced invalid gatePortals (expected array).");
-      }
-      if (rm.gatePortals.length !== fortGeom.gatesWarped.length) {
-        throw new Error("[EMCG] Stage 120 gatePortals length mismatch with gatesWarped.");
-      }
-      
-      ctx.state.gatePortals = rm.gatePortals;
-      const outerBoundary = ctx.state.outerBoundary;
-      if (!Array.isArray(outerBoundary) || outerBoundary.length < 3) {
-        throw new Error("[EMCG] Stage 120 requires ctx.state.outerBoundary (Stage 30 output) for boundaryExits.");
-      }
-      
-      ctx.state.boundaryExits = buildBoundaryExits({
-        outerBoundary,
-        centre: fort.centre,
-        gates: fortGeom.gatesWarped,
-        gatePortals: ctx.state.gatePortals,
-      });
-      
-      if (!Array.isArray(ctx.state.boundaryExits)) {
-        throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
-      }
-      if (ctx.state.boundaryExits.length !== fortGeom.gatesWarped.length) {
-        throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
-      }
+ctx.state.fortGeometryWarped = fortGeom;
+ctx.state.rings = fortGeom.rings;
+ctx.state.anchors.gates = fortGeom.anchorsPatch.gates;
+ctx.state.anchors.primaryGate = fortGeom.anchorsPatch.primaryGate;
+ctx.state.gatePortals = fortGeom.gatePortals;
+ctx.state.boundaryExits = fortGeom.boundaryExits;
     },
   },
 
@@ -451,23 +396,21 @@ export const PIPELINE_STAGES = [
       if (!fort) throw new Error("[EMCG] Stage 130 requires ctx.state.fortifications (Stage 10 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 130 requires ctx.state.fortGeometryWarped (Stage 120 output).");
 
-      const docks = runDocksStage({
-        hasDock: env.hasDock,
-        anchors,
-        newTown: newTown.newTown,
-        outerBoundary,
-        wallBase: fortGeom.wallBaseForDraw,
-        centre: fort.centre,
-        waterModel,
-        width: env.width,
-        height: env.height,
-      });
+const docksOut = runDocksStage({
+  hasDock: env.hasDock,
+  anchors,
+  newTown: newTown.newTown,
+  outerBoundary,
+  wallBase: fortGeom.wallBaseForDraw,
+  centre: fort.centre,
+  waterModel,
+  width: env.width,
+  height: env.height,
+});
 
-      ctx.state.docks = docks;
-
-      // Canonical anchor mutation
-      anchors.docks = docks;
-      ctx.state.anchors = anchors;
+ctx.state.docks = docksOut.docks;
+anchors.docks = docksOut.anchorsPatch.docks;
+ctx.state.anchors = anchors;
     },
   },
 
@@ -488,43 +431,24 @@ export const PIPELINE_STAGES = [
       if (!anchors.plaza) throw new Error("[EMCG] Stage 140 missing anchors.plaza.");
       if (!anchors.citadel) throw new Error("[EMCG] Stage 140 missing anchors.citadel.");
 
-      const primaryOut = runPrimaryRoadsStage({
-        ctx,
-        graph: routingMesh.graph,
-        waterModel: ctx.state.waterModel,
-        anchors,
-        waterKind: ctx.params.waterKind,
-        primaryGateWarped: anchors?.primaryGate || null,
-        gatesWarped: anchors?.gates || [],
-        gatePortals: ctx.state.gatePortals || [],
-        boundaryExits: ctx.state.boundaryExits || [],
-      });
-      
-      if (!primaryOut || typeof primaryOut !== "object") {
-        throw new Error("[EMCG] Stage 140 produced invalid output (expected object).");
-      }
-      
-      const {
-        primaryRoads,
-        primaryRoadsMeta,
-        snappedNodes,
-        gateForRoad,
-        primaryGatePortal,
-        primaryBoundaryExit,
-      } = primaryOut;
-      
-      if (!Array.isArray(primaryRoads) || primaryRoads.length === 0) {
-        throw new Error("[EMCG] Stage 140 produced invalid primaryRoads after stage-level fallback.");
-      }
-      if (!Array.isArray(primaryRoadsMeta)) {
-        throw new Error("[EMCG] Stage 140 invariant failed: primaryRoadsMeta must be an array.");
-      }
-      ctx.state.primaryRoads = primaryRoads;
-      ctx.state.primaryRoadsMeta = Array.isArray(primaryRoadsMeta) ? primaryRoadsMeta : [];
-      ctx.state.primaryRoadsSnappedNodes = snappedNodes || { gate: null, plaza: null, citadel: null, docks: null };
-      ctx.state.primaryRoadsGateForRoad = gateForRoad || null;
-      ctx.state.primaryGatePortal = primaryGatePortal || null;
-      ctx.state.primaryBoundaryExit = primaryBoundaryExit || null;
+const primaryOut = runPrimaryRoadsStage({
+  ctx,
+  graph: routingMesh.graph,
+  waterModel: ctx.state.waterModel,
+  anchors,
+  waterKind: ctx.params.waterKind,
+  primaryGateWarped: anchors?.primaryGate || null,
+  gatesWarped: anchors?.gates || [],
+  gatePortals: ctx.state.gatePortals || [],
+  boundaryExits: ctx.state.boundaryExits || [],
+});
+
+ctx.state.primaryRoads = primaryOut.primaryRoads;
+ctx.state.primaryRoadsMeta = primaryOut.primaryRoadsMeta;
+ctx.state.primaryRoadsSnappedNodes = primaryOut.primaryRoadsSnappedNodes;
+ctx.state.primaryRoadsGateForRoad = primaryOut.primaryRoadsGateForRoad;
+ctx.state.primaryGatePortal = primaryOut.primaryGatePortal;
+ctx.state.primaryBoundaryExit = primaryOut.primaryBoundaryExit;
     },
   },
 
@@ -552,27 +476,21 @@ export const PIPELINE_STAGES = [
         throw new Error("[EMCG] Stage 150 requires wallForOutworks polyline (Stage 110 output).");
       }
 
-      const outworks = runOutworksStage({
-        gatesWarped: fortGeom.gatesWarped,
-        primaryGateWarped: fortGeom.primaryGateWarped,
-        cx: env.cx,
-        cy: env.cy,
-        fortR: fortGeom.fortR,
-        ditchWidth: fortGeom.ditchWidth,
-        glacisWidth: fortGeom.glacisWidth,
-        newTown: newTown.newTown,
-        bastionCount: env.bastionCount ?? ctx.params.bastions,
-        bastionPolysWarpedSafe: bastionsSafe,
-        wallForOutworks,
-        warpOutworks: warp?.warpOutworks ?? null,
-        warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
-      });
-
-      if (outworks != null && !Array.isArray(outworks)) {
-        throw new Error("[EMCG] Stage 150 produced invalid outworks (expected array or null).");
-      }
-
-      ctx.state.outworks = outworks;
+ctx.state.outworks = runOutworksStage({
+  gatesWarped: fortGeom.gatesWarped,
+  primaryGateWarped: fortGeom.primaryGateWarped,
+  cx: env.cx,
+  cy: env.cy,
+  fortR: fortGeom.fortR,
+  ditchWidth: fortGeom.ditchWidth,
+  glacisWidth: fortGeom.glacisWidth,
+  newTown: newTown.newTown,
+  bastionCount: env.bastionCount ?? ctx.params.bastions,
+  bastionPolysWarpedSafe: bastionsSafe,
+  wallForOutworks,
+  warpOutworks: warp?.warpOutworks ?? null,
+  warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
+});
     },
   },
 
@@ -593,27 +511,25 @@ export const PIPELINE_STAGES = [
       if (!fort) throw new Error("[EMCG] Stage 160 requires ctx.state.fortifications (Stage 10 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 160 requires ctx.state.fortGeometryWarped (Stage 120 output).");
 
-      const marketOut = runMarketStage({
-        anchors,
-        wardsWithRoles: wards.wardsWithRoles,
-        wallBaseForDraw: fortGeom.wallBaseForDraw,
-        centre: fort.centre,
-        primaryGateWarped: fortGeom.primaryGateWarped,
-        cx: env.cx,
-        cy: env.cy,
-        baseR: env.baseR,
-        footprint: fort.footprint,
-        width: env.width,
-        height: env.height,
-        citadel,
-        minWallClear: ctx.params.minWallClear,
-      });
+const marketOut = runMarketStage({
+  anchors,
+  wardsWithRoles: wards.wardsWithRoles,
+  wallBaseForDraw: fortGeom.wallBaseForDraw,
+  centre: fort.centre,
+  primaryGateWarped: fortGeom.primaryGateWarped,
+  cx: env.cx,
+  cy: env.cy,
+  baseR: env.baseR,
+  footprint: fort.footprint,
+  width: env.width,
+  height: env.height,
+  citadel,
+  minWallClear: ctx.params.minWallClear,
+});
 
-      ctx.state.market = marketOut;
-      ctx.state.landmarks = marketOut.landmarks;
-
-      // Canonical anchor mutation
-      anchors.market = marketOut.marketAnchor;
+ctx.state.market = marketOut.market;
+ctx.state.landmarks = marketOut.landmarks;
+anchors.market = marketOut.anchorsPatch.market;
     },
   },
 
@@ -642,38 +558,28 @@ export const PIPELINE_STAGES = [
       if (!newTown) throw new Error("[EMCG] Stage 170 requires ctx.state.newTown (Stage 20 output).");
       if (!rings) throw new Error("[EMCG] Stage 170 requires ctx.state.rings (Stage 120 output).");
 
-      const roadsOut = runRoadGraphAndBlocksStage({
-        ctx,
-        graph: routingMesh.graph,
-        waterModel: routingMesh.waterModel,
-        anchors,
-        waterKind: env.waterKind,
-        rng: env.rng.global,
-        primaryRoads,
-        gatesWarped: fortGeom.gatesWarped,
-        ring: rings.ring,
-        ring2: rings.ring2,
-        squareCentre: anchors.plaza,
-        citCentre: anchors.citadel,
-        newTown: newTown.newTown,
-        districts,
-        wardsWithRoles: wards.wardsWithRoles,
-      });
+const roadsOut = runRoadGraphAndBlocksStage({
+  ctx,
+  graph: routingMesh.graph,
+  waterModel: routingMesh.waterModel,
+  anchors,
+  waterKind: env.waterKind,
+  rng: env.rng.global,
+  primaryRoads,
+  gatesWarped: fortGeom.gatesWarped,
+  ring: rings.ring,
+  ring2: rings.ring2,
+  squareCentre: anchors.plaza,
+  citCentre: anchors.citadel,
+  newTown: newTown.newTown,
+  districts,
+  wardsWithRoles: wards.wardsWithRoles,
+});
 
-      if (!roadsOut || typeof roadsOut !== "object") {
-        throw new Error("[EMCG] Stage 170 produced invalid output (expected object).");
-      }
-      if (!roadsOut.roadGraph) {
-        throw new Error("[EMCG] Stage 170 produced missing roadGraph.");
-      }
-      if (!Array.isArray(roadsOut.blocks)) {
-        throw new Error("[EMCG] Stage 170 produced invalid blocks (expected array).");
-      }
-
-      ctx.state.roadGraph = roadsOut.roadGraph;
-      ctx.state.blocks = roadsOut.blocks;
-      ctx.state.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
-      ctx.state.roadPolylines = roadsOut.polylines;
+ctx.state.roadGraph = roadsOut.roadGraph;
+ctx.state.blocks = roadsOut.blocks;
+ctx.state.secondaryRoadsLegacy = roadsOut.secondaryRoadsLegacy;
+ctx.state.roadPolylines = roadsOut.roadPolylines;
     },
   },
 
