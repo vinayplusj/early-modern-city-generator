@@ -62,6 +62,13 @@ export function runNewTownStage({
 
   const hitBastionSet = new Set(placed.hitBastions || []);
   const bastionsForWarp = (bastions || []).filter((_, i) => !hitBastionSet.has(i));
+  const bastionWarpInputs = {
+    bastionsForWarp,
+    bastionPolys: bastionPolysOut,
+  };
+
+  // Preserve legacy convenience alias for downstream code that still reads ctx.primaryGate.
+  ctx.primaryGate = primaryGate;
 
   return {
     placed,
@@ -70,5 +77,6 @@ export function runNewTownStage({
     wallFinal: wallFinalOut,
     bastionPolys: bastionPolysOut,
     bastionsForWarp,
+    bastionWarpInputs,
   };
 }
