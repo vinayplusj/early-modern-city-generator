@@ -1,3 +1,5 @@
+//     docs/src/model/util/numbers.js
+
 export function isFiniteNumber(n) {
   return typeof n === "number" && Number.isFinite(n);
 }
