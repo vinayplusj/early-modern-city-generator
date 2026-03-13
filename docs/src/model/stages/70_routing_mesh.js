@@ -130,5 +130,14 @@ export function runRoutingMeshStage({
   // This is now the graph view (CityMesh-derived).
   writeMeshToCtx(ctx, graph, waterModel);
 
-  return { vorGraph, waterModel, cityMesh, graph, boundaryBinding };
+  return {
+    routingMesh: {
+      cityMesh,
+      graph,
+      waterModel,
+      vorGraph,
+      boundaryBinding,
+    },
+    waterModel,
+  };
 }
