@@ -109,5 +109,6 @@ export function runRoadGraphAndBlocksStage({
     roadGraph,
     blocks,
     polylines: roadGraph?.polylines ?? null,
+    roadPolylines: roadGraph?.polylines ?? null,
   };
 }
