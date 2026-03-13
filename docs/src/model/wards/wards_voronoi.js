@@ -207,7 +207,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 /* ------------------------- Parameters and helpers ------------------------- */
 
 function normaliseParams(params) {
-  const seedCount = clampInt(params?.seedCount ?? 30, 3, 300);
+  const seedCount = clampInt(params?.seedCount ?? 20, 3, 100);
 
   return {
     seedCount,
@@ -218,7 +218,7 @@ function normaliseParams(params) {
     clipToFootprint: Boolean(params?.clipToFootprint ?? false),
     debugWardClip: Boolean(params?.debugWardClip ?? false),
     wardClipMaxSegLen: numberOr(params?.wardClipMaxSegLen, 10),
-    boundarySeedCount: clampInt(params?.boundarySeedCount ?? 0, 0, 400),
+    boundarySeedCount: clampInt(params?.boundarySeedCount ?? 10, 0, 40),
     boundaryInset: numberOr(params?.boundaryInset, 6),
   };
 }
