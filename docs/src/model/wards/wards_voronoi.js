@@ -20,17 +20,11 @@
 // - clipToFootprint: if true, try to clip cells to footprintPoly when a clipper exists
 
 import { Delaunay } from "../../../vendor/d3-delaunay-6.0.4.umd-shim.js";
-import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
 import { dist } from "../../geom/primitives.js";
-import {
-  pointInPoly,
-  signedArea,
-  centroid,
-  areaAbs, 
-  closestPointOnSegment,
-  pointSegmentDistance,
-} from "../../geom/poly.js";
+import { pointInPoly, centroid, areaAbs } from "../../geom/poly.js";
 import { clampInt } from "../util/ids.js";
+import { projectPointToPolyInterior, dropClosingPoint, tryClipToFootprint, assertWardEdgesInsideFootprint } from "./ward_shape_utils.js";
+
 /**
  * @typedef {{x:number, y:number}} Point
  * @typedef {{id:number, seed:Point, poly:Point[]|null, centroid:Point|null, area:number|null, distToCentre:number}} Ward
@@ -51,7 +45,6 @@ export function buildWardSeedsSpiral({ rng, centre, footprintPoly, params }) {
   const p = normaliseParams(params);
 
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-
   /** @type {Point[]} */
   const seeds = [];
 
@@ -89,9 +82,8 @@ function polyPerimeter(poly) {
   return L;
 }
 
-function pointAtDistanceOnPoly(poly, dist) {
-  // Walk edges until we reach the requested distance along the perimeter.
-  let remaining = dist;
+function pointAtDistanceOnPoly(poly, distAlong) {
+  let remaining = distAlong;
 
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i];
@@ -108,7 +100,6 @@ function pointAtDistanceOnPoly(poly, dist) {
     remaining -= seg;
   }
 
-  // Fallback: if numerical drift, return first vertex.
   return { x: poly[0].x, y: poly[0].y };
 }
 
@@ -125,8 +116,6 @@ function buildBoundarySeeds({ footprintPoly, count, inset }) {
 
   for (let i = 0; i < count; i++) {
     const p = pointAtDistanceOnPoly(poly, i * step);
-
-    // Push slightly inward toward centroid so the seed is inside after clipping.
     const vx = c.x - p.x;
     const vy = c.y - p.y;
     const vlen = Math.hypot(vx, vy) || 1;
@@ -139,6 +128,7 @@ function buildBoundarySeeds({ footprintPoly, count, inset }) {
 
   return seeds;
 }
+
 /**
  * Build Voronoi wards (seed + polygon + centroid).
  *
@@ -154,7 +144,6 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 
   const wardSeeds = buildWardSeedsSpiral({ rng, centre, footprintPoly, params: p });
 
-  // NEW: add a boundary seed ring to reduce skewed outer cells
   if (p.boundarySeedCount > 0) {
     const ring = buildBoundarySeeds({
       footprintPoly,
@@ -164,9 +153,7 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
     for (const s of ring) wardSeeds.push(s);
   }
 
-  // Build Voronoi over a padded bounding box.
   const bbox = computeBBox(footprintPoly, p.bboxPadding);
-
   const coords = wardSeeds.map((s) => [s.x, s.y]);
   const delaunay = Delaunay.from(coords);
   const voronoi = delaunay.voronoi([bbox.minX, bbox.minY, bbox.maxX, bbox.maxY]);
@@ -176,8 +163,6 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 
   for (let id = 0; id < wardSeeds.length; id++) {
     const seed = wardSeeds[id];
-
-    // d3-delaunay returns a flat array [x0,y0,x1,y1,...] or null
     const cell = voronoi.cellPolygon(id);
 
     /** @type {Point[]|null} */
@@ -185,8 +170,6 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 
     if (cell && cell.length >= 4) {
       poly = [];
-      // cellPolygon returns an array of [x, y] points and it repeats the first point at the end.
-      // We remove the last point if it is a duplicate of the first.
       for (let i = 0; i < cell.length; i++) {
         const pt = cell[i];
         poly.push({ x: pt[0], y: pt[1] });
@@ -195,15 +178,12 @@ export function buildWardsVoronoi({ rng, centre, footprintPoly, params }) {
 
       if (p.clipToFootprint) {
         poly = tryClipToFootprint(poly, footprintPoly, p);
-      
-        // Debug-only invariant: detect any remaining boundary-chord segments.
         if (p.debugWardClip && Array.isArray(poly) && poly.length >= 3) {
           assertWardEdgesInsideFootprint({ wardId: id, poly, footprintPoly });
         }
       }
     }
 
-    // After dropClosingPoint and optional clipping, require at least a triangle.
     if (!Array.isArray(poly) || poly.length < 3) {
       poly = null;
     }
@@ -238,10 +218,8 @@ function normaliseParams(params) {
     clipToFootprint: Boolean(params?.clipToFootprint ?? false),
     debugWardClip: Boolean(params?.debugWardClip ?? false),
     wardClipMaxSegLen: numberOr(params?.wardClipMaxSegLen, 10),
-
-    // NEW: add one deterministic “ring” of seeds near the boundary
     boundarySeedCount: clampInt(params?.boundarySeedCount ?? 0, 0, 400),
-    boundaryInset: numberOr(params?.boundaryInset, 6), // world units (pixels)
+    boundaryInset: numberOr(params?.boundaryInset, 6),
   };
 }
 
@@ -268,194 +246,4 @@ function computeBBox(poly, pad) {
     maxX: maxX + pad,
     maxY: maxY + pad,
   };
-}
-
-function dropClosingPoint(poly) {
-  if (poly.length < 3) return poly;
-
-  const a = poly[0];
-  const b = poly[poly.length - 1];
-
-  if (almostEqual(a.x, b.x) && almostEqual(a.y, b.y)) {
-    return poly.slice(0, poly.length - 1);
-  }
-  return poly;
-}
-
-function almostEqual(a, b) {
-  return Math.abs(a - b) <= 1e-9;
-}
-
-/* --------------------------- Polygon operations --------------------------- */
-
-/**
- * Ray casting point-in-polygon.
- * Works for simple polygons. Treats boundary as inside.
- */
-function assertWardEdgesInsideFootprint({ wardId, poly, footprintPoly, maxFails = 3 }) {
-  if (!Array.isArray(poly) || poly.length < 3) return;
-  if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return;
-
-  let fails = 0;
-
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-
-    const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-
-    // Treat boundary as inside (pointInPoly already does boundary-as-inside).
-    if (!pointInPoly(mid, footprintPoly)) {
-      fails += 1;
-
-      // Log a small, deterministic payload. Avoid printing large arrays.
-      console.warn("[EMCG] ward clip invariant failed: edge midpoint outside footprint", {
-        wardId,
-        edgeIndex: i,
-        mid,
-      });
-
-      if (fails >= maxFails) break;
-    }
-  }
-}
-/**
- * Project an outside point to the nearest point on the polygon boundary, then
- * nudge slightly inward along an estimated inward normal.
- * This keeps seed count stable and deterministic.
- */
-function projectPointToPolyInterior(p, poly) {
-  const nearest = nearestPointOnPoly(p, poly);
-
-  // Estimate inward direction by moving towards polygon centroid.
-  const c = centroid(poly);
-  const dx = c.x - nearest.x;
-  const dy = c.y - nearest.y;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-
-  // Small nudge inward.
-  const eps = 1e-3;
-
-  const nudged = {
-    x: nearest.x + (dx / len) * eps,
-    y: nearest.y + (dy / len) * eps,
-  };
-
-  // If something went wrong, fall back to nearest boundary point.
-  return pointInPoly(nudged, poly) ? nudged : nearest;
-}
-
-function nearestPointOnPoly(p, poly) {
-  let best = null;
-  let bestD2 = Infinity;
-
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-    const q = closestPointOnSegment(p, a, b);
-    const dx = p.x - q.x;
-    const dy = p.y - q.y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      best = q;
-    }
-  }
-
-  return best || { x: poly[0].x, y: poly[0].y };
-}
-
-function densifyPolyline(poly, maxSegLen) {
-  if (!Array.isArray(poly) || poly.length < 2) return poly;
-
-  const out = [];
-  const maxL = Number.isFinite(maxSegLen) ? maxSegLen : 10;
-
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-
-    out.push(a);
-
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const L = Math.hypot(dx, dy);
-
-    if (!Number.isFinite(L) || L <= maxL || L <= 1e-9) continue;
-
-    const n = Math.ceil(L / maxL);
-    for (let k = 1; k < n; k++) {
-      const t = k / n;
-      out.push({ x: a.x + dx * t, y: a.y + dy * t });
-    }
-  }
-
-  return out;
-}
-
-function dropNearDuplicatePoints(poly, eps = 1e-6) {
-  if (!Array.isArray(poly) || poly.length < 3) return poly;
-
-  const out = [];
-  let prev = null;
-  for (const p of poly) {
-    if (!prev) {
-      out.push(p);
-      prev = p;
-      continue;
-    }
-    const dx = p.x - prev.x;
-    const dy = p.y - prev.y;
-    if (dx * dx + dy * dy > eps * eps) {
-      out.push(p);
-      prev = p;
-    }
-  }
-
-  // If the last point duplicates the first, remove the last.
-  if (out.length >= 3) {
-    const a = out[0];
-    const b = out[out.length - 1];
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    if (dx * dx + dy * dy <= eps * eps) out.pop();
-  }
-
-  return out;
-}
-/* ---------------------- Optional clipping (safe stub) --------------------- */
-
-/**
- * This tries to clip a cell polygon to the footprint polygon.
- * This function is intentionally conservative because polygon boolean code
- * varies by project. If no clipper exists, it returns the cell polygon.
- *
- * Integration options:
- * - If the project already has a polygon boolean intersection, wire it here.
- * - Until then, keep clipToFootprint = false for Commit 2, and enable it later.
- */
-function tryClipToFootprint(cellPoly, footprintPoly, p) {
-  if (!Array.isArray(cellPoly) || cellPoly.length < 3) return null;
-  if (!Array.isArray(footprintPoly) || footprintPoly.length < 3) return null;
-
-  // We assume the footprint is roughly star-shaped around its centroid, which is
-  // true for your “stretched but bounded” outerBoundary.
-  const centre = centroid(footprintPoly);
-
-  // Densify first so edges do not “cut chords” outside concave/curvy boundaries.
-  // This is deterministic and avoids requiring a full polygon intersection algorithm.
-  const maxSegLen = Number.isFinite(p?.wardClipMaxSegLen) ? p.wardClipMaxSegLen : 10; // world units; keep small enough to respect curved boundary detail
-  const dense = densifyPolyline(cellPoly, maxSegLen);
-
-  // Clamp each point along rays to stay inside the footprint.
-  // Margin 0 keeps it tight; increase slightly if you see boundary grazing issues.
-  let clamped = clampPolylineInsidePolyAlongRays(dense, centre, footprintPoly, 0);
-
-  if (!clamped || clamped.length < 3) return null;
-
-  // Remove near-duplicate points introduced by densify + clamp.
-  clamped = dropNearDuplicatePoints(clamped, 1e-6);
-
-  if (!clamped || clamped.length < 3) return null;
-  return clamped;
 }
