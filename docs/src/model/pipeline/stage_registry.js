@@ -317,12 +317,6 @@ ctx.state.waterModel = meshOut.waterModel;
       });
 
       ctx.state.warp = warpOut;
-
-      // Canonical convenience aliases
-      ctx.state.warpWall = warpOut?.warpWall ?? null;
-      ctx.state.warpOutworks = warpOut?.warpOutworks ?? null;
-      ctx.state.wallForDraw = warpOut?.wallForDraw ?? null;
-      ctx.state.wallCurtainForDraw = warpOut?.wallCurtainForDraw ?? null;
     },
   },
 
@@ -466,16 +460,6 @@ ctx.state.primaryBoundaryExit = primaryOut.primaryBoundaryExit;
       if (!warp) throw new Error("[EMCG] Stage 150 requires ctx.state.warp (Stage 110 output).");
       if (!newTown) throw new Error("[EMCG] Stage 150 requires ctx.state.newTown (Stage 20 output).");
 
-      const bastionsSafe = warp?.bastionPolysWarpedSafe;
-      const wallForOutworks = warp?.wallForDraw;
-
-      if (!Array.isArray(bastionsSafe)) {
-        throw new Error("[EMCG] Stage 150 requires bastionPolysWarpedSafe (Stage 110 output).");
-      }
-      if (!Array.isArray(wallForOutworks) || wallForOutworks.length < 3) {
-        throw new Error("[EMCG] Stage 150 requires wallForOutworks polyline (Stage 110 output).");
-      }
-
 ctx.state.outworks = runOutworksStage({
   gatesWarped: fortGeom.gatesWarped,
   primaryGateWarped: fortGeom.primaryGateWarped,
@@ -486,8 +470,8 @@ ctx.state.outworks = runOutworksStage({
   glacisWidth: fortGeom.glacisWidth,
   newTown: newTown.newTown,
   bastionCount: env.bastionCount ?? ctx.params.bastions,
-  bastionPolysWarpedSafe: bastionsSafe,
-  wallForOutworks,
+  bastionPolysWarpedSafe: warp?.bastionPolysWarpedSafe,
+  wallForOutworks: warp?.wallForDraw,
   warpOutworks: warp?.warpOutworks ?? null,
   warpDebugEnabled: Boolean(ctx.params.warpDebugEnabled),
 });
