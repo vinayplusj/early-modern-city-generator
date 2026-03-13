@@ -380,5 +380,9 @@ export function runPrimaryRoadsStage({
     snappedNodes,
     primaryGatePortal: primaryGatePortal || null,
     primaryBoundaryExit: primaryBoundaryExit || null,
+
+    // Canonical state field aliases used by the pipeline registry.
+    primaryRoadsSnappedNodes: snappedNodes,
+    primaryRoadsGateForRoad: gateForRoad || null,
   };
 }
