@@ -388,6 +388,16 @@ export function runWarpFieldStage({
   });
 
 
+  // Canonical convenience aliases published by Stage 110.
+  ctx.state.warpWall = warpWall ?? null;
+  ctx.state.warpOutworks = warpOutworks ?? null;
+  ctx.state.wallForDraw =
+    (Array.isArray(wallForDraw) && wallForDraw.length >= 3) ? wallForDraw : null;
+  ctx.state.wallCurtainForDraw =
+    (Array.isArray(wallCurtainForDraw) && wallCurtainForDraw.length >= 3)
+      ? wallCurtainForDraw
+      : null;
+
   return buildStage110Return({
     warpWall,
     warpOutworks,
