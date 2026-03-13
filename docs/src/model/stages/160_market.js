@@ -23,6 +23,7 @@ import { ensureInside, pushAwayFromWall } from "../domain/anchor_constraints.js"
  * @returns {object} { marketCentre, marketAnchor, landmarks }
  */
 export function runMarketStage({
+  ctx,
   anchors,
   wardsWithRoles,
   wallBaseForDraw,
@@ -101,11 +102,13 @@ export function runMarketStage({
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  return {
-    marketCentre,
-    marketAnchor,
-    landmarks,
-    market: { marketCentre, marketAnchor, landmarks },
-    anchorsPatch: { market: marketAnchor },
-  };
+  const out = { marketCentre, marketAnchor, landmarks };
+
+  if (ctx?.state) {
+    ctx.state.market = out;
+    ctx.state.landmarks = landmarks;
+    if (ctx.state.anchors) ctx.state.anchors.market = marketAnchor;
+  }
+
+  return out;
 }
