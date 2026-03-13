@@ -25,6 +25,7 @@ import { applyWarpfieldDrawHints } from "../../render/stages/warpfield_draw_hint
 import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_audit.js";
 import {
   deriveBastionPlacementFromCurtain,
+	warpBastionPolysThroughFields,
   resolveCompositeWallForDraw,
   buildStage110Return,
   runBastionWarpPass,
