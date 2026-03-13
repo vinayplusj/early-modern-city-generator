@@ -31,7 +31,12 @@ import { auditWallDeterministicOutsideInnerHull } from "../debug/warpfield_wall_
 import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
-import { runWarpfieldPipeline } from "../generate_helpers/warpfield_pipeline.js";
+import {
+  deriveBastionPlacementFromCurtain,
+  warpBastionPolysThroughFields,
+  resolveCompositeWallForDraw,
+  buildStage110Return,
+} from "../generate_helpers/warpfield_pipeline.js";
 import { pruneBastionsByCurtainIntervals } from "../generate_helpers/bastion_interval_prune.js";
 
 /**
