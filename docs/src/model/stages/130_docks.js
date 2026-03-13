@@ -7,8 +7,12 @@ import { buildDocks } from "./docks.js";
 
 /**
  * @param {object} args
- * @returns {object|null} docks point or null
+ * @returns {object} { docks, anchorsPatch }
  */
 export function runDocksStage(args) {
-  return buildDocks(args);
+  const docks = buildDocks(args);
+  return {
+    docks,
+    anchorsPatch: { docks },
+  };
 }
