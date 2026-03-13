@@ -101,5 +101,11 @@ export function runMarketStage({
     { id: "citadel", pointOrPolygon: citadel, kind: "citadel", label: "Citadel" },
   ];
 
-  return { marketCentre, marketAnchor, landmarks };
+  return {
+    marketCentre,
+    marketAnchor,
+    landmarks,
+    market: { marketCentre, marketAnchor, landmarks },
+    anchorsPatch: { market: marketAnchor },
+  };
 }
