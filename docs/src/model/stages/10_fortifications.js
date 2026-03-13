@@ -13,7 +13,20 @@ import {
   buildCorridorIntent,
 } from "../features.js";
 
-export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateSpec) {
+function resolveGateSpecFromParams(ctx, gateSpec) {
+  let resolved = gateSpec;
+
+  if (resolved == null) {
+    resolved = (ctx?.params && ctx.params.gateDensity != null)
+      ? ctx.params.gateDensity
+      : "medium";
+  }
+
+  if (typeof resolved === "string") resolved = resolved.toLowerCase();
+  return resolved;
+}
+
+export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, gateSpec = null) {
   ctx.geom = ctx.geom || {};
   // ---------------- Footprint + main fortifications ----------------
   const wallR = baseR * 0.78;
@@ -28,7 +41,8 @@ export function runFortificationsStage(ctx, rng, cx, cy, baseR, bastionCount, ga
 
   // Gate selection: gateSpec may be a number or "low" | "medium" | "high".
   // pickGates is responsible for feasibility caps and warnings.
-  const gates = pickGates(rng, wallBase, gateSpec, bastionCount);
+  const resolvedGateSpec = resolveGateSpecFromParams(ctx, gateSpec);
+  const gates = pickGates(rng, wallBase, resolvedGateSpec, bastionCount);
 
   // Corridor intent for Milestone 4.8.
   // Use the stage centre (cx, cy) here, not footprint centroid, so intent is defined
