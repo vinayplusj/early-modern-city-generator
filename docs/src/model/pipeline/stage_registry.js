@@ -369,7 +369,10 @@ export const PIPELINE_STAGES = [
         gates: gatesOriginal,
         primaryGate,
       });
-      
+      const fortGeom = ctx.state.fortGeometryWarped;
+        if (!fortGeom) {
+          throw new Error("[EMCG] Stage requires ctx.state.fortGeometryWarped (Stage 120 output).");
+        }
       if (!Array.isArray(ctx.state.boundaryExits)) {
         throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
       }
