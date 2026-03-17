@@ -6,6 +6,7 @@
 import { offsetRadial } from "../../geom/offset.js";
 import { snapGatesToWall } from "../generate_helpers/snap.js";
 import { resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
+import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
 
 /**
  * @param {object} args
