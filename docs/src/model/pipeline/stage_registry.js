@@ -191,7 +191,7 @@ export const PIPELINE_STAGES = [
       if (!anchors) throw new Error("[EMCG] Stage 70 requires ctx.state.anchors (Stage 60 output).");
       if (!outerBoundary) throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
       if (!waterModel) throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
-
+      
       const meshOut = runRoutingMeshStage({
         ctx,
         wardsWithRoles: wards.wardsWithRoles,
@@ -204,19 +204,11 @@ export const PIPELINE_STAGES = [
         baseR: env.baseR,
       });
       
-      ctx.state.routingMesh = {
-        cityMesh: meshOut.cityMesh,
-        graph: meshOut.graph,
-        waterModel: meshOut.waterModel,
-
-        // Needed for Milestone 4.8+ adoption:
-        // vorGraph.cells carry { wardId } which CityMesh faces do not retain.
-        vorGraph: meshOut.vorGraph,
-
-        // Option 1 hook for Milestone 5 exterior roads and biome fills
-        boundaryBinding: meshOut.boundaryBinding,
-      };
+      if (!meshOut || !meshOut.routingMesh || !meshOut.routingMesh.cityMesh) {
+        throw new Error("[EMCG] Stage 70 runRoutingMeshStage returned no routingMesh.cityMesh.");
+      }
       
+      ctx.state.routingMesh = meshOut.routingMesh;
       ctx.state.waterModel = meshOut.waterModel;
     },
   },
