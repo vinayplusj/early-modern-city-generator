@@ -13,7 +13,6 @@ import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js
 import { buildCompositeWallFromCurtainAndBastions } from "./composite_wall_builder.js";
 import { pruneBastionsByCurtainIntervals } from "./bastion_interval_prune.js";
 import { debugCompositeWallSplices } from "../debug/composite_wall_splice_debug.js";
-import { shrinkOutworksToFit } from "./outworks_shrink_fit.js";
 import { assert } from "../util/assert.js";
 import { median } from "../util/stats.js";
 
@@ -324,61 +323,5 @@ export function buildStage110Return({
       (Array.isArray(bastionHullWarpedSafe) && bastionHullWarpedSafe.length >= 3)
         ? bastionHullWarpedSafe
         : null,
-  };
-}
-
-
-export function runBastionWarpPass({
-  warpOutworks,
-  warpWall,
-  bastionPolysUsed,
-  centrePt,
-  centre,
-  wallCurtainForDraw,
-  outerHullLoop,
-  bastionOuterInset,
-  bastionsBuiltFromMaxima,
-  buildCurtainMinField,
-}) {
-  const curtainMinField = buildCurtainMinField({
-    warpOutworks,
-    wallCurtainForDraw,
-    cx: centrePt.x,
-    cy: centrePt.y,
-  });
-
-  let bastionPolysWarpedSafe = warpBastionPolysThroughFields({
-    warpOutworks,
-    warpWall,
-    bastionPolysUsed,
-    centrePt,
-    curtainMinField,
-    outerHullLoop,
-    bastionOuterInset,
-    bastionsBuiltFromMaxima,
-  });
-
-  const warpOutworksForBastions = warpOutworks
-    ? {
-        ...warpOutworks,
-        clampMaxMargin: (Number.isFinite(warpOutworks.clampMaxMargin) ? warpOutworks.clampMaxMargin : 0) + bastionOuterInset,
-      }
-    : warpOutworks;
-
-  if (!bastionsBuiltFromMaxima) {
-    bastionPolysWarpedSafe = shrinkOutworksToFit({
-      bastionPolysWarpedSafe,
-      centre,
-      wallCurtainForDraw,
-      curtainMinField,
-      outerHullLoop,
-      warpOutworks: warpOutworksForBastions,
-    });
-  }
-
-  return {
-    curtainMinField,
-    bastionPolysWarpedSafe,
-    warpOutworksForBastions,
   };
 }
