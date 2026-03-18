@@ -14,7 +14,7 @@ Future Plans by Milestone Number
 * Route on `CityMesh` using a cost model (water, ditch/glacis, citadel avoidance, slope later).
 * Output roads as mesh-referenced paths (edge lists + polyline) for stability.
 * Move gates to “ward-edge ∩ curtain wall”
-* Create Biomes beyond the Outer Boundary with primary roads extending as splines going through them
+* Create Agricultural lands and Biomes beyond the Outer Boundary with primary roads extending as splines going through them
 
 ---
 
