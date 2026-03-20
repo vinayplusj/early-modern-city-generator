@@ -1,6 +1,6 @@
 // docs/src/model/water_on_mesh/util.js
 import { clampInt } from "../util/ids.js";
-export { dist2 } from "../../geom/primitives.js";
+import { dist2 } from "../../geom/primitives.js";
 import { isFiniteNumber } from "../util/numbers.js";
 
 export function finitePoint(p) {
