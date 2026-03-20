@@ -88,6 +88,46 @@ function resolvePlazaSources({ ctx, meshAccess }) {
   );
 }
 
+function inferRequiredFields(ctx) {
+  const waterKind =
+    (ctx.params && typeof ctx.params.waterKind === "string")
+      ? ctx.params.waterKind
+      : (ctx.state.waterModel && typeof ctx.state.waterModel.kind === "string")
+          ? ctx.state.waterModel.kind
+          : "none";
+
+  const waterRequired = waterKind !== "none";
+
+  return {
+    plaza: true,
+    wall: true,
+    water: waterRequired,
+  };
+}
+
+function assertRequiredFieldAvailability({ requiredFields, wallRes, waterRes, stageMeta }) {
+  assert(requiredFields && requiredFields.plaza === true, "Fields contract must require plaza field.");
+
+  if (requiredFields.wall) {
+    assert(
+      wallRes && Array.isArray(wallRes.ids) && wallRes.ids.length > 0,
+      "Milestone 4.8 requires distance_to_wall_vertex, but wall sources could not be resolved. " +
+        `Resolution method=${stageMeta.sourceResolution.wall.method || "unknown"}; ` +
+        `key=${stageMeta.sourceResolution.wall.polylineKeyUsed || "none"}; ` +
+        `error=${stageMeta.sourceErrors.wall || "none"}`
+    );
+  }
+
+  if (requiredFields.water) {
+    assert(
+      waterRes && Array.isArray(waterRes.ids) && waterRes.ids.length > 0,
+      "Milestone 4.8 requires distance_to_water_vertex when water is present, but water sources could not be resolved. " +
+        `Resolution method=${stageMeta.sourceResolution.water.method || "unknown"}; ` +
+        `error=${stageMeta.sourceErrors.water || "none"}`
+    );
+  }
+}
+
 /**
  * Stage entry point expected by stage_registry.js.
  * Inputs:
@@ -109,7 +149,7 @@ export function runFieldsStage(env) {
   // wardId -> CityMesh faceId (via persisted vorGraph).
   const stageMeta = {
     stage: "075_fields",
-    version: 1,
+    version: 2,
     sources: { plaza: null, wall: null, water: null },
     sourceErrors: { wall: null, water: null },
     derived: [],
@@ -141,7 +181,7 @@ export function runFieldsStage(env) {
     ctx.state.wards && Array.isArray(ctx.state.wards.wardsWithRoles)
       ? ctx.state.wards.wardsWithRoles
       : null;
-  
+
   if (canonicalWards && wardMap) {
     let missingWardFaceCount = 0;
     for (let i = 0; i < canonicalWards.length; i++) {
@@ -151,7 +191,7 @@ export function runFieldsStage(env) {
       const fid = (wid >= 0 && wid < wardMap.length) ? wardMap[wid] : null;
       if (!Number.isInteger(fid) || fid < 0) missingWardFaceCount++;
     }
-  
+
     stageMeta.wardToFaceCompleteness = {
       canonicalWardCount: canonicalWards.length,
       missingWardFaceCount,
@@ -177,8 +217,10 @@ export function runFieldsStage(env) {
     (ctx.state.anchors && ctx.state.anchors.plaza) ? "nearest_vertex_to_anchor" : "explicit_vertex_id";
   stageMeta.sourceResolution.plaza.anchorUsed =
     (ctx.state.anchors && ctx.state.anchors.plaza) ? ctx.state.anchors.plaza : null;
-  
+
   const wallPick = pickFirstPresent([
+    ["ctx.state.fortifications.wallBase", ctx.state.fortifications && ctx.state.fortifications.wallBase],
+    ["ctx.state.fortifications.wallFinal", ctx.state.fortifications && ctx.state.fortifications.wallFinal],
     ["ctx.state.fortifications.wallCurtain", ctx.state.fortifications && ctx.state.fortifications.wallCurtain],
     ["ctx.state.fortifications.wall", ctx.state.fortifications && ctx.state.fortifications.wall],
     ["ctx.state.fortifications.wallCurtainForDraw", ctx.state.fortifications && ctx.state.fortifications.wallCurtainForDraw],
@@ -289,6 +331,10 @@ export function runFieldsStage(env) {
   if (waterRes.ids) assertStrictAscendingIntIds(waterRes.ids, "water");
   stageMeta.sources.waterDerivedFromEdges = !!(waterVertexIdsDerived && waterVertexIdsDerived.length);
 
+  const requiredFields = inferRequiredFields(ctx);
+  stageMeta.requiredFields = requiredFields;
+  assertRequiredFieldAvailability({ requiredFields, wallRes, waterRes, stageMeta });
+
   // ---------------------------------------------
   // 2) Build compute specs (deterministic ordering)
   // ---------------------------------------------
@@ -358,6 +404,20 @@ export function runFieldsStage(env) {
     }
   }
 
+  stageMeta.computedFields = {
+    plaza: fields.has("distance_to_plaza_vertex"),
+    wall: fields.has("distance_to_wall_vertex"),
+    water: fields.has("distance_to_water_vertex"),
+  };
+
+  assert(stageMeta.computedFields.plaza, "Missing required field distance_to_plaza_vertex.");
+  if (requiredFields.wall) {
+    assert(stageMeta.computedFields.wall, "Missing required field distance_to_wall_vertex.");
+  }
+  if (requiredFields.water) {
+    assert(stageMeta.computedFields.water, "Missing required field distance_to_water_vertex.");
+  }
+
   // ------------------------------------------------------
   // 4) (Optional) Derive face fields by boundary reduction
   // ------------------------------------------------------
@@ -366,7 +426,7 @@ export function runFieldsStage(env) {
   // deterministic face boundary vertex ids.
 
   deriveBaseFaceFields({ fields, meshAccess, stageMeta });
-  
+
   // ----------------
   // 5) Publish output
   // ----------------
