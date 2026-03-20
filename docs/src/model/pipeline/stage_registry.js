@@ -1,12 +1,13 @@
 // docs/src/model/pipeline/stage_registry.js
 //
-// Phase 1 stage registry.hasDock: env.hasDock,
 // Purpose: centralize stage ordering WITHOUT changing stage code.
 // Contract (Phase 4.6+): stages read inputs from `env` (runtime) and publish outputs to `env.ctx.state`.
 // No stage-to-stage data is passed via `env.*`.
 
+import { runSiteWaterIntentStage } from "../stages/05_site_water_intent.js";
 import { runFortificationsStage } from "../stages/10_fortifications.js";
 import { runNewTownStage } from "../stages/20_new_town.js";
+import { runFootprintStage } from "../stages/25_footprint.js";
 import { runOuterBoundaryStage } from "../stages/30_outer_boundary.js";
 import { runWaterStage } from "../stages/40_water.js";
 import { runWardsStage } from "../stages/50_wards.js";
@@ -27,23 +28,43 @@ import { runCityMeshGraphAuditStage } from "../stages/075_city_mesh_graph_audit.
 import { runFieldsStage } from "../stages/075_fields.js";
 import { runWardFieldMetricsStage } from "../stages/085_ward_field_metrics.js";
 
+function unitVectorOrNull(v) {
+  if (!v || !Number.isFinite(v.x) || !Number.isFinite(v.y)) return null;
+  const m = Math.hypot(v.x, v.y);
+  if (!Number.isFinite(m) || m <= 1e-9) return null;
+  return { x: v.x / m, y: v.y / m };
+}
+
 export const PIPELINE_STAGES = [
+  {
+    id: 5,
+    name: "siteWaterIntent",
+    run(env) {
+      const { ctx } = env;
+      runSiteWaterIntentStage({
+        ctx,
+        waterKind: env.waterKind,
+        seed: env.seed ?? ctx.seed ?? null,
+      });
+    },
+  },
+
   {
     id: 10,
     name: "fortifications",
     run(env) {
       const { ctx, cx, cy, baseR, bastionCount } = env;
-    
+
       // Gate selection spec: density only. Default: "medium".
       let gateSpec = (ctx.params && ctx.params.gateDensity != null)
         ? ctx.params.gateDensity
         : "medium";
-    
+
       if (typeof gateSpec === "string") gateSpec = gateSpec.toLowerCase();
-    
+
       // IMPORTANT: env.rng.fort is the callable RNG function for Stage 10.
       const fort = runFortificationsStage(ctx, env.rng.fort, cx, cy, baseR, bastionCount, gateSpec);
-    
+
       ctx.state.fortifications = fort;
     },
   },
@@ -80,6 +101,26 @@ export const PIPELINE_STAGES = [
 
       ctx.state.newTown = nt;
 
+      const explicitOut = unitVectorOrNull(nt?.newTown?.orientation?.out);
+      const primaryGateDir = nt?.primaryGate
+        ? unitVectorOrNull({
+            x: nt.primaryGate.x - cx,
+            y: nt.primaryGate.y - cy,
+          })
+        : null;
+
+      ctx.state.newTownIntent = explicitOut
+        ? {
+            dir: explicitOut,
+            source: "newTown.orientation.out",
+          }
+        : (primaryGateDir
+            ? {
+                dir: primaryGateDir,
+                source: "primaryGate",
+              }
+            : null);
+
       // Canonical outputs used later
       ctx.state.primaryGate = nt.primaryGate;
       ctx.state.bastionWarpInputs = {
@@ -93,11 +134,31 @@ export const PIPELINE_STAGES = [
   },
 
   {
+    id: 25,
+    name: "footprint",
+    run(env) {
+      const { ctx, cx, cy, baseR } = env;
+
+      const fort = ctx.state.fortifications;
+      if (!fort) {
+        throw new Error("[EMCG] Stage 25 requires ctx.state.fortifications (Stage 10 output).");
+      }
+
+      runFootprintStage({
+        ctx,
+        cx,
+        cy,
+        baseR,
+        seed: env.seed ?? ctx.seed ?? null,
+      });
+    },
+  },
+
+  {
     id: 30,
     name: "outerBoundary",
     run(env) {
       const ctx = env.ctx;
-      
 
       const fort = ctx.state.fortifications;
       const nt = ctx.state.newTown;
@@ -107,6 +168,9 @@ export const PIPELINE_STAGES = [
       }
       if (!nt) {
         throw new Error("[EMCG] Stage 30 requires ctx.state.newTown (Stage 20 output).");
+      }
+      if (!Array.isArray(fort.footprint)) {
+        throw new Error("[EMCG] Stage 30 requires ctx.state.fortifications.footprint (Stage 25 output).");
       }
 
       const outerBoundary = runOuterBoundaryStage(fort.footprint, nt.newTown);
@@ -135,7 +199,7 @@ export const PIPELINE_STAGES = [
         baseR: env.baseR,
         waterIntent: ctx.state.waterIntent ?? null,
       });
-      
+
       ctx.state.waterModel = waterRes.waterModel;
       ctx.state.waterIntentDerived = waterRes.waterIntentDerived
         ? { ...waterRes.waterIntentDerived, kind: waterRes.waterModel?.kind ?? null }
@@ -191,7 +255,7 @@ export const PIPELINE_STAGES = [
       if (!anchors) throw new Error("[EMCG] Stage 70 requires ctx.state.anchors (Stage 60 output).");
       if (!outerBoundary) throw new Error("[EMCG] Stage 70 requires ctx.state.outerBoundary (Stage 30 output).");
       if (!waterModel) throw new Error("[EMCG] Stage 70 requires ctx.state.waterModel (Stage 40 output).");
-      
+
       const meshOut = runRoutingMeshStage({
         ctx,
         wardsWithRoles: wards.wardsWithRoles,
@@ -203,16 +267,16 @@ export const PIPELINE_STAGES = [
         cy: env.cy,
         baseR: env.baseR,
       });
-      
+
       if (!meshOut || !meshOut.routingMesh || !meshOut.routingMesh.cityMesh) {
         throw new Error("[EMCG] Stage 70 runRoutingMeshStage returned no routingMesh.cityMesh.");
       }
-      
+
       ctx.state.routingMesh = meshOut.routingMesh;
       ctx.state.waterModel = meshOut.waterModel;
     },
   },
-  
+
   {
     id: 75,
     name: "cityMeshGraphAudit",
@@ -222,7 +286,7 @@ export const PIPELINE_STAGES = [
       runCityMeshGraphAuditStage(env);
     },
   },
-  
+
   {
     id: 76,
     name: "fields",
@@ -230,7 +294,7 @@ export const PIPELINE_STAGES = [
       runFieldsStage(env);
     },
   },
-  
+
   {
     id: 80,
     name: "innerRings",
@@ -252,7 +316,7 @@ export const PIPELINE_STAGES = [
       ctx.state.ringsPreWarp = ringsOut;
     },
   },
-  
+
   {
     id: 85,
     name: "wardFieldMetrics",
@@ -260,7 +324,7 @@ export const PIPELINE_STAGES = [
       runWardFieldMetricsStage(env);
     },
   },
-  
+
   {
     id: 90,
     name: "districts",
@@ -369,10 +433,11 @@ export const PIPELINE_STAGES = [
         gates: gatesOriginal,
         primaryGate,
       });
+
       const fortGeom = ctx.state.fortGeometryWarped;
-        if (!fortGeom) {
-          throw new Error("[EMCG] Stage requires ctx.state.fortGeometryWarped (Stage 120 output).");
-        }
+      if (!fortGeom) {
+        throw new Error("[EMCG] Stage requires ctx.state.fortGeometryWarped (Stage 120 output).");
+      }
       if (!Array.isArray(ctx.state.boundaryExits)) {
         throw new Error("[EMCG] Stage 120 produced invalid boundaryExits (expected array).");
       }
