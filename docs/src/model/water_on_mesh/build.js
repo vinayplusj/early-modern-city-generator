@@ -50,9 +50,13 @@ export function buildWaterOnMesh({
 
   const wm = waterModel && typeof waterModel === "object" ? waterModel : { kind: "none" };
   const kind = (typeof wm.kind === "string") ? wm.kind : "none";
-
-  const coastIn = Array.isArray(wm.shoreline) ? wm.shoreline : (Array.isArray(wm.coast) ? wm.coast : null);
-  const riverIn = Array.isArray(wm.river) ? wm.river : null;
+  const coastIn = Array.isArray(wm.shoreline)
+    ? wm.shoreline
+    : (Array.isArray(wm.coast) ? wm.coast : null);
+  
+  const riverIn = Array.isArray(wm.river)
+    ? wm.river
+    : (Array.isArray(wm.river?.polyline) ? wm.river.polyline : null);
 
   const out = {
     ...wm,
