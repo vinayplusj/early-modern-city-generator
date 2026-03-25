@@ -1,26 +1,26 @@
 // docs/src/model/stages/25_footprint.js
 //
-// Milestone 4.8: explicit footprint stage.
+// Stage 25: canonical corridor intent + stretched footprint.
 //
-// Purpose:
-// - Build canonical corridor intent after Stage 20 new-town placement exists.
-// - Build the stretched footprint from gates + water intent + new-town intent.
-// - Publish the result back into ctx.state.fortifications so existing stages keep working.
+// Milestone 4.8 contract:
+// - Build corridor intent only after Stage 20 has published new-town direction.
+// - Build the canonical footprint using the shared helper from Stage 10.
+// - Publish canonical footprint fields back into ctx.state.fortifications.
 //
 // Ordering assumptions:
-// - Stage 10 has already created ctx.state.fortifications with at least gates.
-// - Stage 20 has already created ctx.state.newTown and may provide newTown.orientation.out.
-// - Stage 05 has already published ctx.state.waterIntent.
+// - Stage 05 has published ctx.state.waterIntent.
+// - Stage 10 has published ctx.state.fortifications with at least gates.
+// - Stage 20 has published ctx.state.newTown and preferably ctx.state.newTownIntent.
 //
 // Hidden coupling preserved intentionally:
 // - Stage 30 reads ctx.state.fortifications.footprint.
-// - Later assembly/render code reads fortifications.centre and fortifications.corridorIntent.
-// - This stage overwrites the footprint-related keys on ctx.state.fortifications.
+// - Later assembly/render code reads fortifications.centre.
+// - Debug and later stages may read both ctx.state.corridorIntent and fortifications.corridorIntent.
 
-import { centroid } from "../../geom/poly.js";
 import { normalize } from "../../geom/primitives.js";
-import { buildCorridorIntent, generateFootprint } from "../features.js";
+import { buildCorridorIntent } from "../features.js";
 import { rngFork } from "../rng/rng_fork.js";
+import { buildFootprintFromIntent } from "./10_fortifications.js";
 
 function isFiniteDir(v) {
   return !!v && Number.isFinite(v.x) && Number.isFinite(v.y);
@@ -121,14 +121,18 @@ export function runFootprintStage({ ctx, cx, cy, baseR, seed = null } = {}) {
   const stretch = getStretchParams(ctx);
   const rng = rngFork(rootSeed, "stage:footprint");
 
-  const footprint = generateFootprint(rng, cx, cy, baseR, 22, {
-    corridors: corridorIntent.corridors,
-    stretchStrength: stretch.stretchStrength,
-    stretchWidthRad: stretch.stretchWidthRad,
-    stretchClamp: stretch.stretchClamp,
-  });
-
-  const centre = centroid(footprint);
+  const { footprint, centre } = buildFootprintFromIntent(
+    rng,
+    cx,
+    cy,
+    baseR,
+    corridorIntent,
+    {
+      stretchStrength: stretch.stretchStrength,
+      stretchWidthRad: stretch.stretchWidthRad,
+      stretchClamp: stretch.stretchClamp,
+    }
+  );
 
   fort.footprint = footprint;
   fort.centre = centre;
@@ -152,3 +156,5 @@ export function runFootprintStage({ ctx, cx, cy, baseR, seed = null } = {}) {
     corridorCentre,
   };
 }
+
+export default runFootprintStage;
