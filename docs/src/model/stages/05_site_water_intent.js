@@ -1,20 +1,25 @@
 // docs/src/model/stages/05_site_water_intent.js
 //
-// Milestone 4.8: canonical pre-geometry water intent.
+// Stage 05: canonical pre-geometry water intent.
 //
-// Purpose:
-// - Publish a deterministic water intent before footprint generation.
-// - Keep this independent from Stage 40 water geometry so stage order does not
-//   change the later water RNG stream.
-// - Provide a stable contract for Stage 25 footprint shaping.
+// Milestone 4.8 contract:
+// - Publish deterministic water intent before footprint generation.
+// - Keep this independent from Stage 40 water geometry.
+// - Provide a stable object shape for Stage 25 and Stage 40.
 //
 // Output shape:
 // {
 //   kind: "none" | "river" | "coast",
-//   dir: {x,y} | null,    // points toward the water pull / sea side
+//   dir: { x, y } | null,   // points toward the water pull / sea side
 //   side: 0 | 1 | 2 | 3 | null,
 //   source: string,
 // }
+//
+// Hidden coupling:
+// - Coast side convention must match the water helper used later in Stage 40:
+//   0 = left, 1 = right, 2 = top, 3 = bottom.
+// - Stage 25 consumes { kind, dir, side } and uses kind to choose water corridor mode.
+// - Stage 40 may receive this object as an upstream hint, but must not become its source of truth.
 
 import { normalize } from "../../geom/primitives.js";
 import { rngFork } from "../rng/rng_fork.js";
@@ -57,14 +62,17 @@ function canonicalizeExistingIntent(existing, kind) {
 
   const dir = unitOrNull(existing.dir);
   const sideRaw = existing.side;
-  const side = Number.isInteger(sideRaw) && sideRaw >= 0 && sideRaw <= 3 ? sideRaw : null;
+  const side =
+    Number.isInteger(sideRaw) && sideRaw >= 0 && sideRaw <= 3
+      ? sideRaw
+      : null;
 
   if (kind === "none") {
     return {
       kind: "none",
       dir: null,
       side: null,
-      source: existing.source || "existing:none",
+      source: existing.source || "stage:water-intent:none:existing",
     };
   }
 
@@ -74,7 +82,7 @@ function canonicalizeExistingIntent(existing, kind) {
       kind: "river",
       dir,
       side: null,
-      source: existing.source || "existing:river-dir",
+      source: existing.source || "stage:water-intent:river:existing",
     };
   }
 
@@ -82,11 +90,16 @@ function canonicalizeExistingIntent(existing, kind) {
     const finalSide = side != null ? side : (dir ? dirToDominantCoastSide(dir) : null);
     const finalDir = dir || coastSideToDir(finalSide);
     if (finalSide == null || !finalDir) return null;
+
     return {
       kind: "coast",
-      dir: finalDir,
+      dir: unitOrNull(finalDir),
       side: finalSide,
-      source: existing.source || (side != null ? "existing:coast-side" : "existing:coast-dir"),
+      source:
+        existing.source ||
+        (side != null
+          ? "stage:water-intent:coast:existing-side"
+          : "stage:water-intent:coast:existing-dir"),
     };
   }
 
@@ -96,10 +109,15 @@ function canonicalizeExistingIntent(existing, kind) {
 function buildRiverIntent(seed) {
   const rng = rngFork(seed, "stage:water-intent:river");
   const ang = rng() * Math.PI * 2;
-  const dir = { x: Math.cos(ang), y: Math.sin(ang) };
+  const dir = unitOrNull({ x: Math.cos(ang), y: Math.sin(ang) });
+
+  if (!dir) {
+    throw new Error("[EMCG] Stage 05 failed to build a finite river direction.");
+  }
+
   return {
     kind: "river",
-    dir: unitOrNull(dir),
+    dir,
     side: null,
     source: "stage:water-intent:river:v1",
   };
@@ -109,27 +127,82 @@ function buildCoastIntent(seed) {
   const rng = rngFork(seed, "stage:water-intent:coast");
   const side = Math.floor(rng() * 4) & 3;
   const dir = coastSideToDir(side);
+
+  if (!dir) {
+    throw new Error("[EMCG] Stage 05 failed to map coast side to direction.");
+  }
+
   return {
     kind: "coast",
-    dir,
+    dir: unitOrNull(dir),
     side,
     source: "stage:water-intent:coast:v1",
   };
 }
 
-export function runSiteWaterIntentStage({ ctx, waterKind, seed = null } = {}) {
-  const kind = normalizeWaterKind(waterKind);
-  const rootSeed = Number.isFinite(seed) ? seed : ctx?.seed;
+function validateCanonicalIntent(out) {
+  if (!out || typeof out !== "object") {
+    throw new Error("[EMCG] Stage 05 produced no water intent object.");
+  }
 
+  const kind = normalizeWaterKind(out.kind);
+
+  if (kind === "none") {
+    if (out.dir != null || out.side != null) {
+      throw new Error("[EMCG] Stage 05 invalid none intent: dir and side must be null.");
+    }
+    return out;
+  }
+
+  if (!isFiniteDir(out.dir)) {
+    throw new Error(`[EMCG] Stage 05 invalid ${kind} intent: dir must be finite.`);
+  }
+
+  if (kind === "river") {
+    if (out.side != null) {
+      throw new Error("[EMCG] Stage 05 invalid river intent: side must be null.");
+    }
+    return {
+      kind: "river",
+      dir: unitOrNull(out.dir),
+      side: null,
+      source: out.source || "stage:water-intent:river:validated",
+    };
+  }
+
+  if (kind === "coast") {
+    if (!(Number.isInteger(out.side) && out.side >= 0 && out.side <= 3)) {
+      throw new Error("[EMCG] Stage 05 invalid coast intent: side must be 0..3.");
+    }
+    return {
+      kind: "coast",
+      dir: unitOrNull(out.dir),
+      side: out.side,
+      source: out.source || "stage:water-intent:coast:validated",
+    };
+  }
+
+  return {
+    kind: "none",
+    dir: null,
+    side: null,
+    source: "stage:water-intent:none:validated-fallback",
+  };
+}
+
+export function runSiteWaterIntentStage({ ctx, waterKind, seed = null } = {}) {
   if (!ctx) throw new Error("[EMCG] Stage 05 requires ctx.");
 
   ctx.state = ctx.state || {};
 
+  const kind = normalizeWaterKind(waterKind);
+  const rootSeed = Number.isFinite(seed) ? seed : ctx.seed;
+
   // Preserve a valid pre-existing canonical intent when present.
   const existing = canonicalizeExistingIntent(ctx.state.waterIntent, kind);
   if (existing) {
-    ctx.state.waterIntent = existing;
-    return existing;
+    ctx.state.waterIntent = validateCanonicalIntent(existing);
+    return ctx.state.waterIntent;
   }
 
   let out = null;
@@ -153,6 +226,8 @@ export function runSiteWaterIntentStage({ ctx, waterKind, seed = null } = {}) {
     out = buildCoastIntent(rootSeed);
   }
 
-  ctx.state.waterIntent = out;
-  return out;
+  ctx.state.waterIntent = validateCanonicalIntent(out);
+  return ctx.state.waterIntent;
 }
+
+export default runSiteWaterIntentStage;
