@@ -664,25 +664,25 @@ export const PIPELINE_STAGES = [
       runDebugInvariantsStage({
         debugEnabled: Boolean(ctx.params.warpDebugEnabled),
         debugOut: env.debug,
-
+      
         cx: env.cx,
         cy: env.cy,
         fortHulls: wards.fortHulls,
-
+      
         vorGraph: routingMesh.graph,
         waterModel: ctx.state.waterModel,
-
+      
         primaryRoads: primaryRoads ?? null,
-
+      
         anchors,
-
+      
         wallBase: ctx.state.fortifications?.wallBase ?? null,
         outerBoundary: ctx.state.outerBoundary ?? null,
-
+      
         // New (Milestone 5A)
         corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
         params: ctx.params ?? null,
-
+      
         width: env.width,
         height: env.height,
         hasDock: env.hasDock,
