@@ -707,10 +707,17 @@ export const PIPELINE_STAGES = [
         wallBase: ctx.state.fortifications?.wallBase ?? null,
         outerBoundary: ctx.state.outerBoundary ?? null,
       
-        // Milestone 4.8+
         corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
         params: ctx.params ?? null,
         fieldsMeta: ctx.state.fieldsMeta ?? null,
+      
+        hullModel: ctx.state.hullModel ?? null,
+        coreSet: ctx.state.coreSet ?? null,
+        innerHullModel: ctx.state.innerHullModel ?? null,
+        outerHullModel: ctx.state.outerHullModel ?? null,
+        hullProofs: ctx.state.hullProofs ?? null,
+        citadelFit: ctx.state.citadelFit ?? null,
+        coastGeometry: ctx.state.coastGeometry ?? null,
       
         width: env.width,
         height: env.height,
