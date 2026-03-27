@@ -16,6 +16,7 @@ import { runRoutingMeshStage } from "../stages/70_routing_mesh.js";
 import { runInnerRingsStage } from "../stages/80_inner_rings.js";
 import { runDistrictsStage } from "../stages/90_districts.js";
 import { runCitadelStage } from "../stages/100_citadel.js";
+import { runHullModelStage } from "../stages/105_hull_model.js";
 import { runWarpFieldStage } from "../stages/110_warp_field.js";
 import { runWarpDependentFortGeometryStage } from "../stages/120_warp_dependent_fort_geometry.js";
 import { runDocksStage } from "../stages/130_docks.js";
@@ -359,6 +360,33 @@ export const PIPELINE_STAGES = [
   },
 
   {
+    id: 105,
+    name: "hullModel",
+    run(env) {
+      const ctx = env.ctx;
+
+      const wards = ctx.state.wards;
+      const anchors = ctx.state.anchors;
+
+      if (!wards) {
+        throw new Error("[EMCG] Stage 105 requires ctx.state.wards (Stage 50 output).");
+      }
+      if (!wards.fortHulls) {
+        throw new Error("[EMCG] Stage 105 requires ctx.state.wards.fortHulls (Stage 50 output).");
+      }
+      if (!anchors) {
+        throw new Error("[EMCG] Stage 105 requires ctx.state.anchors (Stage 60 output).");
+      }
+
+      ctx.state.hullModel = runHullModelStage({
+        ctx,
+        cx: env.cx,
+        cy: env.cy,
+      });
+    },
+  },
+
+  {
     id: 110,
     name: "warpField",
     run(env) {
@@ -679,9 +707,10 @@ export const PIPELINE_STAGES = [
         wallBase: ctx.state.fortifications?.wallBase ?? null,
         outerBoundary: ctx.state.outerBoundary ?? null,
       
-        // New (Milestone 5A)
+        // Milestone 4.8+
         corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
         params: ctx.params ?? null,
+        fieldsMeta: ctx.state.fieldsMeta ?? null,
       
         width: env.width,
         height: env.height,
