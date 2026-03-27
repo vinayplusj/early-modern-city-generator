@@ -113,6 +113,15 @@ export function runPipeline(ctx) {
   if (!S.routingMesh.graph) throw new Error("[EMCG] Missing ctx.state.routingMesh.graph (Stage 70 output).");
   if (!S.routingMesh.cityMesh) throw new Error("[EMCG] Missing ctx.state.routingMesh.cityMesh (Stage 70 output).");
   if (!S.districts) throw new Error("[EMCG] Missing ctx.state.districts (Stage 90 output).");
+  if (!S.hullModel) throw new Error("[EMCG] Missing ctx.state.hullModel (Stage 105 output).");
+  if (!S.coreSet) throw new Error("[EMCG] Missing ctx.state.coreSet (Stage 105 canonical output).");
+  if (!S.innerHullModel) throw new Error("[EMCG] Missing ctx.state.innerHullModel (Stage 105 canonical output).");
+  if (!S.outerHullModel) throw new Error("[EMCG] Missing ctx.state.outerHullModel (Stage 105 canonical output).");
+  if (!S.hullProofs) throw new Error("[EMCG] Missing ctx.state.hullProofs (Stage 105 canonical output).");
+  if (!("citadelFit" in S)) throw new Error("[EMCG] Missing ctx.state.citadelFit (Stage 105 canonical output).");
+  if (waterKind === "coast" && !("coastGeometry" in S)) {
+    throw new Error("[EMCG] Missing ctx.state.coastGeometry for coast site (Stage 105 canonical output).");
+  }
   if (!S.warp) throw new Error("[EMCG] Missing ctx.state.warp (Stage 110 output).");
   if (!S.fortGeometryWarped) {
     throw new Error("[EMCG] Missing ctx.state.fortGeometryWarped (Stage 120 output).");
@@ -135,6 +144,7 @@ export function runPipeline(ctx) {
   const fortGeom = S.fortGeometryWarped;
   const warp = S.warp;
   const anchors = S.anchors;
+  const hullModel = S.hullModel;
 
   // Roads and avenue
   const roads = S.primaryRoads;
@@ -197,6 +207,13 @@ export function runPipeline(ctx) {
     warpWall: warp.warpWall ?? null,
     warpOutworks: warp.warpOutworks ?? null,
     fortHulls: S.wards?.fortHulls ?? null,
+    hullModel: hullModel ?? null,
+    coreSet: S.coreSet ?? hullModel?.coreSet ?? null,
+    innerHullModel: S.innerHullModel ?? hullModel?.innerHull ?? null,
+    outerHullModel: S.outerHullModel ?? hullModel?.outerHull ?? null,
+    hullProofs: S.hullProofs ?? hullModel?.hullProofs ?? null,
+    citadelFit: S.citadelFit ?? hullModel?.citadelFit ?? null,
+    coastGeometry: S.coastGeometry ?? hullModel?.coastGeometry ?? null,
     wardsWithRoles: S.wards?.wardsWithRoles ?? null,
     wardSeeds: S.wards?.wardSeeds ?? null,
     wardRoleIndices: S.wards?.wardRoleIndices ?? null,
