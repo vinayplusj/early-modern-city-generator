@@ -1,7 +1,7 @@
 // docs/src/model/stages/900_debug_invariants.js
 //
 // Stage 900: Debug invariants and diagnostics.
-// Extended for Milestone 4.8 closure checks.
+// Extended for Milestone 4.8 closure checks and Milestone 4.9 publication checks.
 //
 // Notes:
 // - This stage still returns immediately when debugEnabled is false.
@@ -10,11 +10,12 @@
 //   2) anchor placement sanity
 //   3) hull containment sanity
 //   4) field completeness and bounded ranges, when fieldsMeta is passed in
+//   5) hull-model publication and proof checks for Milestone 4.9
 //
 // Safe coupling:
 // - All new checks are additive.
-// - Field checks are only enforced when fieldsMeta is provided by the registry.
-// - This lets you land this file first, then add the small registry follow-up.
+// - Field and hull-model checks are only enforced when their corresponding
+//   inputs are provided by the registry.
 
 import { finitePointOrNull } from "../../geom/primitives.js";
 import { pointInPolyOrOn } from "../../geom/poly.js";
@@ -87,6 +88,44 @@ function everyCorridorHasFiniteWeight(corridorIntent) {
   return true;
 }
 
+function isBoolResult(value) {
+  return !!(value && typeof value === "object" && typeof value.ok === "boolean");
+}
+
+function polyPointCount(poly) {
+  return Array.isArray(poly) ? poly.length : 0;
+}
+
+function hasPolygon(poly) {
+  return Array.isArray(poly) && poly.length >= 3;
+}
+
+function countMissingWardIds(result) {
+  return Array.isArray(result?.missingWardIds) ? result.missingWardIds.length : 0;
+}
+
+function resolveHullBundle({
+  hullModel,
+  coreSet,
+  innerHullModel,
+  outerHullModel,
+  hullProofs,
+  citadelFit,
+  coastGeometry,
+}) {
+  const model = (hullModel && typeof hullModel === "object") ? hullModel : null;
+
+  return {
+    hullModel: model,
+    coreSet: coreSet || model?.coreSet || null,
+    innerHullModel: innerHullModel || model?.innerHull || null,
+    outerHullModel: outerHullModel || model?.outerHull || null,
+    hullProofs: hullProofs || model?.hullProofs || null,
+    citadelFit: citadelFit || model?.citadelFit || null,
+    coastGeometry: coastGeometry || model?.coastGeometry || null,
+  };
+}
+
 /**
  * @param {object} args
  */
@@ -114,6 +153,15 @@ export function runDebugInvariantsStage({
 
   // Optional but strongly recommended for Milestone 4.8 closure
   fieldsMeta,
+
+  // Optional but strongly recommended for Milestone 4.9 publication checks
+  hullModel,
+  coreSet,
+  innerHullModel,
+  outerHullModel,
+  hullProofs,
+  citadelFit,
+  coastGeometry,
 }) {
   if (!debugEnabled) return;
 
@@ -473,6 +521,222 @@ export function runDebugInvariantsStage({
     }
   }
 
+  // ---------------- Milestone 4.9 publication and proof checks ----------------
+  const hullBundle = resolveHullBundle({
+    hullModel,
+    coreSet,
+    innerHullModel,
+    outerHullModel,
+    hullProofs,
+    citadelFit,
+    coastGeometry,
+  });
+
+  const hasAnyHull49 =
+    !!hullBundle.hullModel ||
+    !!hullBundle.coreSet ||
+    !!hullBundle.innerHullModel ||
+    !!hullBundle.outerHullModel ||
+    !!hullBundle.hullProofs ||
+    !!hullBundle.citadelFit ||
+    !!hullBundle.coastGeometry;
+
+  if (!hasAnyHull49) {
+    console.warn("[HullModel] 4.9 outputs not provided to Stage 900; skipping 4.9 publication checks");
+  } else {
+    console.info("[HullModel] summary", {
+      hasHullModel: !!hullBundle.hullModel,
+      hasCoreSet: !!hullBundle.coreSet,
+      hasInnerHullModel: !!hullBundle.innerHullModel,
+      hasOuterHullModel: !!hullBundle.outerHullModel,
+      hasHullProofs: !!hullBundle.hullProofs,
+      hasCitadelFit: !!hullBundle.citadelFit,
+      hasCoastGeometry: !!hullBundle.coastGeometry,
+      innerPointCount: polyPointCount(hullBundle.innerHullModel?.poly),
+      outerPointCount: polyPointCount(hullBundle.outerHullModel?.poly),
+    });
+
+    pushIfFalse(errors, !!hullBundle.hullModel, "Milestone 4.9 invalid: hullModel is missing");
+    pushIfFalse(errors, !!hullBundle.coreSet, "Milestone 4.9 invalid: coreSet is missing");
+    pushIfFalse(errors, !!hullBundle.innerHullModel, "Milestone 4.9 invalid: innerHullModel is missing");
+    pushIfFalse(errors, !!hullBundle.outerHullModel, "Milestone 4.9 invalid: outerHullModel is missing");
+    pushIfFalse(errors, !!hullBundle.hullProofs, "Milestone 4.9 invalid: hullProofs is missing");
+    pushIfFalse(errors, !!hullBundle.citadelFit, "Milestone 4.9 invalid: citadelFit is missing");
+
+    if (hullBundle.coreSet) {
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.coreSet.coreWardIds),
+        "Milestone 4.9 invalid: coreSet.coreWardIds must be an array"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.coreSet.innerWardIds),
+        "Milestone 4.9 invalid: coreSet.innerWardIds must be an array"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.coreSet.coreIdsForHull),
+        "Milestone 4.9 invalid: coreSet.coreIdsForHull must be an array"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.coreSet.outerIdsForHull),
+        "Milestone 4.9 invalid: coreSet.outerIdsForHull must be an array"
+      );
+    }
+
+    if (hullBundle.innerHullModel) {
+      pushIfFalse(
+        errors,
+        hasPolygon(hullBundle.innerHullModel.poly),
+        "Milestone 4.9 invalid: innerHullModel.poly is missing or too short"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.innerHullModel.memberWardIds),
+        "Milestone 4.9 invalid: innerHullModel.memberWardIds must be an array"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.innerHullModel.sourceWardIds),
+        "Milestone 4.9 invalid: innerHullModel.sourceWardIds must be an array"
+      );
+    }
+
+    if (hullBundle.outerHullModel) {
+      pushIfFalse(
+        errors,
+        hasPolygon(hullBundle.outerHullModel.poly),
+        "Milestone 4.9 invalid: outerHullModel.poly is missing or too short"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.outerHullModel.memberWardIds),
+        "Milestone 4.9 invalid: outerHullModel.memberWardIds must be an array"
+      );
+      pushIfFalse(
+        errors,
+        Array.isArray(hullBundle.outerHullModel.sourceWardIds),
+        "Milestone 4.9 invalid: outerHullModel.sourceWardIds must be an array"
+      );
+    }
+
+    if (hullBundle.hullProofs) {
+      const proofs = hullBundle.hullProofs;
+
+      pushIfFalse(
+        errors,
+        isBoolResult(proofs.centreInInnerHull),
+        "Milestone 4.9 invalid: hullProofs.centreInInnerHull is missing or malformed"
+      );
+      pushIfFalse(
+        errors,
+        isBoolResult(proofs.centreInOuterHull),
+        "Milestone 4.9 invalid: hullProofs.centreInOuterHull is missing or malformed"
+      );
+      pushIfFalse(
+        errors,
+        isBoolResult(proofs.innerHullInsideOuterHullSampled),
+        "Milestone 4.9 invalid: hullProofs.innerHullInsideOuterHullSampled is missing or malformed"
+      );
+      pushIfFalse(
+        errors,
+        isBoolResult(proofs.coreMembersInsideInnerHull),
+        "Milestone 4.9 invalid: hullProofs.coreMembersInsideInnerHull is missing or malformed"
+      );
+      pushIfFalse(
+        errors,
+        isBoolResult(proofs.claimedOuterMembersInsideOuterHull),
+        "Milestone 4.9 invalid: hullProofs.claimedOuterMembersInsideOuterHull is missing or malformed"
+      );
+
+      if (isBoolResult(proofs.centreInInnerHull)) {
+        pushIfFalse(errors, proofs.centreInInnerHull.ok === true, "Milestone 4.9 invalid: centreInInnerHull proof failed");
+      }
+      if (isBoolResult(proofs.centreInOuterHull)) {
+        pushIfFalse(errors, proofs.centreInOuterHull.ok === true, "Milestone 4.9 invalid: centreInOuterHull proof failed");
+      }
+      if (isBoolResult(proofs.innerHullInsideOuterHullSampled)) {
+        pushIfFalse(
+          errors,
+          proofs.innerHullInsideOuterHullSampled.ok === true,
+          `Milestone 4.9 invalid: innerHullInsideOuterHullSampled proof failed (fails=${proofs.innerHullInsideOuterHullSampled.fails ?? "?"})`
+        );
+      }
+      if (isBoolResult(proofs.coreMembersInsideInnerHull)) {
+        pushIfFalse(
+          errors,
+          proofs.coreMembersInsideInnerHull.ok === true,
+          `Milestone 4.9 invalid: coreMembersInsideInnerHull proof failed (missing=${countMissingWardIds(proofs.coreMembersInsideInnerHull)})`
+        );
+      }
+      if (isBoolResult(proofs.claimedOuterMembersInsideOuterHull)) {
+        pushIfFalse(
+          errors,
+          proofs.claimedOuterMembersInsideOuterHull.ok === true,
+          `Milestone 4.9 invalid: claimedOuterMembersInsideOuterHull proof failed (missing=${countMissingWardIds(proofs.claimedOuterMembersInsideOuterHull)})`
+        );
+      }
+    }
+
+    if (hullBundle.citadelFit) {
+      const requireCitadelPoly = hullBundle.coreSet?.hasCitadelGeometry === true;
+
+      if (requireCitadelPoly) {
+        pushIfFalse(
+          errors,
+          hasPolygon(hullBundle.citadelFit.poly),
+          "Milestone 4.9 invalid: citadelFit.poly is missing or too short"
+        );
+      }
+
+      pushIfFalse(
+        errors,
+        "wardId" in hullBundle.citadelFit,
+        "Milestone 4.9 invalid: citadelFit.wardId is missing"
+      );
+
+      if (hullBundle.citadelFit.insideCitadelWard === false) {
+        errors.push("Milestone 4.9 invalid: citadel geometry falls outside the citadel ward");
+      }
+      if (hullBundle.citadelFit.insideInnerHull === false) {
+        errors.push("Milestone 4.9 invalid: citadel geometry falls outside the inner hull");
+      }
+    }
+
+    if (waterKind === "coast") {
+      pushIfFalse(
+        errors,
+        !!hullBundle.coastGeometry,
+        "Milestone 4.9 invalid: coastGeometry is missing for coast water"
+      );
+
+      if (hullBundle.coastGeometry) {
+        pushIfFalse(
+          errors,
+          hullBundle.coastGeometry.kind === "coast_curve",
+          "Milestone 4.9 invalid: coastGeometry.kind must be coast_curve"
+        );
+        pushIfFalse(
+          errors,
+          Array.isArray(hullBundle.coastGeometry.curve) && hullBundle.coastGeometry.curve.length >= 2,
+          "Milestone 4.9 invalid: coastGeometry.curve is missing or too short"
+        );
+        pushIfFalse(
+          errors,
+          hullBundle.coastGeometry.diagnostics?.neighboursOuterBoundary === true,
+          "Milestone 4.9 invalid: coastGeometry must report neighboursOuterBoundary=true"
+        );
+        pushIfFalse(
+          errors,
+          hullBundle.coastGeometry.diagnostics?.intersectsOuterBoundaryAsPolygon === false,
+          "Milestone 4.9 invalid: coastGeometry must report intersectsOuterBoundaryAsPolygon=false"
+        );
+      }
+    }
+  }
+
   const ok = errors.length === 0;
 
   if (debugOut && typeof debugOut === "object") {
@@ -493,6 +757,16 @@ export function runDebugInvariantsStage({
 
     if (fieldsMeta) {
       debugOut.fieldsMeta = fieldsMeta;
+    }
+
+    if (hasAnyHull49) {
+      debugOut.hullModel = hullBundle.hullModel || null;
+      debugOut.coreSet = hullBundle.coreSet || null;
+      debugOut.innerHullModel = hullBundle.innerHullModel || null;
+      debugOut.outerHullModel = hullBundle.outerHullModel || null;
+      debugOut.hullProofs = hullBundle.hullProofs || null;
+      debugOut.citadelFit = hullBundle.citadelFit || null;
+      debugOut.coastGeometry = hullBundle.coastGeometry || null;
     }
   }
 }
