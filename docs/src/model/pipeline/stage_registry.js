@@ -706,7 +706,9 @@ export const PIPELINE_STAGES = [
       
         anchors,
       
-        wallBase: ctx.state.fortifications?.wallBase ?? null,
+        wallBase: ctx.state.fortGeometryWarped?.wallBaseForDraw
+          ?? ctx.state.fortifications?.wallBase
+          ?? null,
         outerBoundary: ctx.state.outerBoundary ?? null,
       
         corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
