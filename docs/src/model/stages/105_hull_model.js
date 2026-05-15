@@ -919,6 +919,86 @@ function rayMaxRadiusToPoly(centre, dir, poly) {
   return bestT;
 }
 
+function rayFirstExitRadiusToPoly(centre, dir, poly) {
+  if (!isPoint(centre) || !isPoint(dir) || !Array.isArray(poly) || poly.length < 3) return null;
+
+  let bestT = null;
+  const eps = 1e-9;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    const sx = b.x - a.x;
+    const sy = b.y - a.y;
+    const dx = dir.x;
+    const dy = dir.y;
+
+    const den = cross2(dx, dy, sx, sy);
+    if (Math.abs(den) <= eps) continue;
+
+    const acx = a.x - centre.x;
+    const acy = a.y - centre.y;
+
+    const t = cross2(acx, acy, sx, sy) / den;
+    const u = cross2(acx, acy, dx, dy) / den;
+
+    // First positive boundary hit from an interior point is the safe exit.
+    // Do not use the farthest hit on concave / non-star-shaped hulls.
+    if (t > eps && u >= -eps && u <= 1 + eps) {
+      if (bestT == null || t < bestT) bestT = t;
+    }
+  }
+
+  return bestT;
+}
+
+function radialPoint(centre, dir, radius) {
+  return {
+    x: centre.x + dir.x * radius,
+    y: centre.y + dir.y * radius,
+  };
+}
+
+function clippedSafeRadiusToPoly(centre, dir, poly) {
+  const exitR = rayFirstExitRadiusToPoly(centre, dir, poly);
+
+  if (!(Number.isFinite(exitR) && exitR > 1e-9)) {
+    return null;
+  }
+
+  // Pull slightly inward first. This avoids boundary precision failures.
+  let hi = exitR * 0.995;
+  let lo = 0;
+
+  if (!pointInsidePoly(poly, radialPoint(centre, dir, hi))) {
+    // The first-exit value can still land outside due to vertex hits or
+    // floating-point edge cases. Binary search for the furthest inside point.
+    hi = exitR;
+    for (let i = 0; i < 42; i++) {
+      const mid = (lo + hi) / 2;
+      const p = radialPoint(centre, dir, mid);
+      if (pointInsidePoly(poly, p)) lo = mid;
+      else hi = mid;
+    }
+
+    return lo > 1e-9 ? lo : null;
+  }
+
+  return hi;
+}
+
+function capInnerSupportLowerBound(lowerBound, upperBound) {
+  if (!(Number.isFinite(upperBound) && upperBound > 1e-9)) return 0;
+  if (!(Number.isFinite(lowerBound) && lowerBound > 0)) return 0;
+
+  // Ward boundary support points are advisory. Because they are binned by angle,
+  // they can exceed the safe radial bound for that exact sampled direction.
+  // Required points are still checked explicitly after the polygon is built.
+  return Math.min(lowerBound, upperBound * 0.985);
+}
+
 function collectCoreSupport({
   wardsState,
   coreSet,
@@ -1036,10 +1116,13 @@ function buildRefinedInnerHullCandidate({
   for (let i = 0; i < sampleCount; i++) {
     const t = i * step;
     const dir = { x: Math.cos(t), y: Math.sin(t) };
-    const r = rayMaxRadiusToPoly(centre, dir, legacyPoly);
+
+    const r = clippedSafeRadiusToPoly(centre, dir, legacyPoly);
+
     if (!(Number.isFinite(r) && r > 0)) {
-      return { ok: false, reason: "failed_legacy_radial_profile", sampleIndex: i };
+      return { ok: false, reason: "failed_safe_inner_radial_profile", sampleIndex: i };
     }
+
     upper[i] = r;
   }
 
@@ -1058,8 +1141,12 @@ function buildRefinedInnerHullCandidate({
   const radii = new Array(sampleCount);
   for (let i = 0; i < sampleCount; i++) {
     const upperBound = upper[i];
-    const lowerBound = lowerDilated[i];
+    const lowerBound = capInnerSupportLowerBound(lowerDilated[i], upperBound);
+
+    // The smoothed profile is also clipped to the safe first-exit radius.
+    // This keeps every radial sample inside the legacy inner hull.
     const target = Math.min(upperBound, upperSmooth[i]);
+
     radii[i] = clamp(target, lowerBound, upperBound);
   }
 
