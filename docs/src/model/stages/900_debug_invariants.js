@@ -25,6 +25,26 @@ function isFinitePoint(p) {
   return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
 }
 
+function resolveDockPoint(anchors) {
+  if (finitePointOrNull(anchors?.docks)) {
+    return anchors.docks;
+  }
+
+  if (finitePointOrNull(anchors?.docks?.docks)) {
+    return anchors.docks.docks;
+  }
+
+  if (finitePointOrNull(anchors?.docks?.anchor)) {
+    return anchors.docks.anchor;
+  }
+
+  if (finitePointOrNull(anchors?.docks?.point)) {
+    return anchors.docks.point;
+  }
+
+  return null;
+}
+
 function corridorAngleDeg(dir) {
   const ang = Math.atan2(dir?.y ?? 0, dir?.x ?? 0);
   return Math.round(((ang * 180) / Math.PI) * 10) / 10;
@@ -397,14 +417,16 @@ export function runDebugInvariantsStage({
     isInsidePolyOrSkip(anchors.market, wallBase) &&
     (anchors.market.x >= 0 && anchors.market.x <= width && anchors.market.y >= 0 && anchors.market.y <= height);
 
+  const dockPoint = resolveDockPoint(anchors);
+
   let docksOk = true;
   if (hasDock) {
     docksOk =
       (anchors?.docks === null) ||
-      (finitePointOrNull(anchors?.docks) &&
-        !pointInPolyOrOn(anchors.docks, wallBase, 1e-6) &&
-        isInsidePolyOrSkip(anchors.docks, outerBoundary) &&
-        (anchors.docks.x >= 0 && anchors.docks.x <= width && anchors.docks.y >= 0 && anchors.docks.y <= height));
+      (dockPoint &&
+        !pointInPolyOrOn(dockPoint, wallBase, 1e-6) &&
+        isInsidePolyOrSkip(dockPoint, outerBoundary) &&
+        (dockPoint.x >= 0 && dockPoint.x <= width && dockPoint.y >= 0 && dockPoint.y <= height));
   }
 
   if (!plazaOk) bad.push("plaza");
@@ -418,6 +440,7 @@ export function runDebugInvariantsStage({
       citadel: anchors?.citadel,
       market: anchors?.market,
       docks: anchors?.docks,
+      dockPoint,
       hasDock,
       water: waterModel?.kind,
     });
