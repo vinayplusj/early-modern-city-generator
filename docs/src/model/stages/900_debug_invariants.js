@@ -873,6 +873,7 @@ export function runDebugInvariantsStage({
     }
   }
 
+  const ok = errors.length === 0;
   if (debugOut && typeof debugOut === "object") {
     debugOut.invariants = { ok, errors };
 
