@@ -813,7 +813,7 @@ function buildCoastGeometry({ waterModel, outerBoundary, waterIntent, cx, cy }) 
     bankPoint: waterModel.bankPoint ?? null,
     boundaryVertexIndices: boundaryCurve.ok ? boundaryCurve.boundaryVertexIndices : [],
     source: boundaryCurve.ok ? "outerBoundary_seaward_segment" : "waterModel_fallback_curve",
-    fitMode: boundaryCurve.ok ? "outer_boundary_neighbour_curve" : "fallback_water_curve",
+    fitMode: boundaryCurve.ok ? "outer_boundary_neighbour_curve" : "water_model_curve_fallback",
     diagnostics: {
       attempted: true,
       accepted: !!boundaryCurve.ok,
