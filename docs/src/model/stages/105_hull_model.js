@@ -1399,6 +1399,138 @@ function buildOuterLobeFloor({ upper, step, newTownHint }) {
   return out;
 }
 
+function canonicalAngle01(p, centre) {
+  const a = angleOf(p, centre);
+  const t = a < 0 ? a + Math.PI * 2 : a;
+  return t;
+}
+
+function stablePointKey(p, precision = 1000) {
+  return `${Math.round(p.x * precision)}:${Math.round(p.y * precision)}`;
+}
+
+function uniqueHardPoints(points) {
+  const out = [];
+  const seen = new Set();
+
+  for (const p of safeArray(points)) {
+    if (!isPoint(p)) continue;
+
+    const key = stablePointKey(p, 1000);
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    out.push(p);
+  }
+
+  return out;
+}
+
+function requiredPointInsideLegacyOuter(p, legacyPoly) {
+  return isPoint(p) && pointInsidePoly(legacyPoly, p);
+}
+
+function buildOuterCandidateVerticesWithHardPoints({
+  centre,
+  radii,
+  step,
+  legacyPoly,
+  requiredInsidePoints,
+}) {
+  const vertices = [];
+
+  for (let i = 0; i < radii.length; i++) {
+    const t = i * step;
+    vertices.push({
+      p: {
+        x: centre.x + Math.cos(t) * radii[i],
+        y: centre.y + Math.sin(t) * radii[i],
+      },
+      theta: t,
+      kind: "radial_sample",
+      index: i,
+    });
+  }
+
+  const hardPoints = uniqueHardPoints(requiredInsidePoints)
+    .filter((p) => requiredPointInsideLegacyOuter(p, legacyPoly))
+    .map((p, i) => ({
+      p,
+      theta: canonicalAngle01(p, centre),
+      kind: "required_point",
+      index: i,
+    }));
+
+  vertices.push(...hardPoints);
+
+  vertices.sort((a, b) => {
+    if (a.theta !== b.theta) return a.theta - b.theta;
+
+    // Deterministic tie-break:
+    // required points come after the radial sample at the same angle,
+    // so the radial outline remains the main scaffold.
+    if (a.kind !== b.kind) {
+      if (a.kind === "radial_sample") return -1;
+      if (b.kind === "radial_sample") return 1;
+    }
+
+    return a.index - b.index;
+  });
+
+  const points = dedupePoints(vertices.map(v => v.p), 1e-5);
+
+  return {
+    points,
+    hardPointCount: hardPoints.length,
+  };
+}
+
+function expandOuterRadiiForRequiredPoints({
+  centre,
+  upper,
+  lowerDilated,
+  lobeFloor,
+  requiredInsidePoints,
+  step,
+}) {
+  const n = upper.length;
+  const hardLower = new Array(n);
+
+  for (let i = 0; i < n; i++) {
+    hardLower[i] = Math.max(lowerDilated[i] || 0, lobeFloor[i] || 0);
+  }
+
+  for (const p of safeArray(requiredInsidePoints)) {
+    if (!isPoint(p)) continue;
+
+    const theta = canonicalAngle01(p, centre);
+    const radius = distTo(p, centre);
+
+    if (!(Number.isFinite(radius) && radius > 0)) continue;
+
+    const floatIndex = theta / step;
+    const i0 = wrapIndex(Math.floor(floatIndex), n);
+    const i1 = wrapIndex(i0 + 1, n);
+    const i2 = wrapIndex(i0 - 1, n);
+
+    // Direct bin support.
+    hardLower[i0] = Math.max(hardLower[i0], radius);
+    hardLower[i1] = Math.max(hardLower[i1], radius);
+
+    // Neighbour support reduces the chance that the polygon chord cuts behind
+    // the required point. Required points are also inserted as hard vertices
+    // later, so this is an additional stabiliser, not the only guarantee.
+    hardLower[i2] = Math.max(hardLower[i2], radius * 0.92);
+
+    // Never force a lower bound beyond the safe legacy upper bound.
+    hardLower[i0] = Math.min(hardLower[i0], upper[i0] * 0.995);
+    hardLower[i1] = Math.min(hardLower[i1], upper[i1] * 0.995);
+    hardLower[i2] = Math.min(hardLower[i2], upper[i2] * 0.995);
+  }
+
+  return hardLower;
+}
+
 function buildRefinedOuterHullCandidate({
   centre,
   legacyPoly,
@@ -1445,7 +1577,17 @@ function buildRefinedOuterHullCandidate({
   const lobeFloor = buildOuterLobeFloor({
     upper,
     step,
+    centre,
     newTownHint,
+  });
+
+  const hardLower = expandOuterRadiiForRequiredPoints({
+    centre,
+    upper,
+    lowerDilated,
+    lobeFloor,
+    requiredInsidePoints,
+    step,
   });
 
   const radii = new Array(sampleCount);
@@ -1456,23 +1598,22 @@ function buildRefinedOuterHullCandidate({
     const lobeHalfWidth = Math.PI / 4.5;
     const lobeW = theta0 == null || lobeDelta > lobeHalfWidth ? 0 : 1 - lobeDelta / lobeHalfWidth;
 
-    const lowerBound = Math.max(lowerDilated[i], lobeFloor[i]);
+    const lowerBound = hardLower[i];
     const targetBase = upperSmooth[i];
     const target = targetBase * (1 - 0.65 * lobeW) + upper[i] * (0.65 * lobeW);
 
     radii[i] = clamp(target, lowerBound, upper[i]);
   }
 
-  let poly = [];
-  for (let i = 0; i < sampleCount; i++) {
-    const t = i * step;
-    poly.push({
-      x: centre.x + Math.cos(t) * radii[i],
-      y: centre.y + Math.sin(t) * radii[i],
-    });
-  }
+  const vertexBuild = buildOuterCandidateVerticesWithHardPoints({
+    centre,
+    radii,
+    step,
+    legacyPoly,
+    requiredInsidePoints,
+  });
 
-  poly = dedupePoints(poly, 1e-5);
+  let poly = vertexBuild.points;
   poly = alignWinding(poly, legacyPoly);
 
   if (!Array.isArray(poly) || poly.length < 8) {
@@ -1509,10 +1650,12 @@ function buildRefinedOuterHullCandidate({
     poly,
     meta: {
       sampleCount,
+      hardPointCount: vertexBuild.hardPointCount,
       supportPointCount: safeArray(radialSupportPoints).length,
       requiredPointCount: safeArray(requiredInsidePoints).length,
       hasNewTownLobe: !!newTownHint?.dir,
       objective: "ring1_plus_new_town_lobes_inside_legacy",
+      constraintMode: "required_points_as_hard_vertices",
     },
   };
 }
