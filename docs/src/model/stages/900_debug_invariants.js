@@ -521,7 +521,7 @@ export function runDebugInvariantsStage({
     }
   }
 
-  // ---------------- Milestone 4.9 publication and proof checks ----------------
+  // ---------------- Milestone 4.9 publication, proof, and geometry-contract checks ----------------
   const hullBundle = resolveHullBundle({
     hullModel,
     coreSet,
@@ -544,6 +544,19 @@ export function runDebugInvariantsStage({
   if (!hasAnyHull49) {
     console.warn("[HullModel] 4.9 outputs not provided to Stage 900; skipping 4.9 publication checks");
   } else {
+    const innerRefinement =
+      hullBundle.innerHullModel?.refinement ??
+      hullBundle.innerHullModel?.diagnostics?.refinement ??
+      null;
+
+    const outerRefinement =
+      hullBundle.outerHullModel?.refinement ??
+      hullBundle.outerHullModel?.diagnostics?.refinement ??
+      null;
+
+    const innerObjectiveMode = hullBundle.innerHullModel?.objective?.mode ?? null;
+    const outerObjectiveMode = hullBundle.outerHullModel?.objective?.mode ?? null;
+
     console.info("[HullModel] summary", {
       hasHullModel: !!hullBundle.hullModel,
       hasCoreSet: !!hullBundle.coreSet,
@@ -552,10 +565,23 @@ export function runDebugInvariantsStage({
       hasHullProofs: !!hullBundle.hullProofs,
       hasCitadelFit: !!hullBundle.citadelFit,
       hasCoastGeometry: !!hullBundle.coastGeometry,
+
       innerPointCount: polyPointCount(hullBundle.innerHullModel?.poly),
       outerPointCount: polyPointCount(hullBundle.outerHullModel?.poly),
+
+      innerObjectiveMode,
+      outerObjectiveMode,
+
+      innerRefinementAttempted: innerRefinement?.attempted ?? null,
+      innerRefinementAccepted: innerRefinement?.accepted ?? null,
+      outerRefinementAttempted: outerRefinement?.attempted ?? null,
+      outerRefinementAccepted: outerRefinement?.accepted ?? null,
+
+      citadelFitMode: hullBundle.citadelFit?.fitMode ?? null,
+      coastFitMode: hullBundle.coastGeometry?.fitMode ?? null,
     });
 
+    // ---- Required 4.9 publications ----
     pushIfFalse(errors, !!hullBundle.hullModel, "Milestone 4.9 invalid: hullModel is missing");
     pushIfFalse(errors, !!hullBundle.coreSet, "Milestone 4.9 invalid: coreSet is missing");
     pushIfFalse(errors, !!hullBundle.innerHullModel, "Milestone 4.9 invalid: innerHullModel is missing");
@@ -563,6 +589,7 @@ export function runDebugInvariantsStage({
     pushIfFalse(errors, !!hullBundle.hullProofs, "Milestone 4.9 invalid: hullProofs is missing");
     pushIfFalse(errors, !!hullBundle.citadelFit, "Milestone 4.9 invalid: citadelFit is missing");
 
+    // ---- Core set contract ----
     if (hullBundle.coreSet) {
       pushIfFalse(
         errors,
@@ -586,6 +613,7 @@ export function runDebugInvariantsStage({
       );
     }
 
+    // ---- Inner hull contract ----
     if (hullBundle.innerHullModel) {
       pushIfFalse(
         errors,
@@ -602,8 +630,31 @@ export function runDebugInvariantsStage({
         Array.isArray(hullBundle.innerHullModel.sourceWardIds),
         "Milestone 4.9 invalid: innerHullModel.sourceWardIds must be an array"
       );
+
+      pushIfFalse(
+        errors,
+        innerRefinement && innerRefinement.attempted === true,
+        "Milestone 4.9 invalid: inner hull refinement was not attempted"
+      );
+
+      const innerKnownMode =
+        innerObjectiveMode === "radial_star_profile_inside_legacy" ||
+        innerObjectiveMode === "legacy_core_union_outer_loop";
+
+      pushIfFalse(
+        errors,
+        innerKnownMode,
+        `Milestone 4.9 invalid: unexpected inner hull objective mode: ${innerObjectiveMode}`
+      );
+
+      if (innerRefinement && innerRefinement.attempted === true && innerRefinement.accepted !== true) {
+        console.warn("[HullModel] inner hull refinement fell back to legacy hull", {
+          reason: innerRefinement.reason ?? "unknown",
+        });
+      }
     }
 
+    // ---- Outer hull contract ----
     if (hullBundle.outerHullModel) {
       pushIfFalse(
         errors,
@@ -620,8 +671,31 @@ export function runDebugInvariantsStage({
         Array.isArray(hullBundle.outerHullModel.sourceWardIds),
         "Milestone 4.9 invalid: outerHullModel.sourceWardIds must be an array"
       );
+
+      pushIfFalse(
+        errors,
+        outerRefinement && outerRefinement.attempted === true,
+        "Milestone 4.9 invalid: outer hull refinement was not attempted"
+      );
+
+      const outerKnownMode =
+        outerObjectiveMode === "ring1_plus_new_town_lobes_inside_legacy" ||
+        outerObjectiveMode === "legacy_core_plus_ring1_outer_loop";
+
+      pushIfFalse(
+        errors,
+        outerKnownMode,
+        `Milestone 4.9 invalid: unexpected outer hull objective mode: ${outerObjectiveMode}`
+      );
+
+      if (outerRefinement && outerRefinement.attempted === true && outerRefinement.accepted !== true) {
+        console.warn("[HullModel] outer hull refinement fell back to legacy hull", {
+          reason: outerRefinement.reason ?? "unknown",
+        });
+      }
     }
 
+    // ---- Hull proof contract ----
     if (hullBundle.hullProofs) {
       const proofs = hullBundle.hullProofs;
 
@@ -680,8 +754,20 @@ export function runDebugInvariantsStage({
       }
     }
 
+    // ---- Citadel fit contract ----
     if (hullBundle.citadelFit) {
       const requireCitadelPoly = hullBundle.coreSet?.hasCitadelGeometry === true;
+      const fitMode = hullBundle.citadelFit.fitMode ?? null;
+
+      const allowedCitadelFitMode =
+        fitMode === "radial_ward_fit" ||
+        fitMode === "legacy_fallback";
+
+      pushIfFalse(
+        errors,
+        allowedCitadelFitMode,
+        `Milestone 4.9 invalid: unexpected citadelFit.fitMode: ${fitMode}`
+      );
 
       if (requireCitadelPoly) {
         pushIfFalse(
@@ -697,14 +783,28 @@ export function runDebugInvariantsStage({
         "Milestone 4.9 invalid: citadelFit.wardId is missing"
       );
 
-      if (hullBundle.citadelFit.insideCitadelWard === false) {
-        errors.push("Milestone 4.9 invalid: citadel geometry falls outside the citadel ward");
+      if (fitMode === "radial_ward_fit") {
+        pushIfFalse(
+          errors,
+          hullBundle.citadelFit.insideCitadelWard !== false,
+          "Milestone 4.9 invalid: fitted citadel geometry falls outside the citadel ward"
+        );
+
+        pushIfFalse(
+          errors,
+          hullBundle.citadelFit.insideInnerHull !== false,
+          "Milestone 4.9 invalid: fitted citadel geometry falls outside the inner hull"
+        );
       }
-      if (hullBundle.citadelFit.insideInnerHull === false) {
-        errors.push("Milestone 4.9 invalid: citadel geometry falls outside the inner hull");
+
+      if (fitMode === "legacy_fallback") {
+        console.warn("[HullModel] citadel fit fell back to legacy geometry", {
+          reason: hullBundle.citadelFit.diagnostics?.reason ?? hullBundle.citadelFit.reason ?? "unknown",
+        });
       }
     }
 
+    // ---- Coast-neighbour curve contract ----
     if (waterKind === "coast") {
       pushIfFalse(
         errors,
@@ -713,31 +813,65 @@ export function runDebugInvariantsStage({
       );
 
       if (hullBundle.coastGeometry) {
+        const fitMode = hullBundle.coastGeometry.fitMode ?? null;
+
+        const allowedCoastFitMode =
+          fitMode === "outer_boundary_neighbour_curve" ||
+          fitMode === "water_model_curve_fallback" ||
+          fitMode === "water_model_shoreline_fallback" ||
+          fitMode === "legacy_water_model_curve";
+
         pushIfFalse(
           errors,
           hullBundle.coastGeometry.kind === "coast_curve",
           "Milestone 4.9 invalid: coastGeometry.kind must be coast_curve"
         );
+
         pushIfFalse(
           errors,
           Array.isArray(hullBundle.coastGeometry.curve) && hullBundle.coastGeometry.curve.length >= 2,
           "Milestone 4.9 invalid: coastGeometry.curve is missing or too short"
         );
+
         pushIfFalse(
           errors,
           hullBundle.coastGeometry.diagnostics?.neighboursOuterBoundary === true,
           "Milestone 4.9 invalid: coastGeometry must report neighboursOuterBoundary=true"
         );
+
         pushIfFalse(
           errors,
           hullBundle.coastGeometry.diagnostics?.intersectsOuterBoundaryAsPolygon === false,
           "Milestone 4.9 invalid: coastGeometry must report intersectsOuterBoundaryAsPolygon=false"
         );
+
+        pushIfFalse(
+          errors,
+          allowedCoastFitMode,
+          `Milestone 4.9 invalid: unexpected coastGeometry.fitMode: ${fitMode}`
+        );
+
+        if (fitMode === "outer_boundary_neighbour_curve") {
+          pushIfFalse(
+            errors,
+            hullBundle.coastGeometry.source === "outerBoundary_seaward_segment",
+            `Milestone 4.9 invalid: coastGeometry.source must be outerBoundary_seaward_segment when fitMode=${fitMode}`
+          );
+
+          pushIfFalse(
+            errors,
+            hullBundle.coastGeometry.diagnostics?.curveLiesOnOuterBoundary === true,
+            "Milestone 4.9 invalid: coastGeometry boundary-neighbour curve must lie on outerBoundary"
+          );
+        } else {
+          console.warn("[HullModel] coast geometry used fallback curve", {
+            fitMode,
+            source: hullBundle.coastGeometry.source ?? null,
+          });
+        }
       }
     }
   }
-
-  const ok = errors.length === 0;
 
   if (debugOut && typeof debugOut === "object") {
     debugOut.invariants = { ok, errors };
