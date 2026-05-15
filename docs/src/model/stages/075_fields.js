@@ -379,20 +379,30 @@ export function runFieldsStage(env) {
 
   // Publish bounded ranges for all fields computed so far.
   const meta0 = fields.meta();
-  if (meta0 && Array.isArray(meta0.records)) {
-    for (let i = 0; i < meta0.records.length; i++) {
-      const r = meta0.records[i];
+
+  const metaRecords = Array.isArray(meta0)
+    ? meta0
+    : (meta0 && Array.isArray(meta0.records) ? meta0.records : []);
+
+  if (metaRecords.length > 0) {
+    for (let i = 0; i < metaRecords.length; i++) {
+      const r = metaRecords[i];
       if (!r || !r.name) continue;
 
       const rec = fields.get(r.name);
       if (!rec || !rec.values) continue;
 
       const stats = computeFieldStats(rec.values);
+
       assert(stats.finiteCount > 0, `Field ${r.name} has no finite values.`);
       assert(stats.min != null && stats.max != null, `Field ${r.name} has null bounds.`);
-      assert(Number.isFinite(stats.min) && Number.isFinite(stats.max), `Field ${r.name} has non-finite bounds: ${stats.min}, ${stats.max}`);
+      assert(
+        Number.isFinite(stats.min) && Number.isFinite(stats.max),
+        `Field ${r.name} has non-finite bounds: ${stats.min}, ${stats.max}`
+      );
 
       const m = rec.meta || {};
+
       stageMeta.fieldStats[r.name] = {
         min: stats.min,
         max: stats.max,
