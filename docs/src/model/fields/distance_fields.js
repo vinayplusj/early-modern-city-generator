@@ -61,6 +61,102 @@ function buildFaceIdIndex(meshAccess) {
   return { ids, idToIndex };
 }
 
+function estimateMeshDiagonal(meshAccess) {
+  if (
+    !meshAccess ||
+    typeof meshAccess.iterVertexIds !== "function" ||
+    typeof meshAccess.vertexXY !== "function"
+  ) {
+    const n = typeof meshAccess?.getVertexCount === "function"
+      ? meshAccess.getVertexCount()
+      : 1;
+    return Math.max(1, Number.isFinite(n) ? n : 1);
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+
+  for (const vIdRaw of meshAccess.iterVertexIds()) {
+    const vId = toIntId(vIdRaw, "vertex");
+    const p = meshAccess.vertexXY(vId);
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+    count++;
+  }
+
+  if (count === 0) return 1;
+
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const d = Math.hypot(dx, dy);
+
+  return Number.isFinite(d) && d > 0 ? d : 1;
+}
+
+function finiteDistanceCap(distances, meshAccess) {
+  let maxFinite = 0;
+  let finiteCount = 0;
+
+  for (let i = 0; i < distances.length; i++) {
+    const v = distances[i];
+    if (!Number.isFinite(v)) continue;
+    if (v > maxFinite) maxFinite = v;
+    finiteCount++;
+  }
+
+  const diag = estimateMeshDiagonal(meshAccess);
+
+  if (finiteCount === 0) {
+    return diag;
+  }
+
+  return Math.max(maxFinite + diag * 0.25, diag);
+}
+
+function repairUnreachableVertexDistances(distances, meshAccess) {
+  assert(
+    distances instanceof Float64Array,
+    "repairUnreachableVertexDistances requires Float64Array distances."
+  );
+
+  let unreachableCount = 0;
+  for (let i = 0; i < distances.length; i++) {
+    if (!Number.isFinite(distances[i])) unreachableCount++;
+  }
+
+  if (unreachableCount === 0) {
+    return {
+      values: distances,
+      unreachableCount: 0,
+      replacementValue: null,
+    };
+  }
+
+  const replacementValue = finiteDistanceCap(distances, meshAccess);
+  assert(
+    Number.isFinite(replacementValue) && replacementValue >= 0,
+    `Invalid unreachable distance replacement value: ${replacementValue}`
+  );
+
+  const out = new Float64Array(distances.length);
+  for (let i = 0; i < distances.length; i++) {
+    const v = distances[i];
+    out[i] = Number.isFinite(v) ? v : replacementValue;
+  }
+
+  return {
+    values: out,
+    unreachableCount,
+    replacementValue,
+  };
+}
 /**
  * Deterministically choose the nearest vertex id to a point.
  * Tie-break: smaller vertex id wins.
@@ -108,13 +204,28 @@ export function pickNearestVertexId(meshAccess, p) {
  */
 export function computeVertexDistanceField(args) {
   assert(args && args.meshAccess, "computeVertexDistanceField requires args.meshAccess.");
-  assert(Array.isArray(args.sourceVertexIds) && args.sourceVertexIds.length > 0, "computeVertexDistanceField requires non-empty sourceVertexIds.");
+  assert(
+    Array.isArray(args.sourceVertexIds) && args.sourceVertexIds.length > 0,
+    "computeVertexDistanceField requires non-empty sourceVertexIds."
+  );
 
-  return dijkstraVertexDistances({
+  const raw = dijkstraVertexDistances({
     meshAccess: args.meshAccess,
     sources: args.sourceVertexIds,
     maxDistance: args.maxDistance,
   });
+
+  const repaired = repairUnreachableVertexDistances(raw, args.meshAccess);
+
+  // Optional diagnostic hook. This keeps the return value as Float64Array,
+  // but lets callers pass an object to collect unreachable counts later.
+  if (args.debugMeta && typeof args.debugMeta === "object") {
+    args.debugMeta.unreachableCount = repaired.unreachableCount;
+    args.debugMeta.replacementValue = repaired.replacementValue;
+    args.debugMeta.policy = "replace_unreachable_with_finite_cap";
+  }
+
+  return repaired.values;
 }
 
 /**
