@@ -495,7 +495,7 @@ export const PIPELINE_STAGES = [
       if (!fort) throw new Error("[EMCG] Stage 130 requires ctx.state.fortifications (Stage 10 output).");
       if (!fortGeom) throw new Error("[EMCG] Stage 130 requires ctx.state.fortGeometryWarped (Stage 120 output).");
 
-      const docks = runDocksStage({
+      const docksOut = runDocksStage({
         hasDock: env.hasDock,
         anchors,
         newTown: newTown.newTown,
@@ -506,11 +506,13 @@ export const PIPELINE_STAGES = [
         width: env.width,
         height: env.height,
       });
-
-      ctx.state.docks = docks;
-
-      // Canonical anchor mutation
-      anchors.docks = docks;
+      
+      ctx.state.docks = docksOut;
+      
+      // Canonical anchor mutation.
+      // Keep anchors.docks as a direct point or null.
+      // Do not store the wrapper object here because Stage 140 expects a point.
+      anchors.docks = docksOut?.docks ?? null;
       ctx.state.anchors = anchors;
     },
   },
