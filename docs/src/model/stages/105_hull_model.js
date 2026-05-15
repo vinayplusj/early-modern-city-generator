@@ -10,7 +10,7 @@
 // - coastGeometry
 //
 // Step 3B: improve geometry one contract at a time.
-// This version upgrades the INNER hull and OUTER hull.
+// This version upgrades the INNER hull, OUTER hull, and CITADEL FIT.
 //
 // New behaviour:
 // - Build a deterministic star-profile refinement for the inner hull.
@@ -25,7 +25,7 @@
 //
 // Important:
 // - Outer hull is still legacy-wrapped for now.
-// - Citadel fit is still diagnostic for now.
+// - Citadel fit now generates a fitted radial polygon and publishes it back to ctx.state.citadel.
 // - Coast geometry is still a publication wrapper for now.
 
 import { assert } from "../util/assert.js";
@@ -189,27 +189,323 @@ function buildHullProofs({ cx, cy, wardsState, coreSet, innerHullModel, outerHul
   };
 }
 
-function buildCitadelFit({ citadel, wardsState, coreSet, innerHullModel }) {
+function polygonAbsArea(poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return 0;
+  const a = signedArea(poly);
+  return Number.isFinite(a) ? Math.abs(a) : 0;
+}
+
+function edgeSampledPoints(poly, samplesPerEdge = 2) {
+  const out = [];
+  if (!Array.isArray(poly) || poly.length === 0) return out;
+
+  const steps = Math.max(1, samplesPerEdge | 0);
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    out.push(a);
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      out.push({
+        x: a.x * (1 - t) + b.x * t,
+        y: a.y * (1 - t) + b.y * t,
+      });
+    }
+  }
+
+  return out;
+}
+
+function allPointsInsidePolys(points, polys) {
+  for (const p of safeArray(points)) {
+    if (!isPoint(p)) return false;
+    for (const poly of safeArray(polys)) {
+      if (Array.isArray(poly) && poly.length >= 3 && !pointInsidePoly(poly, p)) return false;
+    }
+  }
+  return true;
+}
+
+function polygonInsideAllPolys(poly, polys) {
+  if (!Array.isArray(poly) || poly.length < 3) return false;
+  return allPointsInsidePolys(edgeSampledPoints(poly, 3), polys);
+}
+
+function transformPolyUniform(poly, fromCentre, toCentre, scale) {
+  if (!Array.isArray(poly) || !isPoint(fromCentre) || !isPoint(toCentre) || !Number.isFinite(scale)) return null;
+  return poly.map((p) => ({
+    x: toCentre.x + (p.x - fromCentre.x) * scale,
+    y: toCentre.y + (p.y - fromCentre.y) * scale,
+  }));
+}
+
+function rayMinRadiusToPoly(centre, dir, poly) {
+  if (!isPoint(centre) || !isPoint(dir) || !Array.isArray(poly) || poly.length < 3) return null;
+
+  let bestT = null;
+  const eps = 1e-9;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (!isPoint(a) || !isPoint(b)) continue;
+
+    const sx = b.x - a.x;
+    const sy = b.y - a.y;
+    const dx = dir.x;
+    const dy = dir.y;
+
+    const den = cross2(dx, dy, sx, sy);
+    if (Math.abs(den) <= eps) continue;
+
+    const acx = a.x - centre.x;
+    const acy = a.y - centre.y;
+
+    const t = cross2(acx, acy, sx, sy) / den;
+    const u = cross2(acx, acy, dx, dy) / den;
+
+    if (t > eps && u >= -eps && u <= 1 + eps) {
+      if (bestT == null || t < bestT) bestT = t;
+    }
+  }
+
+  return bestT;
+}
+
+function minBoundaryRadiusForDir(centre, dir, polys) {
+  let best = null;
+  for (const poly of safeArray(polys)) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    const r = rayMinRadiusToPoly(centre, dir, poly);
+    if (Number.isFinite(r) && r > 0) {
+      best = best == null ? r : Math.min(best, r);
+    }
+  }
+  return best;
+}
+
+function candidateFitCentres({ anchors, citadel, citadelWardPoly, innerHullPoly }) {
+  const out = [];
+  const push = (p, source) => {
+    if (!isPoint(p)) return;
+    if (out.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 1e-6)) return;
+    out.push({ ...p, source });
+  };
+
+  const wardC = polygonCentroidSafe(citadelWardPoly);
+  const citC = polygonCentroidSafe(citadel);
+  const anchor = anchors?.citadel ?? null;
+
+  push(anchor, "anchors.citadel");
+  push(wardC, "citadel_ward_centroid");
+  push(citC, "legacy_citadel_centroid");
+
+  if (isPoint(anchor) && isPoint(wardC)) {
+    for (const t of [0.25, 0.5, 0.75]) {
+      push({
+        x: anchor.x * (1 - t) + wardC.x * t,
+        y: anchor.y * (1 - t) + wardC.y * t,
+      }, `anchor_to_ward_centroid_${t}`);
+    }
+  }
+
+  for (const p of samplePolyline(citadelWardPoly, 16)) push(p, "citadel_ward_boundary_sample");
+  for (const p of samplePolyline(innerHullPoly, 16)) push(p, "inner_hull_boundary_sample");
+
+  return out;
+}
+
+function chooseCitadelFitCentre({ anchors, citadel, citadelWardPoly, innerHullPoly }) {
+  const domains = [citadelWardPoly, innerHullPoly].filter((p) => Array.isArray(p) && p.length >= 3);
+  const candidates = candidateFitCentres({ anchors, citadel, citadelWardPoly, innerHullPoly });
+  const anchor = anchors?.citadel ?? null;
+
+  let best = null;
+  for (const c of candidates) {
+    if (!allPointsInsidePolys([c], domains)) continue;
+
+    const anchorDist = isPoint(anchor) ? Math.hypot(c.x - anchor.x, c.y - anchor.y) : 0;
+    const wardC = polygonCentroidSafe(citadelWardPoly);
+    const wardDist = isPoint(wardC) ? Math.hypot(c.x - wardC.x, c.y - wardC.y) : 0;
+    const score = anchorDist * 0.55 + wardDist * 0.45;
+
+    if (!best || score < best.score) best = { point: c, source: c.source, score };
+  }
+
+  return best;
+}
+
+function maxUniformScaleInside({ poly, fromCentre, toCentre, domains }) {
+  if (!Array.isArray(poly) || poly.length < 3 || !isPoint(fromCentre) || !isPoint(toCentre)) return null;
+  if (!allPointsInsidePolys([toCentre], domains)) return null;
+
+  let hi = 1;
+  for (let i = 0; i < 10; i++) {
+    const test = transformPolyUniform(poly, fromCentre, toCentre, hi);
+    if (!polygonInsideAllPolys(test, domains)) break;
+    hi *= 1.5;
+    if (hi > 8) break;
+  }
+
+  let lo = 0;
+  for (let i = 0; i < 42; i++) {
+    const mid = (lo + hi) / 2;
+    const test = transformPolyUniform(poly, fromCentre, toCentre, mid);
+    if (polygonInsideAllPolys(test, domains)) lo = mid;
+    else hi = mid;
+  }
+
+  return lo;
+}
+
+function buildRadialCitadelCandidate({ poly, fromCentre, toCentre, domains, uniformScale, edgePull }) {
+  if (!Array.isArray(poly) || poly.length < 3) return null;
+  if (!isPoint(fromCentre) || !isPoint(toCentre)) return null;
+  if (!Number.isFinite(uniformScale) || uniformScale <= 0) return null;
+
+  const pull = clamp(edgePull, 0, 1);
+  const out = [];
+  const n = poly.length;
+
+  for (let i = 0; i < n; i++) {
+    const p = poly[i];
+    if (!isPoint(p)) return null;
+
+    let dx = p.x - fromCentre.x;
+    let dy = p.y - fromCentre.y;
+    let r = Math.hypot(dx, dy);
+
+    if (!(Number.isFinite(r) && r > 1e-9)) {
+      const t = (i / Math.max(1, n)) * Math.PI * 2;
+      dx = Math.cos(t);
+      dy = Math.sin(t);
+      r = 1;
+    }
+
+    const dir = { x: dx / r, y: dy / r };
+    const boundaryR = minBoundaryRadiusForDir(toCentre, dir, domains);
+    if (!(Number.isFinite(boundaryR) && boundaryR > 1e-9)) return null;
+
+    const baseR = r * uniformScale * 0.88;
+    const maxR = boundaryR * 0.86;
+    const targetR = baseR * (1 - pull) + maxR * pull;
+    const finalR = Math.min(maxR, targetR);
+
+    out.push({
+      x: toCentre.x + dir.x * finalR,
+      y: toCentre.y + dir.y * finalR,
+    });
+  }
+
+  return alignWinding(dedupePoints(out, 1e-6), poly);
+}
+
+function buildFittedCitadelPolygon({ citadel, anchors, citadelWardPoly, innerHullPoly }) {
+  if (!Array.isArray(citadel) || citadel.length < 3) {
+    return { ok: false, reason: "missing_citadel_poly" };
+  }
+
+  const domains = [citadelWardPoly, innerHullPoly].filter((p) => Array.isArray(p) && p.length >= 3);
+  if (domains.length === 0) {
+    return { ok: false, reason: "missing_fit_domain" };
+  }
+
+  const fromCentre = polygonCentroidSafe(citadel);
+  if (!isPoint(fromCentre)) {
+    return { ok: false, reason: "missing_citadel_centroid" };
+  }
+
+  const centreChoice = chooseCitadelFitCentre({ anchors, citadel, citadelWardPoly, innerHullPoly });
+  if (!centreChoice || !isPoint(centreChoice.point)) {
+    return { ok: false, reason: "no_valid_fit_centre" };
+  }
+
+  const maxScale = maxUniformScaleInside({
+    poly: citadel,
+    fromCentre,
+    toCentre: centreChoice.point,
+    domains,
+  });
+
+  if (!(Number.isFinite(maxScale) && maxScale > 1e-6)) {
+    return { ok: false, reason: "no_positive_uniform_scale", centreSource: centreChoice.source };
+  }
+
+  let best = null;
+  for (const edgePull of [0.55, 0.4, 0.25, 0.1, 0]) {
+    const candidate = buildRadialCitadelCandidate({
+      poly: citadel,
+      fromCentre,
+      toCentre: centreChoice.point,
+      domains,
+      uniformScale: maxScale,
+      edgePull,
+    });
+
+    if (!polygonInsideAllPolys(candidate, domains)) continue;
+
+    const area = polygonAbsArea(candidate);
+    if (!best || area > best.area || (area === best.area && edgePull > best.edgePull)) {
+      best = { poly: candidate, area, edgePull };
+    }
+  }
+
+  if (!best) {
+    const fallbackScale = maxScale * 0.86;
+    const uniform = transformPolyUniform(citadel, fromCentre, centreChoice.point, fallbackScale);
+    if (polygonInsideAllPolys(uniform, domains)) {
+      best = { poly: alignWinding(uniform, citadel), area: polygonAbsArea(uniform), edgePull: 0 };
+    }
+  }
+
+  if (!best || !Array.isArray(best.poly) || best.poly.length < 3) {
+    return { ok: false, reason: "no_valid_fitted_polygon", centreSource: centreChoice.source };
+  }
+
+  return {
+    ok: true,
+    poly: best.poly,
+    centre: centreChoice.point,
+    centreSource: centreChoice.source,
+    maxUniformScale: maxScale,
+    edgePull: best.edgePull,
+    area: best.area,
+  };
+}
+
+function buildCitadelFit({ citadel, wardsState, coreSet, innerHullModel, anchors }) {
   const wardsWithRoles = safeArray(wardsState?.wardsWithRoles);
   const citadelWard = wardById(wardsWithRoles, coreSet.citadelWardId);
   const citadelWardPoly = wardPoly(citadelWard);
+  const innerHullPoly = innerHullModel?.poly ?? null;
 
-  const poly = Array.isArray(citadel) ? citadel : null;
+  const originalPoly = Array.isArray(citadel) ? citadel : null;
+  const fitted = buildFittedCitadelPolygon({
+    citadel: originalPoly,
+    anchors,
+    citadelWardPoly,
+    innerHullPoly,
+  });
+
+  const poly = fitted.ok ? fitted.poly : originalPoly;
   const pts = safeArray(poly);
 
   let insideCitadelWard = null;
   let insideInnerHull = null;
   let centroidInsideCitadelWard = null;
+  let centroidInsideInnerHull = null;
 
   if (pts.length >= 3) {
     insideCitadelWard =
       Array.isArray(citadelWardPoly) && citadelWardPoly.length >= 3
-        ? pts.every(p => pointInsidePoly(citadelWardPoly, p))
+        ? polygonInsideAllPolys(poly, [citadelWardPoly])
         : null;
 
     insideInnerHull =
-      Array.isArray(innerHullModel.poly) && innerHullModel.poly.length >= 3
-        ? pts.every(p => pointInsidePoly(innerHullModel.poly, p))
+      Array.isArray(innerHullPoly) && innerHullPoly.length >= 3
+        ? polygonInsideAllPolys(poly, [innerHullPoly])
         : null;
 
     const c = polygonCentroidSafe(poly);
@@ -217,15 +513,35 @@ function buildCitadelFit({ citadel, wardsState, coreSet, innerHullModel }) {
       c && Array.isArray(citadelWardPoly) && citadelWardPoly.length >= 3
         ? pointInsidePoly(citadelWardPoly, c)
         : null;
+
+    centroidInsideInnerHull =
+      c && Array.isArray(innerHullPoly) && innerHullPoly.length >= 3
+        ? pointInsidePoly(innerHullPoly, c)
+        : null;
   }
 
   return {
     poly,
+    originalPoly,
     wardId: coreSet.citadelWardId ?? null,
-    fitMode: "generated_from_anchor",
+    fitMode: fitted.ok ? "radial_ward_fit" : "legacy_fallback",
     insideCitadelWard,
     insideInnerHull,
     centroidInsideCitadelWard,
+    centroidInsideInnerHull,
+    diagnostics: {
+      attempted: true,
+      accepted: !!fitted.ok,
+      reason: fitted.ok ? "accepted" : fitted.reason,
+      centre: fitted.centre ?? null,
+      centreSource: fitted.centreSource ?? null,
+      maxUniformScale: fitted.maxUniformScale ?? null,
+      edgePull: fitted.edgePull ?? null,
+      originalArea: polygonAbsArea(originalPoly),
+      fittedArea: polygonAbsArea(poly),
+      citadelWardPointCount: Array.isArray(citadelWardPoly) ? citadelWardPoly.length : 0,
+      innerHullPointCount: Array.isArray(innerHullPoly) ? innerHullPoly.length : 0,
+    },
   };
 }
 
@@ -1024,7 +1340,12 @@ export function runHullModelStage({ ctx, cx, cy }) {
     wardsState,
     coreSet,
     innerHullModel,
+    anchors,
   });
+
+  if (Array.isArray(citadelFit?.poly) && citadelFit.poly.length >= 3) {
+    ctx.state.citadel = citadelFit.poly;
+  }
 
   const coastGeometry = buildCoastGeometry(waterModel);
 
