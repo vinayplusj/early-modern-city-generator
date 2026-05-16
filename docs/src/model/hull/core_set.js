@@ -62,3 +62,4 @@ export function buildCoreSet({ wardsState, anchors, citadel }) {
     hasCitadelGeometry: Array.isArray(citadel) && citadel.length >= 3,
     source: "wards.fortHulls + anchors + wards.wardRoleIndices",
   };
+}  
