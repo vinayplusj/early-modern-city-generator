@@ -90,16 +90,19 @@ function boolResult(ok, extra = {}) {
   return { ok: !!ok, ...extra };
 }
 
+function firstRoleId(value) {
+  if (Array.isArray(value)) return value.length > 0 ? value[0] : null;
+  if (Number.isInteger(value)) return value;
+  return null;
+}
+
 function buildCoreSet({ wardsState, anchors, citadel }) {
   const wardsWithRoles = safeArray(wardsState?.wardsWithRoles);
   const roleIdx = wardsState?.wardRoleIndices || {};
   const fortHulls = wardsState?.fortHulls || {};
 
-  const plazaWardId =
-    Array.isArray(roleIdx.plaza) && roleIdx.plaza.length > 0 ? roleIdx.plaza[0] : null;
-
-  const citadelWardId =
-    Array.isArray(roleIdx.citadel) && roleIdx.citadel.length > 0 ? roleIdx.citadel[0] : null;
+  const plazaWardId = firstRoleId(roleIdx.plaza);
+  const citadelWardId = firstRoleId(roleIdx.citadel);
 
   const innerWardIds = Array.isArray(roleIdx.inner)
     ? roleIdx.inner.slice()
