@@ -70,19 +70,6 @@ function collectCoreSupport({
   };
 }
 
-function dilateCyclicMax(values, radius = 1) {
-  const n = values.length;
-  const out = new Array(n).fill(0);
-  for (let i = 0; i < n; i++) {
-    let best = values[i];
-    for (let k = -radius; k <= radius; k++) {
-      best = Math.max(best, values[wrapIndex(i + k, n)]);
-    }
-    out[i] = best;
-  }
-  return out;
-}
-
 function smoothUpperProfile(values) {
   const n = values.length;
   const med = new Array(n);
