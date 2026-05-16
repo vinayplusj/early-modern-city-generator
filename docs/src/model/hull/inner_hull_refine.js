@@ -70,38 +70,6 @@ function collectCoreSupport({
   };
 }
 
-function smoothUpperProfile(values) {
-  const n = values.length;
-  const med = new Array(n);
-  const out = new Array(n);
-
-  for (let i = 0; i < n; i++) {
-    med[i] = median3(
-      values[wrapIndex(i - 1, n)],
-      values[i],
-      values[wrapIndex(i + 1, n)]
-    );
-  }
-
-  for (let i = 0; i < n; i++) {
-    out[i] = average3(
-      med[wrapIndex(i - 1, n)],
-      med[i],
-      med[wrapIndex(i + 1, n)]
-    );
-  }
-
-  return out;
-}
-
-function alignWinding(poly, referencePoly) {
-  if (!Array.isArray(poly) || poly.length < 3) return poly;
-  const a = signedArea(poly);
-  const b = Array.isArray(referencePoly) && referencePoly.length >= 3 ? signedArea(referencePoly) : a;
-  if (Number.isFinite(a) && Number.isFinite(b) && a * b < 0) return poly.slice().reverse();
-  return poly;
-}
-
 function buildRefinedInnerHullCandidate({
   centre,
   legacyPoly,
