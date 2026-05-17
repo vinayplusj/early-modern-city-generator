@@ -2,14 +2,12 @@
 // Shared geometry helpers for Stage 105 hull modelling.
 
 import { pointInPolyOrOn, centroid, signedArea } from "../../geom/poly.js";
+import { isPoint, clamp } from "../../geom/primitives.js";
 
+export { isPoint, clamp };
 
 export function safeArray(value) {
   return Array.isArray(value) ? value : [];
-}
-
-export function isPoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
 export function firstPoint(poly) {
@@ -161,11 +159,6 @@ export function dist2PointToSeg(p, a, b) {
   const dx = p.x - qx;
   const dy = p.y - qy;
   return dx * dx + dy * dy;
-}
-
-
-export function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
 }
 
 export function wrapIndex(i, n) {
