@@ -18,6 +18,7 @@ import {
   mul,
   normalize,
   clampPointToCanvas,
+  isFinitePoint,
 } from "../../geom/primitives.js";
 
 import {
@@ -25,10 +26,6 @@ import {
   supportPoint,
   snapPointToPolyline,
 } from "../../geom/poly.js";
-
-function isFinitePoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
 
 function inCanvas(p, width, height, pad = 10) {
   return (
