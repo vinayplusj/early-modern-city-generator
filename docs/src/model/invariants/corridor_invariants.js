@@ -1,7 +1,8 @@
 // docs/src/model/invariants/corridor_invariants.js
 // Corridor diagnostics and Milestone 4.8 corridor closure checks.
 
-import { isFinitePoint, pushIfFalse } from "./invariant_utils.js";
+import { isFinitePoint } from "../../geom/primitives.js";
+import { pushIfFalse } from "./invariant_utils.js";
 
 function corridorAngleDeg(dir) {
   const ang = Math.atan2(dir?.y ?? 0, dir?.x ?? 0);
