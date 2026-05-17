@@ -299,7 +299,6 @@ export function assignDistrictRoles(districts, cx, cy, anchors = {}, opts = {}) 
  * @param {number[]} memberWardIds - ward ids included in the feature
  * @returns {{ loops: Array, holeCount: number, outerLoop: Array|null }}
  */
-export { buildDistrictLoopsFromWards } from "./mesh/district_loops_from_wards.js";
 
 export function titleCase(s) {
   const t = String(s || "").replace(/_/g, " ");
