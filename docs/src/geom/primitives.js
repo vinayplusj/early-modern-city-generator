@@ -2,6 +2,21 @@ export function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 export function lerp(a, b, t) { return a + (b - a) * t; }
 export function clamp01(v) { return clamp(v, 0, 1); }
 export function isFinitePoint(p) { return isPoint(p); }
+export function isFiniteDir(v) {
+  return isPoint(v);
+}
+
+export function unitOrNull(v) {
+  if (!isPoint(v)) return null;
+
+  const n = normalize(v);
+  if (!isPoint(n)) return null;
+
+  const m = Math.hypot(n.x, n.y);
+  if (!Number.isFinite(m) || m <= 1e-9) return null;
+
+  return n;
+}
 export function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
 export function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
 export function mul(a, s) { return { x: a.x * s, y: a.y * s }; }
