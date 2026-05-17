@@ -12,8 +12,9 @@
 // - meshAccess.faceBoundaryVertexIds(faceId) must be deterministic for a given CityMesh.
 // - face ids must be stable (no reindexing between stages).
 
+import { assert } from "../util/assert.js";
 import { deriveFaceFieldFromBoundaryVertices } from "../fields/distance_fields.js";
-import { computeFieldStats, formatErr, assert } from "../fields/fields_stage_utils.js";
+import { computeFieldStats, formatErr } from "../fields/fields_stage_utils.js";
 
 function pickDeterministicProbeFaceId(meshAccess) {
   // Prefer faceId = 0 when a faceCount is available. This avoids reliance on iterator ordering.
