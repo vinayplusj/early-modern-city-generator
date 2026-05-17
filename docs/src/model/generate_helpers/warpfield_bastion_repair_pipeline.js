@@ -9,10 +9,7 @@ import { repairBastionsStrictConvex } from "./bastion_convex_repair.js";
 import { slideRepairBastions } from "./bastion_slide_repair.js";
 import { clampPolylineInsidePolyAlongRays } from "../../geom/radial_ray_clamp.js";
 import { ensureWinding, signedArea } from "../../geom/poly.js";
-
-function isFinitePoint(p) {
-  return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
-}
+import { isFinitePoint } from "../../geom/primitives.js";
 
 function validPoly(poly) {
   return Array.isArray(poly) && poly.length >= 3;
