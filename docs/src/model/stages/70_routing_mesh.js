@@ -5,7 +5,7 @@
 // Extracted from generate.js without functional changes (geometry behaviour unchanged).
 
 import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph.js";
-import { buildWaterOnMesh } from "../water_on_mesh.js";
+import { buildWaterOnMesh } from "../water_on_mesh/build.js";
 import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 import { bindOuterBoundaryToCityMesh } from "../mesh/city_mesh/bind_outer_boundary.js";
