@@ -4,9 +4,9 @@
 // Milestone 4.7: Build CityMesh from the final vorGraph, assert invariants, and publish a graph view.
 // Extracted from generate.js without functional changes (geometry behaviour unchanged).
 
-import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph.js";
+import { buildVoronoiPlanarGraph } from "../mesh/voronoi_planar_graph/build.js";
+import { snapPointToGraph } from "../mesh/voronoi_planar_graph/snap.js";
 import { buildWaterOnMesh } from "../water_on_mesh/build.js";
-import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 import { bindOuterBoundaryToCityMesh } from "../mesh/city_mesh/bind_outer_boundary.js";
 import { buildCityMeshFromVorGraph } from "../mesh/city_mesh/build_city_mesh_from_vor_graph.js";
