@@ -10,7 +10,6 @@
 
 import { assert } from "../util/assert.js";
 import { toIntId } from "../util/ids.js";
-export { assert };
 
 export function computeFiniteMinMax(arr) {
   let min = Infinity, max = -Infinity;
