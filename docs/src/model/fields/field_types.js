@@ -3,7 +3,6 @@
 //
 // This file is intentionally small and stable. It should not import from other modules.
 import { assert } from "../util/assert.js";
-export { clamp01 } from "../../geom/primitives.js";
 
 export const FieldDomain = Object.freeze({
   FACE: "face",
