@@ -11,12 +11,13 @@
 // - IMPORTANT: edge dedupe state must be per-run, otherwise later regenerations can silently drop edges.
 
 console.count("buildRoadGraphWithIntersections() calls");
+import { dist2 } from "../../geom/primitives.js";
+
 import {
   segmentProperIntersectionPoint,
   buildSplitPointsOnSegment,
   makePointSnapper,
   samePoint,
-  dist2,
 } from "../../geom/intersections.js";
 
 // ---------- Small utils ----------
