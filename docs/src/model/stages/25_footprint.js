@@ -17,23 +17,11 @@
 // - Later assembly/render code reads fortifications.centre.
 // - Debug and later stages may read both ctx.state.corridorIntent and fortifications.corridorIntent.
 
-import { normalize } from "../../geom/primitives.js";
+import { isFiniteDir, 
+        nitOrNull } from "../../geom/primitives.js";
 import { buildCorridorIntent } from "../features.js";
 import { rngFork } from "../rng/rng_fork.js";
 import { buildFootprintFromIntent } from "./10_fortifications.js";
-
-function isFiniteDir(v) {
-  return !!v && Number.isFinite(v.x) && Number.isFinite(v.y);
-}
-
-function unitOrNull(v) {
-  if (!isFiniteDir(v)) return null;
-  const n = normalize(v);
-  if (!isFiniteDir(n)) return null;
-  const m = Math.hypot(n.x, n.y);
-  if (!Number.isFinite(m) || m <= 1e-9) return null;
-  return n;
-}
 
 function resolveNewTownDir(ctx, cx, cy) {
   const explicit = unitOrNull(ctx?.state?.newTownIntent?.dir);
