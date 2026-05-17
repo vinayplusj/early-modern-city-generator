@@ -1,7 +1,7 @@
 // docs/src/model/mesh/voronoi_planar_graph/snap.js
 
+import { isFinitePoint } from "../../../geom/primitives.js";
 import {
-  isFinitePoint,
   quantKey,
   sortAdjacencyDeterministic,
 } from "./util.js";
