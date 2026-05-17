@@ -16,15 +16,13 @@ import {
   pointInsidePoly,
   chooseAngularSampleCount,
   rayMaxRadiusToPoly,
+  normaliseAngleDelta,
+  canonicalAngle01,
+  uniqueHardPoints,
+  requiredPointInsideLegacyOuter,
 } from "./hull_geom.js";
 import { wardById, wardPoly, wardCentroid } from "./core_set.js";
 import { buildHullModel } from "./hull_model.js";
-
-function normaliseAngleDelta(a) {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a < -Math.PI) a += Math.PI * 2;
-  return a;
-}
 
 function resolveNewTownDirection(ctx, centre) {
   const nt = ctx?.state?.newTown?.newTown ?? null;
@@ -110,37 +108,6 @@ function buildOuterLobeFloor({ upper, step, newTownHint }) {
   }
 
   return out;
-}
-
-function canonicalAngle01(p, centre) {
-  const a = angleOf(p, centre);
-  const t = a < 0 ? a + Math.PI * 2 : a;
-  return t;
-}
-
-function stablePointKey(p, precision = 1000) {
-  return `${Math.round(p.x * precision)}:${Math.round(p.y * precision)}`;
-}
-
-function uniqueHardPoints(points) {
-  const out = [];
-  const seen = new Set();
-
-  for (const p of safeArray(points)) {
-    if (!isPoint(p)) continue;
-
-    const key = stablePointKey(p, 1000);
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    out.push(p);
-  }
-
-  return out;
-}
-
-function requiredPointInsideLegacyOuter(p, legacyPoly) {
-  return isPoint(p) && pointInsidePoly(legacyPoly, p);
 }
 
 function buildOuterCandidateVerticesWithHardPoints({
