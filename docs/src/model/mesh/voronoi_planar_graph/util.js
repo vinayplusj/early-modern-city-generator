@@ -1,6 +1,6 @@
 // docs/src/model/mesh/voronoi_planar_graph/util.js
+import { isFinitePoint } from "../../../geom/primitives.js";
 import { isFiniteNumber } from "../../util/numbers.js";
-export { isFinitePoint } from "../../../geom/primitives.js";
 
 export function quantKey(x, y, eps) {
   const qx = Math.round(x / eps);
