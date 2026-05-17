@@ -12,7 +12,7 @@
 // - snapPointToGraph({ splitEdges:true }) mutates the graph. Snap order must remain stable.
 // - Dijkstra is deterministic given a fixed graph + adjacency ordering.
 
-import { snapPointToGraph } from "../mesh/voronoi_planar_graph.js";
+import { snapPointToGraph } from "../mesh/voronoi_planar_graph/snap.js";
 import { dijkstra, pathNodesToPolyline } from "../routing/shortest_path.js";
 import { buildBlockedEdgeSet } from "../routing/blocked_edges.js";
 import { buildRoutingCostInputs } from "../roads/routing_cost_inputs.js";
