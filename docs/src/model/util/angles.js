@@ -5,7 +5,7 @@
 // Design goals:
 // - Deterministic, allocation-free for hot paths.
 // - No behaviour assumptions about callers beyond radians.
-export { clamp01 } from "../../geom/primitives.js";
+import { clamp01 } from "../../geom/primitives.js";
 
 export const TAU = Math.PI * 2;
 
