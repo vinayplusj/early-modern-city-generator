@@ -1,9 +1,7 @@
 // docs/src/model/invariants/invariant_utils.js
 // Shared helpers for Stage 900 invariant checks.
 
-import { finitePointOrNull, isFinitePoint } from "../../geom/primitives.js";
-
-export { isFinitePoint };
+import { finitePointOrNull } from "../../geom/primitives.js";
 
 export function resolveDockPoint(anchors) {
   if (finitePointOrNull(anchors?.docks)) {
