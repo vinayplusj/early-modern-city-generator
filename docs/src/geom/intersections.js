@@ -4,10 +4,8 @@
 // Focus: robust "proper" intersections for splitting road segments.
 // Collinear overlaps are intentionally treated as "no proper intersection" for stability.
 
-import { add, sub, mul, lerp, dist2 , clamp } from "./primitives.js";
-export { add, sub, mul, lerp, dist2 };
-import { pointInPoly, pointInPolyOrOn } from "./poly.js";
-export { pointInPoly, pointInPolyOrOn };
+import { add, sub, mul, lerp, dist2, clamp } from "./primitives.js";
+import { pointInPolyOrOn } from "./poly.js";
 
 // ---------- Vector helpers ----------
 function lerpPoint(a, b, t) {
