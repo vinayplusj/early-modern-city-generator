@@ -21,21 +21,9 @@
 // - Stage 25 consumes { kind, dir, side } and uses kind to choose water corridor mode.
 // - Stage 40 may receive this object as an upstream hint, but must not become its source of truth.
 
-import { normalize } from "../../geom/primitives.js";
+import { isFiniteDir, 
+        unitOrNull } from "../../geom/primitives.js";
 import { rngFork } from "../rng/rng_fork.js";
-
-function isFiniteDir(v) {
-  return !!v && Number.isFinite(v.x) && Number.isFinite(v.y);
-}
-
-function unitOrNull(v) {
-  if (!isFiniteDir(v)) return null;
-  const n = normalize(v);
-  if (!isFiniteDir(n)) return null;
-  const m = Math.hypot(n.x, n.y);
-  if (!Number.isFinite(m) || m <= 1e-9) return null;
-  return n;
-}
 
 function normalizeWaterKind(kind) {
   return (kind === "river" || kind === "coast") ? kind : "none";
