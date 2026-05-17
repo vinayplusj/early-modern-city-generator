@@ -12,7 +12,7 @@ import { assert } from "../util/assert.js";
 import { toIntId } from "../util/ids.js";
 export { assert };
 
-export function computeMinMax(arr) {
+export function computeFiniteMinMax(arr) {
   let min = Infinity, max = -Infinity;
   for (let i = 0; i < arr.length; i++) {
     const v = arr[i];
@@ -182,7 +182,7 @@ export function computeFiniteStats(arr) {
 }
 
 export function computeFieldStats(values) {
-  const mm = computeMinMax(values);
+  const mm = computeFiniteMinMax(values);
   const counts = computeFiniteStats(values);
   return {
     min: mm.min,
