@@ -10,7 +10,6 @@ import {
   intervalLockWeight,
 } from "./util/angles.js";
 import { buildBastionLockMask, buildBastionClearMask } from "./domain/bastion_warp_masks.js";
-export { enforceInsidePolyAlongRay, enforceOutsidePolyAlongRay } from "./util/poly_ray_constraints.js";
 import { clamp } from "../geom/primitives.js";
 
 export function buildWarpField({ centre, wallPoly, targetPoly = null, districts, bastions, params }) {
