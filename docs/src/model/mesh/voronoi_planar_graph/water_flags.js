@@ -1,6 +1,7 @@
 // docs/src/model/mesh/voronoi_planar_graph/water_flags.js
 
-import { isFinitePoint, pointToPolylineDistance } from "./util.js";
+import { isFinitePoint } from "../../../geom/primitives.js";
+import { pointToPolylineDistance } from "./util.js";
 
 function pickWaterPolyline(waterModel) {
   if (!waterModel || typeof waterModel !== "object") return null;
