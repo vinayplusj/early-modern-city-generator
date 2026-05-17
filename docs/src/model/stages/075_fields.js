@@ -22,6 +22,7 @@
 // - ctx.state.fieldsMeta (object; includes FieldRegistry.meta() plus stage-level provenance)
 // - ctx.state.fieldsMeta.wardIdToFaceId
 
+import { assert } from "../util/assert.js";
 import { computeAllFields } from "../fields/compute_fields.js";
 import { makeMeshAccessFromCityMesh } from "../fields/mesh_access_from_city_mesh.js";
 import {
@@ -38,7 +39,6 @@ import {
 } from "../fields/distance_fields.js";
 
 import {
-  assert,
   computeFieldStats,
   normaliseSourceIds,
   resolveOptionalSources,
