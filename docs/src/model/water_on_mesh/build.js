@@ -6,7 +6,7 @@ import { makeLengthOnlyWeightFn, snapPolylineToNodes, routeNodesAsPolyline } fro
 import { applyWaterFlagsToEdges } from "./flags.js";
 import { isFiniteNumber } from "../util/numbers.js";
 import { clampInt } from "../util/ids.js";
-import { snapPointToGraph as snapPointToGraphDefault } from "../mesh/voronoi_planar_graph.js";
+import { snapPointToGraph as snapPointToGraphDefault } from "../mesh/voronoi_planar_graph/snap.js";
 import { dijkstra as dijkstraDefault, pathNodesToPolyline as pathNodesToPolylineDefault } from "../routing/shortest_path.js";
 import { isFinitePoint } from "../../geom/primitives.js";
 
