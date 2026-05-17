@@ -18,7 +18,7 @@
 // - Debug and later stages may read both ctx.state.corridorIntent and fortifications.corridorIntent.
 
 import { isFiniteDir, 
-        nitOrNull } from "../../geom/primitives.js";
+        unitOrNull } from "../../geom/primitives.js";
 import { buildCorridorIntent } from "../features.js";
 import { rngFork } from "../rng/rng_fork.js";
 import { buildFootprintFromIntent } from "./10_fortifications.js";
