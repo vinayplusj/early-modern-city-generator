@@ -20,10 +20,6 @@ export function wardCentroid(w) {
   return polygonCentroidSafe(poly);
 }
 
-function boolResult(ok, extra = {}) {
-  return { ok: !!ok, ...extra };
-}
-
 function firstRoleId(value) {
   if (Array.isArray(value)) return value.length > 0 ? value[0] : null;
   if (Number.isInteger(value)) return value;
