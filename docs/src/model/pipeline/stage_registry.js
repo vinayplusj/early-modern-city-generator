@@ -714,6 +714,7 @@ export const PIPELINE_STAGES = [
         corridorIntent: ctx.state.fortifications?.corridorIntent ?? null,
         params: ctx.params ?? null,
         fieldsMeta: ctx.state.fieldsMeta ?? null,
+        wardFieldMeta: ctx.state.wardFieldMeta ?? null,
       
         hullModel: ctx.state.hullModel ?? null,
         coreSet: ctx.state.coreSet ?? null,
