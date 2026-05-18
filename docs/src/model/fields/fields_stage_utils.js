@@ -84,13 +84,15 @@ export function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
     const cellOwnership =
       (routingMesh && Array.isArray(routingMesh.cellOwnership)) ? routingMesh.cellOwnership :
       (routingMesh && Array.isArray(routingMesh.ownership)) ? routingMesh.ownership :
+      (routingMesh && Array.isArray(routingMesh.vorGraph?.cells)) ? routingMesh.vorGraph.cells :
+      (routingMesh && Array.isArray(routingMesh.graph?.cells)) ? routingMesh.graph.cells :
       [];
-
+    
     if (!Array.isArray(cellOwnership) || cellOwnership.length === 0) {
       return {
         map: null,
         meta: null,
-        error: "Missing routingMesh.cellOwnership (or routingMesh.ownership).",
+        error: "Missing routingMesh.cellOwnership, routingMesh.ownership, routingMesh.vorGraph.cells, or routingMesh.graph.cells.",
       };
     }
 
@@ -116,11 +118,17 @@ export function buildWardIdToFaceIdMap({ ctx, routingMesh, meshAccess }) {
       if (wardId < 0 || wardId >= wardIdToFaceId.length) continue;
 
       const cellIndex = i;
-
+      
       // Contract assumption:
-      // CityMesh interior face ids are expected to preserve source Voronoi cell ids.
+      // CityMesh interior face ids preserve source Voronoi cell ids.
+      // Current graph cells carry `id` directly; older ownership wrappers may carry `cell.id`.
       // The cellIndex fallback is legacy-tolerant only.
-      const faceId = Number.isInteger(rec.cell?.id) ? rec.cell.id : cellIndex;
+      const faceId =
+        Number.isInteger(rec.faceId) ? rec.faceId :
+        Number.isInteger(rec.cellId) ? rec.cellId :
+        Number.isInteger(rec.id) ? rec.id :
+        Number.isInteger(rec.cell?.id) ? rec.cell.id :
+        cellIndex;
       if (!Number.isInteger(faceId) || faceId < 0) continue;
 
       if (wardIdToFaceId[wardId] == null) assignedCount++;
