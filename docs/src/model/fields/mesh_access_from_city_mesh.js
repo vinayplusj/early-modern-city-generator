@@ -131,11 +131,18 @@ function getHalfEdgeNextRef(he) {
 }
 
 function getFaceBoundaryHalfEdgeRef(face) {
-  // Common: halfEdge, edge, outer, boundary
+  // Common external shapes: halfEdge, edge, outer, boundary.
   if (face && face.halfEdge != null) return face.halfEdge;
   if (face && face.edge != null) return face.edge;
   if (face && face.outer != null) return face.outer;
   if (face && face.boundary != null) return face.boundary;
+
+  // EMCG CityMesh shape from build_city_mesh_from_vor_graph.js.
+  if (face && face.anyHalfEdge != null) return face.anyHalfEdge;
+  if (face && Array.isArray(face.halfEdges) && face.halfEdges.length > 0) {
+    return face.halfEdges[0];
+  }
+
   return null;
 }
 
