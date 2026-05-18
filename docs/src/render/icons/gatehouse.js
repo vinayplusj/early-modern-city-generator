@@ -2,7 +2,7 @@
 // Gatehouse icon rendering.
 
 import { drawPoly, drawCircle } from "../helpers/draw.js";
-import { add, mul, perp, normalize } from "../helpers/vector.js";
+import { add, mul, perp, normalize } from "../../geom/primitives.js";
 
 // Gatehouse icon (simple block + towers)
 export function drawGatehouse(ctx, gate, centre, size) {
