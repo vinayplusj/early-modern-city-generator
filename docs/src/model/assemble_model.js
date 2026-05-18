@@ -57,6 +57,15 @@ export function assembleModel({
   site,
   waterModel,
 
+  // Milestone 4.8 contract outputs
+  waterIntent,
+  waterIntentDerived,
+  corridorIntent,
+  newTownIntent,
+  fields,
+  fieldsMeta,
+  wardFieldMeta,
+
   // Roads
   roads,
   primaryRoads,
@@ -161,9 +170,19 @@ export function assembleModel({
     citadel,
     avenue,
     primaryGate: primaryGateWarped,
-
     site,
     water: waterModel,
+
+    // Milestone 4.8 contract outputs.
+    // `fields` is a runtime FieldRegistry object.
+    // `fieldsMeta` is the export-safe provenance and bounded-range summary.
+    waterIntent: waterIntent ?? null,
+    waterIntentDerived: waterIntentDerived ?? null,
+    corridorIntent: corridorIntent ?? null,
+    newTownIntent: newTownIntent ?? null,
+    fields: fields ?? null,
+    fieldsMeta: fieldsMeta ?? null,
+    wardFieldMeta: wardFieldMeta ?? null,
 
     // Roads
     roads: roadsArr,
