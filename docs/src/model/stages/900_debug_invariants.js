@@ -45,6 +45,7 @@ export function runDebugInvariantsStage({
 
   // Optional but strongly recommended for Milestone 4.8 closure
   fieldsMeta,
+  wardFieldMeta,
 
   // Optional but strongly recommended for Milestone 4.9 publication checks
   hullModel,
@@ -91,6 +92,7 @@ export function runDebugInvariantsStage({
   checkFieldInvariants({
     errors,
     fieldsMeta,
+    wardFieldMeta,
     waterKind,
   });
 
@@ -124,8 +126,8 @@ export function runDebugInvariantsStage({
       };
     }
 
-    if (fieldsMeta) {
-      debugOut.fieldsMeta = fieldsMeta;
+    if (wardFieldMeta) {
+      debugOut.wardFieldMeta = wardFieldMeta;
     }
 
     if (hasAnyHull49) {
