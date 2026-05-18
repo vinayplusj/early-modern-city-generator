@@ -22,12 +22,43 @@ function hasFiniteBounds(stats, fieldName) {
   return Number.isFinite(rec.min) && Number.isFinite(rec.max);
 }
 
-export function checkFieldInvariants({ errors, fieldsMeta, waterKind }) {
+function hasDerivedField(stageMeta, fieldName) {
+  const derived = Array.isArray(stageMeta?.derived) ? stageMeta.derived : [];
+  return derived.includes(fieldName);
+}
+
+function isCompleteWardFaceMap(fieldsMeta) {
+  const map = fieldsMeta?.wardIdToFaceId;
+  if (!Array.isArray(map) || map.length === 0) return false;
+
+  for (let i = 0; i < map.length; i++) {
+    const faceId = map[i];
+    if (!Number.isInteger(faceId) || faceId < 0) return false;
+  }
+
+  return true;
+}
+
+function getWardFaceMissingCount(fieldsMeta) {
+  const map = fieldsMeta?.wardIdToFaceId;
+  if (!Array.isArray(map)) return null;
+
+  let missing = 0;
+  for (let i = 0; i < map.length; i++) {
+    const faceId = map[i];
+    if (!Number.isInteger(faceId) || faceId < 0) missing++;
+  }
+
+  return missing;
+}
+
+export function checkFieldInvariants({ errors, fieldsMeta, wardFieldMeta, waterKind }) {
   if (!fieldsMeta) {
     console.warn("[Fields] fieldsMeta not provided to Stage 900; skipping 4.8 field closure checks");
     return;
   }
 
+  const hasWater = waterKind !== "none";
   const stageMeta = getFieldStageMeta(fieldsMeta);
   const fieldStats = getFieldStatsMap(fieldsMeta);
 
@@ -53,7 +84,7 @@ export function checkFieldInvariants({ errors, fieldsMeta, waterKind }) {
       "Milestone 4.8 invalid: requiredFields.wall must be true"
     );
 
-    if (waterKind !== "none") {
+    if (hasWater) {
       pushIfFalse(
         errors,
         requiredFields.water === true,
@@ -73,7 +104,7 @@ export function checkFieldInvariants({ errors, fieldsMeta, waterKind }) {
       "Milestone 4.8 invalid: distance_to_wall_vertex was not computed"
     );
 
-    if (waterKind !== "none") {
+    if (hasWater) {
       pushIfFalse(
         errors,
         computedFields.water === true,
@@ -91,13 +122,47 @@ export function checkFieldInvariants({ errors, fieldsMeta, waterKind }) {
       "Milestone 4.8 invalid: wall source resolution is unavailable"
     );
 
-    if (waterKind !== "none") {
+    if (hasWater) {
       pushIfFalse(
         errors,
         !!waterSourceMethod && waterSourceMethod !== "unavailable",
         "Milestone 4.8 invalid: water source resolution is unavailable"
       );
     }
+
+    pushIfFalse(
+      errors,
+      hasDerivedField(stageMeta, "distance_to_plaza_face"),
+      "Milestone 4.8 invalid: distance_to_plaza_face was not derived"
+    );
+
+    pushIfFalse(
+      errors,
+      hasDerivedField(stageMeta, "distance_to_wall_face"),
+      "Milestone 4.8 invalid: distance_to_wall_face was not derived"
+    );
+
+    if (hasWater) {
+      pushIfFalse(
+        errors,
+        hasDerivedField(stageMeta, "distance_to_water_face"),
+        `Milestone 4.8 invalid: distance_to_water_face was not derived when waterKind=${waterKind}`
+      );
+    }
+
+    const wardToFaceCompleteness = stageMeta.wardToFaceCompleteness || null;
+
+    pushIfFalse(
+      errors,
+      isCompleteWardFaceMap(fieldsMeta),
+      `Milestone 4.8 invalid: fieldsMeta.wardIdToFaceId is incomplete (missing=${getWardFaceMissingCount(fieldsMeta) ?? "unknown"})`
+    );
+
+    pushIfFalse(
+      errors,
+      wardToFaceCompleteness?.complete === true,
+      `Milestone 4.8 invalid: wardToFaceCompleteness.complete must be true (missing=${wardToFaceCompleteness?.missingWardFaceCount ?? "unknown"})`
+    );
   }
 
   pushIfFalse(
@@ -112,11 +177,77 @@ export function checkFieldInvariants({ errors, fieldsMeta, waterKind }) {
     "Milestone 4.8 invalid: distance_to_wall_vertex is missing finite bounds"
   );
 
-  if (waterKind !== "none") {
+  if (hasWater) {
     pushIfFalse(
       errors,
       !!fieldStats && hasFiniteBounds(fieldStats, "distance_to_water_vertex"),
       `Milestone 4.8 invalid: distance_to_water_vertex is missing finite bounds when waterKind=${waterKind}`
     );
+  }
+
+  pushIfFalse(
+    errors,
+    !!fieldStats && hasFiniteBounds(fieldStats, "distance_to_plaza_face"),
+    "Milestone 4.8 invalid: distance_to_plaza_face is missing finite bounds"
+  );
+
+  pushIfFalse(
+    errors,
+    !!fieldStats && hasFiniteBounds(fieldStats, "distance_to_wall_face"),
+    "Milestone 4.8 invalid: distance_to_wall_face is missing finite bounds"
+  );
+
+  if (hasWater) {
+    pushIfFalse(
+      errors,
+      !!fieldStats && hasFiniteBounds(fieldStats, "distance_to_water_face"),
+      `Milestone 4.8 invalid: distance_to_water_face is missing finite bounds when waterKind=${waterKind}`
+    );
+  }
+
+  pushIfFalse(
+    errors,
+    !!wardFieldMeta,
+    "Milestone 4.8 invalid: wardFieldMeta is missing"
+  );
+
+  if (wardFieldMeta) {
+    pushIfFalse(
+      errors,
+      wardFieldMeta.preferFace === true,
+      "Milestone 4.8 invalid: wardFieldMeta.preferFace must be true"
+    );
+
+    pushIfFalse(
+      errors,
+      Number.isInteger(wardFieldMeta.mapped) && wardFieldMeta.mapped > 0,
+      "Milestone 4.8 invalid: wardFieldMeta.mapped must be a positive integer"
+    );
+
+    pushIfFalse(
+      errors,
+      wardFieldMeta.missing === 0,
+      `Milestone 4.8 invalid: wardFieldMeta.missing must be 0, got ${wardFieldMeta.missing}`
+    );
+
+    pushIfFalse(
+      errors,
+      wardFieldMeta.fieldsUsed?.plaza === "distance_to_plaza_face",
+      "Milestone 4.8 invalid: wards must use distance_to_plaza_face"
+    );
+
+    pushIfFalse(
+      errors,
+      wardFieldMeta.fieldsUsed?.wall === "distance_to_wall_face",
+      "Milestone 4.8 invalid: wards must use distance_to_wall_face"
+    );
+
+    if (hasWater) {
+      pushIfFalse(
+        errors,
+        wardFieldMeta.fieldsUsed?.water === "distance_to_water_face",
+        `Milestone 4.8 invalid: wards must use distance_to_water_face when waterKind=${waterKind}`
+      );
+    }
   }
 }
