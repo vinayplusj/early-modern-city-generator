@@ -112,6 +112,21 @@ export function runPipeline(ctx) {
   if (!S.routingMesh) throw new Error("[EMCG] Missing ctx.state.routingMesh (Stage 70 output).");
   if (!S.routingMesh.graph) throw new Error("[EMCG] Missing ctx.state.routingMesh.graph (Stage 70 output).");
   if (!S.routingMesh.cityMesh) throw new Error("[EMCG] Missing ctx.state.routingMesh.cityMesh (Stage 70 output).");
+  if (!S.waterIntent) {
+    throw new Error("[EMCG] Missing ctx.state.waterIntent (Stage 05 canonical output).");
+  }
+  if (!S.corridorIntent) {
+    throw new Error("[EMCG] Missing ctx.state.corridorIntent (Stage 25 canonical output).");
+  }
+  if (!S.fields) {
+    throw new Error("[EMCG] Missing ctx.state.fields (Stage 76 canonical output).");
+  }
+  if (!S.fieldsMeta) {
+    throw new Error("[EMCG] Missing ctx.state.fieldsMeta (Stage 76 canonical output).");
+  }
+  if (!S.wardFieldMeta) {
+    throw new Error("[EMCG] Missing ctx.state.wardFieldMeta (Stage 85 canonical output).");
+  }
   if (!S.districts) throw new Error("[EMCG] Missing ctx.state.districts (Stage 90 output).");
   if (!S.hullModel) throw new Error("[EMCG] Missing ctx.state.hullModel (Stage 105 output).");
   if (!S.coreSet) throw new Error("[EMCG] Missing ctx.state.coreSet (Stage 105 canonical output).");
@@ -231,6 +246,15 @@ export function runPipeline(ctx) {
     // Site / water
     site: { water: waterKind, hasDock },
     waterModel: S.routingMesh.waterModel ?? S.waterModel,
+
+    // Milestone 4.8 contract outputs
+    waterIntent: S.waterIntent ?? null,
+    waterIntentDerived: S.waterIntentDerived ?? null,
+    corridorIntent: S.corridorIntent ?? fort.corridorIntent ?? null,
+    newTownIntent: S.newTownIntent ?? null,
+    fields: S.fields ?? null,
+    fieldsMeta: S.fieldsMeta ?? null,
+    wardFieldMeta: S.wardFieldMeta ?? null,
 
     // Roads
     roads,
