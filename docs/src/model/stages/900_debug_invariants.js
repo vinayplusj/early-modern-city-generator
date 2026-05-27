@@ -126,6 +126,10 @@ export function runDebugInvariantsStage({
       };
     }
 
+    if (fieldsMeta) {
+      debugOut.fieldsMeta = fieldsMeta;
+    }
+    
     if (wardFieldMeta) {
       debugOut.wardFieldMeta = wardFieldMeta;
     }
