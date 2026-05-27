@@ -22,7 +22,7 @@ import {
   requiredPointInsideLegacyOuter,
 } from "./hull_geom.js";
 import { wardById, wardPoly, wardCentroid } from "./core_set.js";
-import { buildHullModel } from "./hull_model.js";
+import { buildHullModel, finaliseHullStatus } from "./hull_model.js";
 
 function resolveNewTownDirection(ctx, centre) {
   const nt = ctx?.state?.newTown?.newTown ?? null;
@@ -390,7 +390,7 @@ export function buildOptimisedOuterHullModel({
   });
 
   if (!candidate.ok) {
-    return {
+    return finaliseHullStatus({
       ...legacyModel,
       refinement: {
         attempted: true,
@@ -408,12 +408,12 @@ export function buildOptimisedOuterHullModel({
           hasNewTownLobe: !!newTownHint?.dir,
         },
       },
-    };
+    });
   }
 
   const refinedPoly = candidate.poly;
 
-  return {
+  return finaliseHullStatus({
     kind: "outerHull",
     poly: refinedPoly,
     loops: [refinedPoly],
@@ -445,5 +445,5 @@ export function buildOptimisedOuterHullModel({
         ...candidate.meta,
       },
     },
-  };
+  });
 }
