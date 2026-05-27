@@ -35,6 +35,38 @@ export function buildHullProofs({ cx, cy, wardsState, coreSet, innerHullModel, o
     if (!pointInsidePoly(outerHullModel.poly, c)) missingOuterWardIds.push(wid);
   }
 
+  const innerStatus =
+    typeof innerHullModel?.status === "string" ? innerHullModel.status : null;
+  
+  const outerStatus =
+    typeof outerHullModel?.status === "string" ? outerHullModel.status : null;
+  
+  const innerReason =
+    innerHullModel?.reason ??
+    innerHullModel?.refinement?.reason ??
+    null;
+  
+  const outerReason =
+    outerHullModel?.reason ??
+    outerHullModel?.refinement?.reason ??
+    null;
+  
+  const innerFallbackValid =
+    innerStatus !== "valid_fallback" ||
+    (
+      centreInInner &&
+      sampledFails === 0 &&
+      missingCoreWardIds.length === 0
+    );
+  
+  const outerFallbackValid =
+    outerStatus !== "valid_fallback" ||
+    (
+      centreInOuter &&
+      sampledFails === 0 &&
+      missingOuterWardIds.length === 0
+    );
+
   return {
     centreInInnerHull: boolResult(centreInInner, { value: centreInInner }),
     centreInOuterHull: boolResult(centreInOuter, { value: centreInOuter }),
@@ -46,7 +78,29 @@ export function buildHullProofs({ cx, cy, wardsState, coreSet, innerHullModel, o
       missingWardIds: missingCoreWardIds,
     }),
     claimedOuterMembersInsideOuterHull: boolResult(missingOuterWardIds.length === 0, {
-      missingWardIds: missingOuterWardIds,
+      missingWardIds: missingOuterWardIds,    
+    }),
+    
+    innerHullOptimized: boolResult(innerStatus === "optimized", {
+      status: innerStatus,
+      reason: innerReason,
+    }),
+    
+    innerHullFallbackValid: boolResult(innerFallbackValid, {
+      applicable: innerStatus === "valid_fallback",
+      status: innerStatus,
+      reason: innerReason,
+    }),
+    
+    outerHullOptimized: boolResult(outerStatus === "optimized", {
+      status: outerStatus,
+      reason: outerReason,
+    }),
+    
+    outerHullFallbackValid: boolResult(outerFallbackValid, {
+      applicable: outerStatus === "valid_fallback",
+      status: outerStatus,
+      reason: outerReason,
     }),
   };
 }
