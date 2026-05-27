@@ -58,7 +58,7 @@ export function checkFieldInvariants({ errors, fieldsMeta, wardFieldMeta, waterK
     return;
   }
 
-  const hasWater = waterKind !== "none";
+  const hasWater = waterKind === "river" || waterKind === "coast";
   const stageMeta = getFieldStageMeta(fieldsMeta);
   const fieldStats = getFieldStatsMap(fieldsMeta);
 
@@ -223,7 +223,16 @@ export function checkFieldInvariants({ errors, fieldsMeta, wardFieldMeta, waterK
       Number.isInteger(wardFieldMeta.mapped) && wardFieldMeta.mapped > 0,
       "Milestone 4.8 invalid: wardFieldMeta.mapped must be a positive integer"
     );
-
+    const expectedMappedWardCount =
+      fieldsMeta?.stage?.wardToFaceCompleteness?.canonicalWardCount ??
+      fieldsMeta?.wardIdToFaceId?.length ??
+      null;
+    
+    pushIfFalse(
+      errors,
+      expectedMappedWardCount == null || wardFieldMeta.mapped === expectedMappedWardCount,
+      `Milestone 4.8 invalid: wardFieldMeta.mapped must equal expected ward count (${expectedMappedWardCount}), got ${wardFieldMeta.mapped}`
+    );
     pushIfFalse(
       errors,
       wardFieldMeta.missing === 0,
@@ -247,6 +256,12 @@ export function checkFieldInvariants({ errors, fieldsMeta, wardFieldMeta, waterK
         errors,
         wardFieldMeta.fieldsUsed?.water === "distance_to_water_face",
         `Milestone 4.8 invalid: wards must use distance_to_water_face when waterKind=${waterKind}`
+      );
+    } else {
+      pushIfFalse(
+        errors,
+        wardFieldMeta.fieldsUsed?.water == null,
+        `Milestone 4.8 invalid: wards must not use a water field when waterKind=${waterKind}`
       );
     }
   }
