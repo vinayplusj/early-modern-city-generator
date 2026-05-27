@@ -20,7 +20,7 @@ import {
   pointInsidePoly,
 } from "./hull_geom.js";
 import { wardById, wardPoly, wardCentroid } from "./core_set.js";
-import { buildHullModel } from "./hull_model.js";
+import { buildHullModel, finaliseHullStatus } from "./hull_model.js";
 
 function collectCoreSupport({
   wardsState,
@@ -229,7 +229,7 @@ export function buildOptimisedInnerHullModel({
   });
 
   if (!candidate.ok) {
-    return {
+    return finaliseHullStatus({
       ...legacyModel,
       refinement: {
         attempted: true,
@@ -246,12 +246,12 @@ export function buildOptimisedInnerHullModel({
           requiredPointCount: support.requiredInsidePoints.length,
         },
       },
-    };
+    });
   }
 
   const refinedPoly = candidate.poly;
 
-  return {
+  return finaliseHullStatus({
     kind: "innerHull",
     poly: refinedPoly,
     loops: [refinedPoly],
@@ -281,6 +281,6 @@ export function buildOptimisedInnerHullModel({
         ...candidate.meta,
       },
     },
-  };
+  });
 }
 
