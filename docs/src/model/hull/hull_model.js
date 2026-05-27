@@ -3,8 +3,51 @@
 
 import { safeArray } from "./hull_geom.js";
 
-export function buildHullModel(kind, hull, memberWardIds, sourceWardIds, extra = {}) {
+function hasModelPolygon(model) {
+  return Array.isArray(model?.poly) && model.poly.length >= 3;
+}
+
+export function finaliseHullStatus(model) {
+  const base = model && typeof model === "object" ? model : {};
+  const refinement = base.refinement ?? base.diagnostics?.refinement ?? null;
+
+  let status = "invalid";
+  let reason = "missing_or_invalid_poly";
+
+  if (hasModelPolygon(base)) {
+    if (refinement?.attempted === true && refinement?.accepted === true) {
+      status = "optimized";
+      reason = refinement.reason ?? "accepted";
+    } else if (refinement?.attempted === true && refinement?.accepted !== true) {
+      status = "valid_fallback";
+      reason = refinement.reason ?? "candidate_rejected";
+    } else {
+      status = "valid_fallback";
+      reason = refinement?.reason ?? "legacy_not_refined";
+    }
+  }
+
+  const isOptimized = status === "optimized";
+  const isValidFallback = status === "valid_fallback";
+
   return {
+    ...base,
+    status,
+    reason,
+    isOptimized,
+    isValidFallback,
+    diagnostics: {
+      ...(base.diagnostics || {}),
+      status,
+      reason,
+      isOptimized,
+      isValidFallback,
+    },
+  };
+}
+
+export function buildHullModel(kind, hull, memberWardIds, sourceWardIds, extra = {}) {
+  const model = {
     kind,
     poly: Array.isArray(hull?.outerLoop) ? hull.outerLoop : null,
     loops: safeArray(hull?.loops),
@@ -20,4 +63,6 @@ export function buildHullModel(kind, hull, memberWardIds, sourceWardIds, extra =
     },
     ...extra,
   };
+
+  return finaliseHullStatus(model);
 }
