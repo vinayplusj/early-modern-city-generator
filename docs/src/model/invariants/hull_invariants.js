@@ -15,6 +15,14 @@ function hasPolygon(poly) {
   return Array.isArray(poly) && poly.length >= 3;
 }
 
+function isKnownHullStatus(status) {
+  return (
+    status === "optimized" ||
+    status === "valid_fallback" ||
+    status === "invalid"
+  );
+}
+
 export function resolveHullBundle({
   hullModel,
   coreSet,
@@ -85,6 +93,9 @@ export function checkHullModelInvariants({
   const innerObjectiveMode = hullBundle.innerHullModel?.objective?.mode ?? null;
   const outerObjectiveMode = hullBundle.outerHullModel?.objective?.mode ?? null;
 
+  const innerStatus = hullBundle.innerHullModel?.status ?? null;
+  const outerStatus = hullBundle.outerHullModel?.status ?? null;
+  
   console.info("[HullModel] summary", {
     hasHullModel: !!hullBundle.hullModel,
     hasCoreSet: !!hullBundle.coreSet,
@@ -107,6 +118,10 @@ export function checkHullModelInvariants({
 
     citadelFitMode: hullBundle.citadelFit?.fitMode ?? null,
     coastFitMode: hullBundle.coastGeometry?.fitMode ?? null,
+    innerStatus,
+    outerStatus,
+    innerReason: hullBundle.innerHullModel?.reason ?? null,
+    outerReason: hullBundle.outerHullModel?.reason ?? null,
   });
 
   // ---- Required 4.9 publications ----
@@ -161,6 +176,34 @@ export function checkHullModelInvariants({
 
     pushIfFalse(
       errors,
+      isKnownHullStatus(innerStatus),
+      `Milestone 4.9 invalid: unexpected innerHullModel.status: ${innerStatus}`
+    );
+    
+    pushIfFalse(
+      errors,
+      innerStatus !== "invalid",
+      `Milestone 4.9 invalid: innerHullModel.status is invalid, reason=${hullBundle.innerHullModel.reason ?? "unknown"}`
+    );
+    
+    if (innerRefinement?.attempted === true && innerRefinement?.accepted === true) {
+      pushIfFalse(
+        errors,
+        innerStatus === "optimized",
+        `Milestone 4.9 invalid: accepted inner refinement must have status=optimized, got ${innerStatus}`
+      );
+    }
+    
+    if (innerRefinement?.attempted === true && innerRefinement?.accepted !== true) {
+      pushIfFalse(
+        errors,
+        innerStatus === "valid_fallback",
+        `Milestone 4.9 invalid: rejected inner refinement must have status=valid_fallback, got ${innerStatus}`
+      );
+    }
+    
+    pushIfFalse(
+      errors,
       innerRefinement && innerRefinement.attempted === true,
       "Milestone 4.9 invalid: inner hull refinement was not attempted"
     );
@@ -200,6 +243,34 @@ export function checkHullModelInvariants({
       "Milestone 4.9 invalid: outerHullModel.sourceWardIds must be an array"
     );
 
+    pushIfFalse(
+      errors,
+      isKnownHullStatus(outerStatus),
+      `Milestone 4.9 invalid: unexpected outerHullModel.status: ${outerStatus}`
+    );
+    
+    pushIfFalse(
+      errors,
+      outerStatus !== "invalid",
+      `Milestone 4.9 invalid: outerHullModel.status is invalid, reason=${hullBundle.outerHullModel.reason ?? "unknown"}`
+    );
+    
+    if (outerRefinement?.attempted === true && outerRefinement?.accepted === true) {
+      pushIfFalse(
+        errors,
+        outerStatus === "optimized",
+        `Milestone 4.9 invalid: accepted outer refinement must have status=optimized, got ${outerStatus}`
+      );
+    }
+    
+    if (outerRefinement?.attempted === true && outerRefinement?.accepted !== true) {
+      pushIfFalse(
+        errors,
+        outerStatus === "valid_fallback",
+        `Milestone 4.9 invalid: rejected outer refinement must have status=valid_fallback, got ${outerStatus}`
+      );
+    }
+    
     pushIfFalse(
       errors,
       outerRefinement && outerRefinement.attempted === true,
@@ -253,6 +324,30 @@ export function checkHullModelInvariants({
       "Milestone 4.9 invalid: hullProofs.claimedOuterMembersInsideOuterHull is missing or malformed"
     );
 
+    pushIfFalse(
+      errors,
+      isBoolResult(proofs.innerHullOptimized),
+      "Milestone 4.9 invalid: hullProofs.innerHullOptimized is missing or malformed"
+    );
+    
+    pushIfFalse(
+      errors,
+      isBoolResult(proofs.innerHullFallbackValid),
+      "Milestone 4.9 invalid: hullProofs.innerHullFallbackValid is missing or malformed"
+    );
+    
+    pushIfFalse(
+      errors,
+      isBoolResult(proofs.outerHullOptimized),
+      "Milestone 4.9 invalid: hullProofs.outerHullOptimized is missing or malformed"
+    );
+    
+    pushIfFalse(
+      errors,
+      isBoolResult(proofs.outerHullFallbackValid),
+      "Milestone 4.9 invalid: hullProofs.outerHullFallbackValid is missing or malformed"
+    );
+    
     if (isBoolResult(proofs.centreInInnerHull)) {
       pushIfFalse(errors, proofs.centreInInnerHull.ok === true, "Milestone 4.9 invalid: centreInInnerHull proof failed");
     }
@@ -280,6 +375,23 @@ export function checkHullModelInvariants({
         `Milestone 4.9 invalid: claimedOuterMembersInsideOuterHull proof failed (missing=${countMissingWardIds(proofs.claimedOuterMembersInsideOuterHull)})`
       );
     }
+    if (isBoolResult(proofs.innerHullFallbackValid)) {
+      pushIfFalse(
+        errors,
+        proofs.innerHullFallbackValid.ok === true,
+        `Milestone 4.9 invalid: innerHullFallbackValid proof failed, status=${proofs.innerHullFallbackValid.status ?? "unknown"}`
+      );
+    }
+
+    if (isBoolResult(proofs.outerHullFallbackValid)) {
+      pushIfFalse(
+        errors,
+        proofs.outerHullFallbackValid.ok === true,
+        `Milestone 4.9 invalid: outerHullFallbackValid proof failed, status=${proofs.outerHullFallbackValid.status ?? "unknown"}`
+      );
+    }
+
+    
   }
 
   // ---- Citadel fit contract ----
