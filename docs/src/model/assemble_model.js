@@ -46,6 +46,7 @@ export function assembleModel({
   boundaryBinding,
   gatePortals,
   boundaryExits,
+  gateAuthority,
 
   // Anchors
   centre,
@@ -163,6 +164,7 @@ export function assembleModel({
     boundaryBinding: boundaryBinding ?? null,
     gatePortals: Array.isArray(gatePortals) ? gatePortals : null,
     boundaryExits: Array.isArray(boundaryExits) ? boundaryExits : null,
+    gateAuthority: gateAuthority ?? null,
 
     // Anchors
     centre,
