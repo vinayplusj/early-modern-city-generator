@@ -237,6 +237,7 @@ export function runPipeline(ctx) {
     boundaryBinding: S.routingMesh.boundaryBinding ?? null,
     gatePortals: S.gatePortals ?? S.routingMesh.gatePortals ?? null,
     boundaryExits,
+    gateAuthority: S.gateAuthority ?? fortGeom.gateAuthority ?? null,
     
     // Anchors
     citadel: S.citadel ?? null,
