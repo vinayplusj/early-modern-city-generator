@@ -472,6 +472,15 @@ export const PIPELINE_STAGES = [
       if (ctx.state.boundaryExits.length !== fortGeom.gatesWarped.length) {
         throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
       }
+      if (!ctx.state.gateAuthority || ctx.state.gateAuthority.kind !== "gateAuthority") {
+        throw new Error("[EMCG] Stage 120 produced missing or invalid gateAuthority.");
+      }
+      if (!Array.isArray(ctx.state.gateAuthority.gates)) {
+        throw new Error("[EMCG] Stage 120 gateAuthority.gates must be an array.");
+      }
+      if (ctx.state.gateAuthority.gates.length !== fortGeom.gatesWarped.length) {
+        throw new Error("[EMCG] Stage 120 gateAuthority length mismatch with gatesWarped.");
+      }
     },
   },
 
@@ -539,9 +548,9 @@ export const PIPELINE_STAGES = [
         graph: routingMesh.graph,
         waterModel: ctx.state.waterModel,
         anchors,
-        waterKind: ctx.params.waterKind,
-        primaryGateWarped: anchors?.primaryGate || null,
-        gatesWarped: anchors?.gates || [],
+        waterKind: env.waterKind,
+        primaryGateWarped: fortGeom.primaryGateWarped || null,
+        gatesWarped: fortGeom.gatesWarped || [],
         gatePortals: ctx.state.gatePortals || [],
         boundaryExits: ctx.state.boundaryExits || [],
       }).primaryRoads;
@@ -705,7 +714,10 @@ export const PIPELINE_STAGES = [
         primaryRoads: primaryRoads ?? null,
       
         anchors,
-      
+        gates: ctx.state.fortGeometryWarped?.gatesWarped ?? null,
+        gatePortals: ctx.state.gatePortals ?? null,
+        boundaryExits: ctx.state.boundaryExits ?? null,
+        gateAuthority: ctx.state.gateAuthority ?? null,      
         wallBase: ctx.state.fortGeometryWarped?.wallBaseForDraw
           ?? ctx.state.fortifications?.wallBase
           ?? null,
