@@ -8,7 +8,7 @@ import { snapGatesToWall } from "../generate_helpers/snap.js";
 import { resampleClosedPolyline } from "../generate_helpers/warp_stage.js";
 import { buildGatePortals } from "../mesh/city_mesh/build_gate_portals.js";
 import { buildBoundaryExits } from "../boundary/build_boundary_exits.js";
-
+import { buildGateAuthority } from "../gates/gate_authority.js";
 
 /**
  * @param {object} args
@@ -148,7 +148,25 @@ export function runWarpDependentFortGeometryStage({
   if (boundaryExits.length !== gatesWarped.length) {
     throw new Error("[EMCG] Stage 120 boundaryExits length mismatch with gatesWarped.");
   }
+  const gateAuthority = buildGateAuthority({
+    gates: gatesWarped,
+    primaryGate: primaryGateWarped,
+    wallForGateSnap,
+    gatePortals,
+    boundaryExits,
+    centre: ctx?.state?.fortifications?.centre || { x: cx, y: cy },
+    wallTolerance: Math.max(3, fortR * 0.015),
+  });
 
+  if (!gateAuthority || gateAuthority.kind !== "gateAuthority") {
+    throw new Error("[EMCG] Stage 120 produced invalid gateAuthority.");
+  }
+  if (!Array.isArray(gateAuthority.gates)) {
+    throw new Error("[EMCG] Stage 120 gateAuthority.gates must be an array.");
+  }
+  if (gateAuthority.gates.length !== gatesWarped.length) {
+    throw new Error("[EMCG] Stage 120 gateAuthority length mismatch with gatesWarped.");
+  }
   if (ctx?.state) {
     ctx.state.rings = rings;
     if (ctx.state.anchors) {
@@ -160,7 +178,8 @@ export function runWarpDependentFortGeometryStage({
     }
     ctx.state.gatePortals = gatePortals;
     ctx.state.boundaryExits = boundaryExits;
+    ctx.state.gateAuthority = gateAuthority;
   }
-
+  fortGeometryWarped.gateAuthority = gateAuthority;
   return fortGeometryWarped;
 }
