@@ -5,7 +5,8 @@
 // Refactor note:
 // - This stage is now a thin orchestrator.
 // - Invariant logic lives under docs/src/model/invariants/.
-// - The public function signature is unchanged so stage_registry.js does not need to change.
+// - The function still accepts one object argument, but Stage 900 now expects
+//   Milestone 5A gate authority inputs when gate checks are enabled.
 
 import { inferWaterKind } from "../invariants/invariant_utils.js";
 import { logRoutingDiagnostics } from "../invariants/routing_invariants.js";
@@ -17,6 +18,7 @@ import { checkFortHullDiagnostics } from "../invariants/fort_hull_diagnostics.js
 import { checkAnchorInvariants } from "../invariants/anchor_invariants.js";
 import { checkFieldInvariants } from "../invariants/field_invariants.js";
 import { checkHullModelInvariants } from "../invariants/hull_invariants.js";
+import { checkGateAuthorityInvariants } from "../invariants/gate_authority_invariants.js";
 
 /**
  * @param {object} args
@@ -32,6 +34,10 @@ export function runDebugInvariantsStage({
   vorGraph,
   primaryRoads,
   anchors,
+  gates,
+  gatePortals,
+  boundaryExits,
+  gateAuthority,
   wallBase,
   outerBoundary,
   width,
@@ -107,7 +113,14 @@ export function runDebugInvariantsStage({
     citadelFit,
     coastGeometry,
   });
-
+  checkGateAuthorityInvariants({
+    errors,
+    gateAuthority,
+    gates,
+    gatePortals,
+    boundaryExits,
+  });
+  
   const ok = errors.length === 0;
 
   if (debugOut && typeof debugOut === "object") {
@@ -142,6 +155,9 @@ export function runDebugInvariantsStage({
       debugOut.hullProofs = hullBundle.hullProofs || null;
       debugOut.citadelFit = hullBundle.citadelFit || null;
       debugOut.coastGeometry = hullBundle.coastGeometry || null;
+    }
+    if (gateAuthority) {
+      debugOut.gateAuthority = gateAuthority;
     }
   }
 }
