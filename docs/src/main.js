@@ -7,7 +7,10 @@ window.__EMCG_BOOTED__ = 1;
 
 console.log("BOOT COUNT", window.__EMCG_BOOTED__);
 
-import { generate } from "./model/generate.js";
+import {
+  generate,
+  MODEL_SPACE,
+} from "./model/generate.js";
 import { render } from "./render/render.js";
 
 const canvas = document.getElementById("c");
@@ -27,15 +30,15 @@ function resizeCanvasToDevicePixels() {
   return { w, h };
 }
 
-function computeBastionTargetN({ w, h, density }) {
-  // Mirrors run_pipeline.js framing: baseR ~ min(w,h)*0.33
+function computeBastionTargetN({ density }) {
+  const w = MODEL_SPACE.width;
+  const h = MODEL_SPACE.height;
+
+  // Generation dimensions are canonical model-space dimensions,
+  // never browser or canvas dimensions.
   const baseR = Math.min(w, h) * 0.33;
 
-  // Approximate curtain length by circumference. This keeps the UI deterministic
-  // without needing to run the generator first.
   const approxCurtainLen = 2 * Math.PI * baseR;
-
-  // Spacing tuned so Medium roughly matches the old default (8-ish bastions).
   const baseSpacing = Math.max(60, baseR * 0.75);
 
   let N0 = Math.round(approxCurtainLen / baseSpacing);
@@ -46,28 +49,34 @@ function computeBastionTargetN({ w, h, density }) {
 
   let N = Math.round(N0 * mult);
 
-  // Clamp to safe bounds similar to your old UI range.
   N = Math.max(5, Math.min(14, N));
   return N;
 }
 
 function getInputs() {
-  const water = String(document.getElementById("water").value || "none");
-  const dock = Boolean(document.getElementById("dock").checked);
+  const water = String(
+    document.getElementById("water").value || "none"
+  );
 
-  const bastionDensity = String(document.getElementById("bastionDensity").value || "medium");
-  const gateDensity = String(document.getElementById("gateDensity").value || "medium");
-  const { w, h } = resizeCanvasToDevicePixels();
-  const bastions = computeBastionTargetN({ w, h, density: bastionDensity });
+  const dock = Boolean(
+    document.getElementById("dock").checked
+  );
+
+  const bastionDensity = String(
+    document.getElementById("bastionDensity").value || "medium"
+  );
+
+  const gateDensity = String(
+    document.getElementById("gateDensity").value || "medium"
+  );
+
   return {
     seed: Number(document.getElementById("seed").value) || 1331,
     bastionDensity,
-  
-    // New: gate density (until you add a UI control, keep it as a stable default)
-    gateDensity: "medium",
-  
+    gateDensity,
+
     site: {
-      water,  // "none" | "river" | "coast"
+      water,
       hasDock: water !== "none" && dock,
     },
   };
@@ -86,18 +95,86 @@ function syncDockControl() {
 
 let model = null;
 
+function computeViewTransform(canvasW, canvasH) {
+  const modelW = MODEL_SPACE.width;
+  const modelH = MODEL_SPACE.height;
+
+  const scale = Math.min(
+    canvasW / modelW,
+    canvasH / modelH
+  );
+
+  return {
+    scale,
+    tx: (canvasW - modelW * scale) * 0.5,
+    ty: (canvasH - modelH * scale) * 0.5,
+  };
+}
+
+function renderCurrentModel() {
+  if (!model) return;
+
+  const { w, h } = resizeCanvasToDevicePixels();
+  const view = computeViewTransform(w, h);
+
+  ctx.save();
+
+  ctx.setTransform(
+    view.scale,
+    0,
+    0,
+    view.scale,
+    view.tx,
+    view.ty
+  );
+
+  render(ctx, model);
+
+  ctx.restore();
+
+  // Debug only. This is render state, not model state.
+  window.__EMCG_VIEW__ = {
+    ...view,
+    canvasWidth: w,
+    canvasHeight: h,
+    modelWidth: MODEL_SPACE.width,
+    modelHeight: MODEL_SPACE.height,
+  };
+}
+
 function regenerate() {
   syncDockControl();
-  const { w, h } = resizeCanvasToDevicePixels();
-  const { seed, bastionDensity, gateDensity, site } = getInputs();
-  const bastions = computeBastionTargetN({ w, h, density: bastionDensity });
-  
-  console.log("REGEN", { seed, bastionDensity, bastions, w, h });
-  
-  // gateCount argument can be kept as a legacy placeholder (for now pass null or 0).
-  model = generate(seed, bastionDensity, bastions, 0, gateDensity, w, h, site);
-  window.model = model; // debug
-  render(ctx, model);
+
+  const {
+    seed,
+    bastionDensity,
+    gateDensity,
+    site,
+  } = getInputs();
+
+  const bastions = computeBastionTargetN({
+    density: bastionDensity,
+  });
+
+  console.log("REGEN", {
+    seed,
+    bastionDensity,
+    bastions,
+    modelSpace: MODEL_SPACE,
+  });
+
+  model = generate(
+    seed,
+    bastionDensity,
+    bastions,
+    0,
+    gateDensity,
+    site
+  );
+
+  window.model = model;
+
+  renderCurrentModel();
 }
 
 // Wire events ONCE
@@ -116,9 +193,15 @@ document.getElementById("dock").addEventListener("change", () => {
 
 // Debounced resize (prevents 3–5 regen calls during layout settle)
 let resizeTimer = null;
+
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(regenerate, 100);
+
+  resizeTimer = setTimeout(() => {
+    // Resize is a rendering event only.
+    // Never regenerate city geometry here.
+    renderCurrentModel();
+  }, 100);
 });
 
 // Initial render
