@@ -4,13 +4,23 @@
 // This module assembles the full "model" object consumed by rendering.
 //
 // Key invariants:
-// - Deterministic: same seed -> same city.
+// - Deterministic: same seed + semantic parameters -> same city.
+// - Browser viewport size and devicePixelRatio are not generation inputs.
 // - No external deps.
 // - All per-run arrays (polylines, landmarks, etc.) are created INSIDE generate().
 // - Rendering remains read-only; all logic here or in geom/roads modules.
 
 import { createCtx } from "./ctx.js";
 import { runPipeline } from "./pipeline/run_pipeline.js";
+
+// Canonical generation space.
+//
+// Geometry is always generated in this coordinate system.
+// Browser viewport size and devicePixelRatio are rendering concerns only.
+export const MODEL_SPACE = Object.freeze({
+  width: 1200,
+  height: 800,
+});
 
 const WARP_FORT = {
   enabled: true,
@@ -64,7 +74,16 @@ function logBuildOnce(seed, width, height, site) {
   console.info("[EMCG] First run params:", { seed, width, height, site });
 }
 
-export function generate(seed, bastionDensity, bastionTargetN, gateCount, gateDensity, width, height, site = {}) {
+export function generate(
+  seed,
+  bastionDensity,
+  bastionTargetN,
+  gateCount,
+  gateDensity,
+  site = {}
+) {
+  const width = MODEL_SPACE.width;
+  const height = MODEL_SPACE.height;
   logBuildOnce(seed, width, height, site);
 
   const waterKind = (site && typeof site.water === "string") ? site.water : "none";
